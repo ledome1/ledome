@@ -188,9 +188,39 @@ function Ensure-StartupTask {
   Start-ScheduledTask -TaskName $Name
 }
 
+function Start-DetachedScript {
+  param([string]$ScriptPath)
+  Start-Process `
+    -FilePath "powershell.exe" `
+    -ArgumentList "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $ScriptPath `
+    -WindowStyle Hidden | Out-Null
+}
+
+function Show-Diagnostics {
+  param(
+    [string]$LogsDir,
+    [int]$Port
+  )
+
+  Write-Host ""
+  Write-Host "Diagnostics:"
+  Get-ScheduledTask -TaskName ConstructFlow, ConstructFlowCaddy -ErrorAction SilentlyContinue | Format-Table TaskName, State -AutoSize | Out-Host
+  Get-CimInstance Win32_Process -Filter "name = 'node.exe'" | Where-Object { $_.CommandLine -and $_.CommandLine.Contains("server.js") } | Select-Object ProcessId, CommandLine | Format-List | Out-Host
+  netstat -ano | Select-String ":$Port\s+.*LISTENING" | Out-Host
+
+  foreach ($file in @("constructflow.out.log", "caddy.out.log")) {
+    $path = Join-Path $LogsDir $file
+    if (Test-Path $path) {
+      Write-Host ""
+      Write-Host "Last log lines from $path"
+      Get-Content -LiteralPath $path -Tail 30 | Out-Host
+    }
+  }
+}
+
 function Wait-ForHealth {
   param([string]$Url)
-  for ($attempt = 1; $attempt -le 20; $attempt++) {
+  for ($attempt = 1; $attempt -le 60; $attempt++) {
     try {
       $health = Invoke-RestMethod -UseBasicParsing $Url
       if ($health.ok) { return $health }
@@ -246,12 +276,19 @@ Stop-MatchingProcesses -ExecutableName "caddy.exe" -CommandNeedle $caddyFile
 
 Ensure-StartupTask -Name "ConstructFlow" -ScriptPath $scripts.App
 Ensure-StartupTask -Name "ConstructFlowCaddy" -ScriptPath $scripts.Caddy
+Start-DetachedScript $scripts.App
+Start-DetachedScript $scripts.Caddy
 
 Set-FirewallRule "ConstructFlow HTTP 80" 80
 Set-FirewallRule "ConstructFlow HTTPS 443" 443
 
 $healthUrl = "http://127.0.0.1:$Port/api/v1/health"
-$health = Wait-ForHealth $healthUrl
+try {
+  $health = Wait-ForHealth $healthUrl
+} catch {
+  Show-Diagnostics -LogsDir $logsDir -Port $Port
+  throw
+}
 
 Write-Host ""
 Write-Host "ConstructFlow install complete."
