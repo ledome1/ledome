@@ -31,7 +31,7 @@ process environment.
 ## Deploy
 
 See [`docs/DEPLOY_WINDOWS.md`](docs/DEPLOY_WINDOWS.md) for the Windows server,
-Caddy, NSSM, `app.ledome.vn`, runtime data, and backup deployment checklist.
+Caddy, startup task, `app.ledome.vn`, runtime data, and backup deployment checklist.
 
 One-command Windows server install:
 

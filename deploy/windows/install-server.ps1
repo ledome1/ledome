@@ -72,25 +72,6 @@ function Ensure-Node {
   return $nodeExe
 }
 
-function Ensure-Nssm {
-  param([string]$BinDir)
-  $nssmExe = Join-Path $BinDir "nssm.exe"
-  if (Test-Path $nssmExe) {
-    Write-Host "NSSM found: $nssmExe"
-    return $nssmExe
-  }
-
-  Write-Host "Installing NSSM..."
-  $zip = Join-Path $env:TEMP "nssm-2.24.zip"
-  $extract = Join-Path $env:TEMP "nssm-2.24"
-  Download-File "https://nssm.cc/release/nssm-2.24.zip" $zip
-  Expand-ZipClean $zip $extract
-  $source = Get-ChildItem -Path $extract -Recurse -Filter "nssm.exe" | Where-Object { $_.FullName -match "\\win64\\" } | Select-Object -First 1
-  if (-not $source) { throw "Cannot find win64 nssm.exe in NSSM archive." }
-  Copy-Item -LiteralPath $source.FullName -Destination $nssmExe -Force
-  return $nssmExe
-}
-
 function Ensure-Caddy {
   param([string]$BinDir)
   $caddyExe = Join-Path $BinDir "caddy.exe"
@@ -135,41 +116,89 @@ function Set-FirewallRule {
   New-NetFirewallRule -DisplayName $Name -Direction Inbound -Action Allow -Protocol TCP -LocalPort $LocalPort | Out-Null
 }
 
-function Ensure-Service {
+function Stop-MatchingProcesses {
   param(
-    [string]$NssmExe,
-    [string]$Name,
-    [string]$Application,
-    [string]$Arguments,
-    [string]$Directory,
-    [string[]]$Environment,
-    [string]$Stdout,
-    [string]$Stderr
+    [string]$ExecutableName,
+    [string]$CommandNeedle
   )
 
-  $service = Get-Service -Name $Name -ErrorAction SilentlyContinue
-  if (-not $service) {
-    & $NssmExe install $Name $Application $Arguments | Out-Host
+  Get-CimInstance Win32_Process -Filter "name = '$ExecutableName'" | Where-Object {
+    $_.CommandLine -and $_.CommandLine.Contains($CommandNeedle)
+  } | ForEach-Object {
+    Write-Host "Stopping process $($_.ProcessId): $($_.CommandLine)"
+    Invoke-CimMethod -InputObject $_ -MethodName Terminate | Out-Null
   }
-  & $NssmExe set $Name Application $Application | Out-Host
-  & $NssmExe set $Name AppDirectory $Directory | Out-Host
-  & $NssmExe set $Name AppParameters $Arguments | Out-Host
-  & $NssmExe set $Name AppStdout $Stdout | Out-Host
-  & $NssmExe set $Name AppStderr $Stderr | Out-Host
-  & $NssmExe set $Name AppRotateFiles 1 | Out-Host
-  & $NssmExe set $Name AppRotateOnline 1 | Out-Host
-  & $NssmExe set $Name AppRotateBytes 10485760 | Out-Host
-  & $NssmExe set $Name Start SERVICE_AUTO_START | Out-Host
-  if ($Environment -and $Environment.Count) {
-    & $NssmExe set $Name AppEnvironmentExtra $Environment | Out-Host
+}
+
+function Write-LaunchScripts {
+  param(
+    [string]$NodeExe,
+    [string]$CaddyExe,
+    [string]$AppDir,
+    [string]$DataDir,
+    [string]$BackupDir,
+    [string]$LogsDir,
+    [string]$CaddyFile,
+    [string]$BinDir,
+    [int]$Port,
+    [int64]$UploadMaxBytes,
+    [int]$SessionTtlHours
+  )
+
+  $appScript = Join-Path $BinDir "start-constructflow.ps1"
+  $caddyScript = Join-Path $BinDir "start-caddy.ps1"
+
+  @"
+`$ErrorActionPreference = "Stop"
+`$env:NODE_ENV = "production"
+`$env:PORT = "$Port"
+`$env:DATA_DIR = "$DataDir"
+`$env:BACKUP_DIR = "$BackupDir"
+`$env:UPLOAD_MAX_BYTES = "$UploadMaxBytes"
+`$env:SESSION_TTL_HOURS = "$SessionTtlHours"
+Set-Location -LiteralPath "$AppDir"
+& "$NodeExe" "server.js" *>> "$LogsDir\constructflow.out.log"
+"@ | Set-Content -LiteralPath $appScript -Encoding ASCII
+
+  @"
+`$ErrorActionPreference = "Stop"
+Set-Location -LiteralPath "$(Split-Path -Parent $CaddyFile)"
+& "$CaddyExe" run --config "$CaddyFile" --adapter caddyfile *>> "$LogsDir\caddy.out.log"
+"@ | Set-Content -LiteralPath $caddyScript -Encoding ASCII
+
+  return @{ App = $appScript; Caddy = $caddyScript }
+}
+
+function Ensure-StartupTask {
+  param(
+    [string]$Name,
+    [string]$ScriptPath
+  )
+
+  $existing = Get-ScheduledTask -TaskName $Name -ErrorAction SilentlyContinue
+  if ($existing) {
+    Stop-ScheduledTask -TaskName $Name -ErrorAction SilentlyContinue
   }
 
-  $service = Get-Service -Name $Name -ErrorAction SilentlyContinue
-  if ($service -and $service.Status -eq "Running") {
-    & $NssmExe restart $Name | Out-Host
-  } else {
-    & $NssmExe start $Name | Out-Host
+  $action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$ScriptPath`""
+  $trigger = New-ScheduledTaskTrigger -AtStartup
+  $principal = New-ScheduledTaskPrincipal -UserId "SYSTEM" -LogonType ServiceAccount -RunLevel Highest
+  $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1)
+  Register-ScheduledTask -TaskName $Name -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Force | Out-Null
+  Start-ScheduledTask -TaskName $Name
+}
+
+function Wait-ForHealth {
+  param([string]$Url)
+  for ($attempt = 1; $attempt -le 20; $attempt++) {
+    try {
+      $health = Invoke-RestMethod -UseBasicParsing $Url
+      if ($health.ok) { return $health }
+    } catch {
+      Start-Sleep -Seconds 1
+    }
   }
+  throw "Health check failed at $Url."
 }
 
 Assert-Admin
@@ -188,7 +217,6 @@ Ensure-Directory $logsDir
 Ensure-Directory $binDir
 
 $nodeExe = Ensure-Node
-$nssmExe = Ensure-Nssm $binDir
 $caddyExe = Ensure-Caddy $binDir
 Install-AppCode $RepoZipUrl $appDir
 
@@ -200,46 +228,35 @@ $Domain {
 }
 "@ | Set-Content -LiteralPath $caddyFile -Encoding ASCII
 
-$appEnv = @(
-  "NODE_ENV=production",
-  "PORT=$Port",
-  "DATA_DIR=$dataDir",
-  "BACKUP_DIR=$backupDir",
-  "UPLOAD_MAX_BYTES=$UploadMaxBytes",
-  "SESSION_TTL_HOURS=$SessionTtlHours"
-)
+$scripts = Write-LaunchScripts `
+  -NodeExe $nodeExe `
+  -CaddyExe $caddyExe `
+  -AppDir $appDir `
+  -DataDir $dataDir `
+  -BackupDir $backupDir `
+  -LogsDir $logsDir `
+  -CaddyFile $caddyFile `
+  -BinDir $binDir `
+  -Port $Port `
+  -UploadMaxBytes $UploadMaxBytes `
+  -SessionTtlHours $SessionTtlHours
 
-Ensure-Service `
-  -NssmExe $nssmExe `
-  -Name "ConstructFlow" `
-  -Application $nodeExe `
-  -Arguments "server.js" `
-  -Directory $appDir `
-  -Environment $appEnv `
-  -Stdout (Join-Path $logsDir "constructflow.out.log") `
-  -Stderr (Join-Path $logsDir "constructflow.err.log")
+Stop-MatchingProcesses -ExecutableName "node.exe" -CommandNeedle $appDir
+Stop-MatchingProcesses -ExecutableName "caddy.exe" -CommandNeedle $caddyFile
 
-Ensure-Service `
-  -NssmExe $nssmExe `
-  -Name "ConstructFlowCaddy" `
-  -Application $caddyExe `
-  -Arguments "run --config `"$caddyFile`" --adapter caddyfile" `
-  -Directory $InstallRoot `
-  -Environment @() `
-  -Stdout (Join-Path $logsDir "caddy.out.log") `
-  -Stderr (Join-Path $logsDir "caddy.err.log")
+Ensure-StartupTask -Name "ConstructFlow" -ScriptPath $scripts.App
+Ensure-StartupTask -Name "ConstructFlowCaddy" -ScriptPath $scripts.Caddy
 
 Set-FirewallRule "ConstructFlow HTTP 80" 80
 Set-FirewallRule "ConstructFlow HTTPS 443" 443
 
-Start-Sleep -Seconds 2
 $healthUrl = "http://127.0.0.1:$Port/api/v1/health"
-$health = Invoke-RestMethod -UseBasicParsing $healthUrl
-if (-not $health.ok) { throw "Health check failed at $healthUrl." }
+$health = Wait-ForHealth $healthUrl
 
 Write-Host ""
 Write-Host "ConstructFlow install complete."
 Write-Host "Local health: $healthUrl"
+Write-Host "Startup tasks: ConstructFlow, ConstructFlowCaddy"
 Write-Host "Public URL after DNS/router setup: https://$Domain"
 Write-Host ""
 Write-Host "Next required network steps:"

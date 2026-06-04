@@ -1,6 +1,6 @@
 # Deploy ConstructFlow tren Windows Server cong ty
 
-Tai lieu nay dung cho ban v1: chay truc tiep bang Node.js tren Windows, dung Caddy lam HTTPS reverse proxy, va dung NSSM de app tu khoi dong lai.
+Tai lieu nay dung cho ban v1: chay truc tiep bang Node.js tren Windows, dung Caddy lam HTTPS reverse proxy, va dung Windows Task Scheduler de app tu khoi dong lai.
 
 ## 1. Chuan bi server
 
@@ -21,8 +21,8 @@ Lenh nay se tu dong:
 
 - Cai Node.js 22 LTS neu server chua co Node.
 - Tai app tu public GitHub repo `ledome1/ledome`.
-- Cai NSSM va tao Windows service `ConstructFlow`.
-- Cai Caddy va tao Windows service `ConstructFlowCaddy`.
+- Tao Windows startup task `ConstructFlow`.
+- Cai Caddy va tao Windows startup task `ConstructFlowCaddy`.
 - Cau hinh `DATA_DIR=C:\ConstructFlow\data`, `BACKUP_DIR=C:\ConstructFlow\backups`, log tai `C:\ConstructFlow\logs`.
 - Mo Windows Firewall cho port `80` va `443`.
 - Smoke test `http://127.0.0.1:3000/api/v1/health`.
@@ -40,14 +40,14 @@ C:\ConstructFlow\
   app\       # code tai tu GitHub public repo
   data\      # runtime JSON va file upload, copy rieng tu may hien tai
   backups\   # backup do app tao
-  logs\      # stdout/stderr cua service
+  logs\      # stdout/stderr cua app va Caddy
 ```
 
 Khong commit `data/`, `backups/`, `logs/`, `.env`, password, token, ho so khach hang, hop dong, hoac file noi bo len GitHub. Voi ban hien tai chua co du lieu that trong repo, co the dung public repo de clone server don gian hon.
 
 ## 3. Bien moi truong production
 
-Thiet lap cac bien nay trong NSSM service:
+Installer se thiet lap cac bien nay trong startup task `ConstructFlow`:
 
 ```powershell
 NODE_ENV=production
@@ -79,21 +79,20 @@ Vi du neu copy qua mang noi bo:
 robocopy C:\fastcome\data C:\ConstructFlow\data /MIR
 ```
 
-## 5. Cai Windows service bang NSSM
+## 5. Startup tasks
 
-Chay PowerShell voi quyen Administrator:
+Installer tao 2 Windows Scheduled Tasks chay bang user `SYSTEM`:
+
+- `ConstructFlow`: chay Node app o port `3000`.
+- `ConstructFlowCaddy`: chay Caddy reverse proxy cho `app.ledome.vn`.
+
+Neu can restart thu cong:
 
 ```powershell
-nssm install ConstructFlow "C:\Program Files\nodejs\node.exe" "server.js"
-nssm set ConstructFlow AppDirectory "C:\ConstructFlow\app"
-nssm set ConstructFlow AppEnvironmentExtra "NODE_ENV=production" "PORT=3000" "DATA_DIR=C:\ConstructFlow\data" "BACKUP_DIR=C:\ConstructFlow\backups" "UPLOAD_MAX_BYTES=104857600" "SESSION_TTL_HOURS=12"
-nssm set ConstructFlow AppStdout "C:\ConstructFlow\logs\stdout.log"
-nssm set ConstructFlow AppStderr "C:\ConstructFlow\logs\stderr.log"
-nssm set ConstructFlow AppRotateFiles 1
-nssm set ConstructFlow AppRotateOnline 1
-nssm set ConstructFlow AppRotateBytes 10485760
-nssm set ConstructFlow Start SERVICE_AUTO_START
-nssm start ConstructFlow
+Stop-ScheduledTask -TaskName ConstructFlow -ErrorAction SilentlyContinue
+Stop-ScheduledTask -TaskName ConstructFlowCaddy -ErrorAction SilentlyContinue
+Start-ScheduledTask -TaskName ConstructFlow
+Start-ScheduledTask -TaskName ConstructFlowCaddy
 ```
 
 Kiem tra app noi bo:
@@ -129,12 +128,12 @@ Kiem tra tren trinh duyet:
 - Dang nhap.
 - Goi thu `https://app.ledome.vn/api/v1/projects` khi chua dang nhap phai tra `401`.
 - Upload/download file du an.
-- Restart service `nssm restart ConstructFlow`, dang nhap lai va xac nhan data van con.
+- Restart task `ConstructFlow`, dang nhap lai va xac nhan data van con.
 - Chay backup trong app va xac nhan co ban sao trong `C:\ConstructFlow\backups`.
 
 ## 8. Cap nhat app sau nay bang 1 lenh
 
-Chay lai lenh cai nhanh. Installer se tai code moi nhat tu GitHub, cap nhat `C:\ConstructFlow\app`, restart service, va giu nguyen `C:\ConstructFlow\data`.
+Chay lai lenh cai nhanh. Installer se tai code moi nhat tu GitHub, cap nhat `C:\ConstructFlow\app`, restart startup tasks, va giu nguyen `C:\ConstructFlow\data`.
 
 ```powershell
 Set-ExecutionPolicy -Scope Process Bypass -Force; Invoke-WebRequest -UseBasicParsing "https://raw.githubusercontent.com/ledome1/ledome/main/deploy/windows/install-server.ps1" -OutFile "$env:TEMP\install-constructflow.ps1"; powershell -ExecutionPolicy Bypass -File "$env:TEMP\install-constructflow.ps1" -Domain "app.ledome.vn"
