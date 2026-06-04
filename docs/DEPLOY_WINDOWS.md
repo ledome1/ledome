@@ -5,12 +5,27 @@ Tai lieu nay dung cho ban v1: chay truc tiep bang Node.js tren Windows, dung Cad
 ## 1. Chuan bi server
 
 - Windows server/PC bat 24/7, Internet on dinh.
-- Node.js 22 LTS.
-- Git for Windows.
-- Caddy.
-- NSSM.
+- PowerShell chay voi quyen Administrator.
 - Domain/subdomain: `app.ledome.vn`.
 - IP public tinh hoac giai phap tunnel/DDNS neu cong ty khong co IP public tinh.
+
+## Cai nhanh bang 1 lenh
+
+Mo PowerShell bang quyen Administrator tren server, roi chay:
+
+```powershell
+Set-ExecutionPolicy -Scope Process Bypass -Force; Invoke-WebRequest -UseBasicParsing "https://raw.githubusercontent.com/ledome1/ledome/main/deploy/windows/install-server.ps1" -OutFile "$env:TEMP\install-constructflow.ps1"; powershell -ExecutionPolicy Bypass -File "$env:TEMP\install-constructflow.ps1" -Domain "app.ledome.vn"
+```
+
+Lenh nay se tu dong:
+
+- Cai Node.js 22 LTS neu server chua co Node.
+- Tai app tu public GitHub repo `ledome1/ledome`.
+- Cai NSSM va tao Windows service `ConstructFlow`.
+- Cai Caddy va tao Windows service `ConstructFlowCaddy`.
+- Cau hinh `DATA_DIR=C:\ConstructFlow\data`, `BACKUP_DIR=C:\ConstructFlow\backups`, log tai `C:\ConstructFlow\logs`.
+- Mo Windows Firewall cho port `80` va `443`.
+- Smoke test `http://127.0.0.1:3000/api/v1/health`.
 
 Mo firewall/router:
 
@@ -18,11 +33,11 @@ Mo firewall/router:
 - Public `443 -> server:443`.
 - Khong public port `3000`; port nay chi de Caddy goi noi bo `127.0.0.1:3000`.
 
-## 2. Cau truc thu muc khuyen nghi
+## 2. Cau truc thu muc sau khi cai
 
 ```text
 C:\ConstructFlow\
-  app\       # code clone tu GitHub
+  app\       # code tai tu GitHub public repo
   data\      # runtime JSON va file upload, copy rieng tu may hien tai
   backups\   # backup do app tao
   logs\      # stdout/stderr cua service
@@ -45,7 +60,7 @@ SESSION_TTL_HOURS=12
 
 `UPLOAD_MAX_BYTES=104857600` tuong duong 100 MB.
 
-## 4. Copy code va data
+## 4. Cai thu cong neu khong dung 1 lenh
 
 Tren server:
 
@@ -117,13 +132,12 @@ Kiem tra tren trinh duyet:
 - Restart service `nssm restart ConstructFlow`, dang nhap lai va xac nhan data van con.
 - Chay backup trong app va xac nhan co ban sao trong `C:\ConstructFlow\backups`.
 
-## 8. Cap nhat app sau nay
+## 8. Cap nhat app sau nay bang 1 lenh
+
+Chay lai lenh cai nhanh. Installer se tai code moi nhat tu GitHub, cap nhat `C:\ConstructFlow\app`, restart service, va giu nguyen `C:\ConstructFlow\data`.
 
 ```powershell
-cd C:\ConstructFlow\app
-git pull
-nssm restart ConstructFlow
-Invoke-RestMethod http://127.0.0.1:3000/api/v1/health
+Set-ExecutionPolicy -Scope Process Bypass -Force; Invoke-WebRequest -UseBasicParsing "https://raw.githubusercontent.com/ledome1/ledome/main/deploy/windows/install-server.ps1" -OutFile "$env:TEMP\install-constructflow.ps1"; powershell -ExecutionPolicy Bypass -File "$env:TEMP\install-constructflow.ps1" -Domain "app.ledome.vn"
 ```
 
-Neu co thay doi lien quan data, backup `C:\ConstructFlow\data` truoc khi pull/restart.
+Neu co thay doi lien quan data, backup `C:\ConstructFlow\data` truoc khi chay lai installer.

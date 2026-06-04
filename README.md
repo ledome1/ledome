@@ -33,6 +33,12 @@ process environment.
 See [`docs/DEPLOY_WINDOWS.md`](docs/DEPLOY_WINDOWS.md) for the Windows server,
 Caddy, NSSM, `app.ledome.vn`, runtime data, and backup deployment checklist.
 
+One-command Windows server install:
+
+```powershell
+Set-ExecutionPolicy -Scope Process Bypass -Force; Invoke-WebRequest -UseBasicParsing "https://raw.githubusercontent.com/ledome1/ledome/main/deploy/windows/install-server.ps1" -OutFile "$env:TEMP\install-constructflow.ps1"; powershell -ExecutionPolicy Bypass -File "$env:TEMP\install-constructflow.ps1" -Domain "app.ledome.vn"
+```
+
 ## Delivery status
 
 This repository is the first working vertical slice, not the completed ERP. See
