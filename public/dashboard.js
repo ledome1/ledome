@@ -1,0 +1,9 @@
+const fmt=(v)=>new Intl.NumberFormat("vi-VN").format(v||0);
+const headers=["STT","Dự án","Tiến độ (%)","Ngân sách","Phát sinh thu","Phát sinh chi"];
+const owner=["Hợp đồng","Đã thực hiện","Đã nghiệm thu","Đề nghị TT","Giá trị giữ lại","Thu thực tế","CĐT còn nợ"];
+const contractor=["Hợp đồng","Đã thực hiện","Đã nghiệm thu","Đề nghị TT","Giá trị giữ lại"];
+async function render(){const {data}=await fetch("/api/v1/dashboard/projects").then(r=>r.json());const table=document.querySelector("#dashboard-table");table.innerHTML=`<thead><tr><th rowspan="2">STT</th><th rowspan="2">Dự án</th><th rowspan="2">Tiến độ (%)</th><th rowspan="2">Ngân sách</th><th rowspan="2">Phát sinh thu</th><th rowspan="2">Phát sinh chi</th><th colspan="${owner.length}">Chủ đầu tư</th><th colspan="${contractor.length}">Nhà thầu</th></tr><tr>${[...owner,...contractor].map(x=>`<th>${x}</th>`).join("")}</tr></thead><tbody><tr class="total"><td></td><td>TỔNG CỘNG</td><td></td><td>26.738.348.888</td><td>8.422.718.974</td><td>4.653.803.008</td>${Array(12).fill(0).map((_,i)=>`<td>${fmt([1428307137475,132106975922,12160707803,9819234383,1104667022,8282869974,3115031431,503912718964,1726997629,823691935,705614892,47415000][i])}</td>`).join("")}</tr>${data.map((p,i)=>`<tr><td>${i+1}</td><td><a href="/constructions/detail/${p.id}/">${p.name}</a></td><td>${p.progress}</td><td>${fmt(p.budget)}</td><td>${fmt(p.extraIncome)}</td><td>${fmt(p.extraCost)}</td>${p.numbers.slice(0,12).map(v=>`<td>${fmt(v)}</td>`).join("")}</tr>`).join("")}</tbody>`}
+document.querySelector("#reload").onclick=render;
+document.querySelector("#utility").onclick=()=>document.querySelector(".util-wrap").classList.toggle("open");
+document.querySelector("#export").onclick=()=>{const a=document.createElement("a");a.href="data:text/csv;charset=utf-8,"+encodeURIComponent("LE DOME Dashboard\\nDữ liệu demo xuất từ dashboard");a.download="ledome-dashboard.csv";a.click()};
+render();

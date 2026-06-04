@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#087f78">
+    <title>LE DOME - Chấm công công trình</title>
+    <link rel="stylesheet" href="/attendance/mobile.css">
+  </head>
+  <body>
+    <main>
+      <header class="mobile-head">
+        <span class="brand-mark">LD</span>
+        <div><b>LE DOME</b><small>Chấm công công trình</small></div>
+      </header>
+      <section class="attendance-card">
+        <div class="clock"><b id="clock">--:--</b><span id="today"></span></div>
+        <label>Nhân sự<select id="employee"></select></label>
+        <label>Công trình<select id="site"></select></label>
+        <section class="gps-panel">
+          <div><b>⌖ Vị trí GPS</b><span id="gps-status">Chưa lấy vị trí</span></div>
+          <button id="locate">Lấy vị trí</button>
+          <p id="gps-detail"></p>
+        </section>
+        <label class="photo-field">Ảnh xác thực tại công trình
+          <input id="photo" type="file" accept="image/*" capture="user">
+          <span id="photo-label">＋ Chụp ảnh bằng camera trước</span>
+        </label>
+        <img id="photo-preview" alt="Ảnh xác thực">
+        <div class="attendance-actions">
+          <button data-type="check-in">Check-in</button>
+          <button data-type="check-out">Check-out</button>
+        </div>
+        <p class="notice" id="notice">Bật GPS chính xác trên điện thoại trước khi chấm công.</p>
+      </section>
+      <section class="history-card">
+        <h2>Lịch sử gần đây</h2>
+        <div id="history"></div>
+      </section>
+    </main>
+    <script src="/attendance/mobile.js"></script>
+  </body>
+</html>

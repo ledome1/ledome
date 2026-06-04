@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>LE DOME - Tổng quan dự án</title>
+<link rel="stylesheet" href="/construction.css">
+</head>
+<body>
+<aside>
+<a class="project-brand" href="/#projects">
+<span>LD</span>
+<b>LE DOME</b>
+</a>
+<nav>
+<h4>DASHBOARD</h4>
+<button class="active" data-view="dashboard">◉ Tổng quan</button>
+<h4 data-group><span>▦ QUẢN LÝ DỰ ÁN</span><i>▾</i></h4>
+<div>
+<button data-view="gantt">▤ Bảng tiến độ</button>
+<button data-view="diary">▣ Nhật ký thi công</button>
+</div>
+<h4 data-group><span>♟ HỢP ĐỒNG NHẬN THẦU</span><i>▾</i></h4>
+<div>
+<button data-view="contract-owner">▤ Hợp đồng</button>
+<button data-view="debt-owner">$ Công nợ CDT theo DA</button>
+</div>
+<h4 data-group><span>▤ HỢP ĐỒNG GIAO THẦU</span><i>▾</i></h4>
+<div>
+<button data-view="contract-vendor">▤ Hợp đồng</button>
+<button data-view="debt-vendor">$ Công nợ nhà thầu theo DA</button>
+</div>
+<h4 data-group><span>⚒ QUẢN LÝ VẬT LIỆU</span><i>▾</i></h4>
+<div>
+<button data-view="supplier">▤ Hóa đơn</button>
+<button data-view="material-slip">▦ Phiếu nhập kho</button>
+<button data-view="debt-supplier">$ Công nợ NCC</button>
+</div>
+<h4 data-group><span>ⓘ YÊU CẦU, VẤN ĐỀ</span><i>▾</i></h4>
+<div>
+<button data-view="rfi">Yêu cầu Phát sinh của CDT</button>
+<button data-view="rfa">Yêu cầu cần CDT phê duyệt</button>
+<button data-view="owner-request">Yêu cầu của CDT</button>
+<button data-view="issues">Vấn đề sự cố</button>
+</div>
+<h4 data-group><span>▤ HỒ SƠ DỰ ÁN</span><i>▾</i></h4>
+<div>
+<button data-view="project-existing">Hiện trạng</button>
+<button class="sidebar-subgroup" data-subgroup-toggle="design-docs"><span>Giai đoạn thiết kế</span><i>▾</i></button>
+<div class="sidebar-subitems" data-subgroup="design-docs">
+<button data-view="project-design-3d">Hồ sơ thiết kế 3D</button>
+<button data-view="project-technical">Hồ sơ kỹ thuật</button>
+</div>
+<button class="sidebar-subgroup" data-subgroup-toggle="construction-docs"><span>Giai đoạn thi công</span><i>▾</i></button>
+<div class="sidebar-subitems" data-subgroup="construction-docs">
+<button data-view="project-design-construction">Hồ sơ thiết kế thi công</button>
+<button data-view="project-technical-construction">Hồ sơ kỹ thuật thi công</button>
+<button data-view="project-owner-request">Hồ sơ phát sinh</button>
+</div>
+<button data-view="project-other">Khác</button>
+</div>
+</nav>
+</aside>
+<main>
+<header>
+<b>❖ Dự án xây dựng</b>
+<div class="project-header-actions"><button class="project-notification" aria-label="Thông báo">♧<i>3</i></button><span>NA</span>
+</div>
+</header>
+<div class="breadcrumb">
+<a href="/#projects">Danh sách dự án</a> » <span id="crumb-name">Dự án</span>
+</div>
+<div class="toolbar">
+<button data-reload>⟳ Tải lại</button>
+<span class="utility">
+<button data-utility>Tiện ích⌄</button>
+<menu>
+<button data-export>Xuất dữ liệu</button>
+<button data-members>Thành viên</button>
+</menu>
+</span>
+</div>
+<section id="project-app">
+</section>
+</main>
+<script src="/construction.js">
+</script>
+</body>
+</html>
+

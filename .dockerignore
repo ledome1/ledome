@@ -1,0 +1,16 @@
+node_modules
+npm-debug.log
+.git
+.gitignore
+.dockerignore
+data
+backups
+logs
+*.mkv
+*.mp4
+public/*.orig
+public/*.recovered*
+public/*.reconstructed
+public/*.fetched
+public/recovered_temp.js
+public/cache_candidate*

@@ -1,0 +1,296 @@
+const test = require("node:test");
+const assert = require("node:assert/strict");
+
+process.env.NODE_ENV = "test";
+const { createServer } = require("../server");
+
+let server;
+let origin;
+let authCookie;
+
+async function login(loginId = "HoangDinh", password = "1") {
+  const response = await fetch(`${origin}/api/v1/auth/login`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ loginId, password })
+  });
+  if (response.status !== 200) return { response };
+  authCookie = response.headers.get("set-cookie").split(";")[0];
+  return { response, body: await response.json(), cookie: authCookie };
+}
+
+function authed(url, options = {}) {
+  return fetch(url, { ...options, headers: { ...(options.headers || {}), cookie: authCookie } });
+}
+
+test.before(async () => {
+  server = createServer();
+  await new Promise((resolve) => server.listen(0, resolve));
+  origin = `http://127.0.0.1:${server.address().port}`;
+  await login();
+});
+
+test.after(() => server.close());
+
+test("health endpoint reports ready", async () => {
+  const response = await fetch(`${origin}/api/v1/health`);
+  const body = await response.json();
+  assert.equal(response.status, 200);
+  assert.equal(body.ok, true);
+});
+
+test("auth supports login, me and logout", async () => {
+  const { response, body, cookie } = await login();
+  assert.equal(response.status, 200);
+  assert.equal(body.account.loginId, "HoangDINH");
+  assert.match(response.headers.get("set-cookie"), /HttpOnly/);
+  assert.match(response.headers.get("set-cookie"), /SameSite=Lax/);
+  assert.match(response.headers.get("set-cookie"), /Max-Age=43200/);
+
+  const me = await fetch(`${origin}/api/v1/auth/me`, { headers: { cookie } }).then((res) => res.json());
+  assert.equal(me.account.loginId, "HoangDINH");
+
+  const logout = await fetch(`${origin}/api/v1/auth/logout`, { method: "POST", headers: { cookie } });
+  assert.equal(logout.status, 200);
+  await login();
+});
+
+test("protected APIs require login", async () => {
+  const projectList = await fetch(`${origin}/api/v1/projects`);
+  assert.equal(projectList.status, 401);
+
+  const dashboard = await fetch(`${origin}/api/v1/dashboard/projects`);
+  assert.equal(dashboard.status, 401);
+
+  const navigation = await fetch(`${origin}/api/v1/navigation`);
+  assert.equal(navigation.status, 401);
+
+  const response = await fetch(`${origin}/api/v1/projects`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ name: "Unauthorized project" })
+  });
+  assert.equal(response.status, 401);
+});
+
+test("accounts API hides password material and supports password reset", async () => {
+  const accounts = await authed(`${origin}/api/v1/accounts`).then((res) => res.json());
+  assert.ok(accounts.data.length > 0);
+  assert.equal(accounts.data.some((account) => account.password || account.passwordHash || account.passwordSalt), false);
+
+  const target = accounts.data.find((account) => account.loginId.toLowerCase() === "hoangdinh");
+  target.newPassword = "2";
+  const saved = await authed(`${origin}/api/v1/accounts`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ accounts: accounts.data })
+  });
+  assert.equal(saved.status, 200);
+
+  const oldLogin = await fetch(`${origin}/api/v1/auth/login`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ loginId: "HoangDinh", password: "1" })
+  });
+  assert.equal(oldLogin.status, 401);
+
+  const newLogin = await fetch(`${origin}/api/v1/auth/login`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ loginId: "HoangDinh", password: "2" })
+  });
+  assert.equal(newLogin.status, 200);
+
+  target.newPassword = "1";
+  await authed(`${origin}/api/v1/accounts`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ accounts: accounts.data })
+  });
+  await login();
+});
+
+test("server-side business stores persist through API", async () => {
+  const partners = await authed(`${origin}/api/v1/partners/customers`).then((res) => res.json());
+  const marker = `KH${Date.now()}`;
+  partners.data.unshift([marker, "Khách hàng test", "Liên hệ", "0900000000", "Tiềm năng", "HN", 1, 2, ["Demo"], "Ghi chú"]);
+  const savedPartners = await authed(`${origin}/api/v1/partners/customers`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ rows: partners.data })
+  }).then((res) => res.json());
+  assert.equal(savedPartners.data[0][0], marker);
+
+  const finance = await authed(`${origin}/api/v1/finance/overview`).then((res) => res.json());
+  finance.data.transactions.unshift(["2026-06-04", "Thu", "LE DOME", "TEST", "", "", "Test", 123, "", "", ""]);
+  const savedFinance = await authed(`${origin}/api/v1/finance/overview`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ data: finance.data })
+  }).then((res) => res.json());
+  assert.equal(savedFinance.data.transactions[0][7], 123);
+
+  const drive = await authed(`${origin}/api/v1/drive`).then((res) => res.json());
+  drive.data.unshift(["DRV999", "File test.pdf", "PDF", "Công ty", "Test", "HoangDinh", "2026-06-04", 1, "Toàn công ty", ""]);
+  const savedDrive = await authed(`${origin}/api/v1/drive`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ files: drive.data })
+  }).then((res) => res.json());
+  assert.equal(savedDrive.data[0][0], "DRV999");
+});
+
+test("personal finance is blocked for non-HoangDinh accounts", async () => {
+  const accounts = await authed(`${origin}/api/v1/accounts`).then((res) => res.json());
+  const other = accounts.data.find((account) => account.active && account.loginId.toLowerCase() !== "hoangdinh");
+  const { response } = await login(other.loginId, "1");
+  assert.equal(response.status, 200);
+  const responsePersonal = await authed(`${origin}/api/v1/personal-finance`);
+  assert.equal(responsePersonal.status, 403);
+  await login();
+});
+
+test("file uploads reject unsupported extensions", async () => {
+  const response = await authed(`${origin}/api/v1/projects/p1/design-3d-files?kind=concept&name=malware.exe`, {
+    method: "POST",
+    body: Buffer.from("bad")
+  });
+  assert.equal(response.status, 400);
+});
+
+test("backup endpoint creates a backup record", async () => {
+  const response = await authed(`${origin}/api/v1/admin/backup`, { method: "POST" });
+  assert.equal(response.status, 201);
+  const backup = await response.json();
+  assert.ok(backup.id);
+  const list = await authed(`${origin}/api/v1/admin/backups`).then((res) => res.json());
+  assert.ok(list.data.some((item) => item.id === backup.id));
+});
+
+test("attendance GPS check-in validates site distance and supports approval", async () => {
+  const config = await authed(`${origin}/api/v1/attendance/config`).then((res) => res.json());
+  assert.equal(config.sites.length, 3);
+  assert.equal(config.employees[0].id, "NV001");
+
+  const weakGps = await authed(`${origin}/api/v1/attendance/check`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ employeeId: "NV001", siteId: "green-city", latitude: 21.028511, longitude: 105.804817, accuracy: 300, hasFacePhoto: true })
+  });
+  assert.equal(weakGps.status, 400);
+
+  const valid = await authed(`${origin}/api/v1/attendance/check`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ employeeId: "NV001", siteId: "green-city", latitude: 21.028511, longitude: 105.804817, accuracy: 12, hasFacePhoto: true })
+  }).then((res) => res.json());
+  assert.equal(valid.status, "Hợp lệ");
+  assert.equal(valid.distanceMeters, 0);
+
+  const outside = await authed(`${origin}/api/v1/attendance/check`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ employeeId: "NV002", siteId: "green-city", latitude: 21.038511, longitude: 105.804817, accuracy: 15, hasFacePhoto: true })
+  }).then((res) => res.json());
+  assert.equal(outside.status, "Cần duyệt");
+
+  const approved = await authed(`${origin}/api/v1/attendance/records/${outside.id}/approve`, { method: "POST" }).then((res) => res.json());
+  assert.equal(approved.status, "Hợp lệ");
+});
+
+test("project APIs expose demo and runtime projects", async () => {
+  const inventory = await authed(`${origin}/api/v1/projects`).then((res) => res.json());
+  assert.equal(inventory.total, 2);
+  assert.equal(inventory.data[0].id, "p1");
+  assert.equal(inventory.data[0].name, "[Mẫu] Nội thất");
+
+  const detail = await authed(`${origin}/api/v1/projects/p1`).then((res) => res.json());
+  assert.equal(detail.schedule.length, 5);
+  assert.equal(detail.inventory.length, 3);
+
+  const dashboard = await authed(`${origin}/api/v1/dashboard/projects`).then((res) => res.json());
+  assert.equal(dashboard.data.length, 2);
+  assert.equal(dashboard.data[0].name, "[Mẫu] Nội thất");
+
+  const body = await authed(`${origin}/api/v1/projects/p2`).then((res) => res.json());
+  assert.equal(body.name, "THI CÔNG NHÀ ANH KHÁNH 70M2 - LẠC LONG QUÂN");
+});
+
+test("unknown project returns 404", async () => {
+  const response = await authed(`${origin}/api/v1/projects/missing`);
+  assert.equal(response.status, 404);
+});
+
+test("created and updated projects appear in lists and detail endpoint", async () => {
+  const name = `Dự án mới ${Date.now()}`;
+  const response = await authed(`${origin}/api/v1/projects`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ name, code: "DA-NEW", status: "Kế hoạch" })
+  });
+  assert.equal(response.status, 201);
+  const project = await response.json();
+
+  const patch = await authed(`${origin}/api/v1/projects/${project.id}`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ name: "Updated project name" })
+  });
+  assert.equal(patch.status, 200);
+
+  const inventory = await authed(`${origin}/api/v1/projects`).then((res) => res.json());
+  assert.equal(inventory.data.find((item) => item.id === project.id).name, "Updated project name");
+
+  const dashboard = await authed(`${origin}/api/v1/dashboard/projects`).then((res) => res.json());
+  assert.equal(dashboard.data.find((item) => item.id === project.id).name, "Updated project name");
+
+  const detail = await authed(`${origin}/api/v1/projects/${project.id}`).then((res) => res.json());
+  assert.equal(detail.name, "Updated project name");
+});
+
+test("3D design files support proposal, concept and final marker", async () => {
+  const projectId = `design-${Date.now()}`;
+  const proposal = await authed(`${origin}/api/v1/projects/${projectId}/design-3d-files?kind=proposal&name=proposal.jpg`, {
+    method: "POST",
+    body: Buffer.from("proposal")
+  }).then((res) => res.json());
+  assert.equal(proposal.kind, "proposal");
+
+  const concept = await authed(`${origin}/api/v1/projects/${projectId}/design-3d-files?kind=concept&name=concept-a.jpg`, {
+    method: "POST",
+    body: Buffer.from("concept")
+  }).then((res) => res.json());
+  assert.equal(concept.kind, "concept");
+
+  const marked = await authed(`${origin}/api/v1/projects/${projectId}/design-3d-files/final`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ storedName: concept.storedName })
+  }).then((res) => res.json());
+  assert.equal(marked.data.find((file) => file.storedName === concept.storedName).final, true);
+});
+
+test("landing page and project detail clients expose expected workflows", async () => {
+  const appScript = await fetch(`${origin}/app.js`).then((res) => res.text());
+  assert.match(appScript, /aria-label="Sắp xếp"/);
+  assert.match(appScript, /data-action="create-project"/);
+  assert.match(appScript, /Khởi tạo từ dự án mẫu/);
+  assert.match(appScript, /Mẫu Kiến trúc Nội thất/);
+
+  const html = await fetch(`${origin}/constructions/detail/p1/`).then((res) => res.text());
+  assert.match(html, /project-app/);
+
+  const script = await fetch(`${origin}/construction.js`).then((res) => res.text());
+  assert.match(script, /Dòng tiền dự án/);
+  assert.match(script, /Truy cập nhanh/);
+  assert.match(script, /Theo dõi chi phí dự án/);
+  assert.match(script, /Vật liệu nhập vượt/);
+  assert.match(script, /Nhân công cần dùng trong 7 ngày tới/);
+  assert.match(script, /data-view-link="debt-owner"/);
+  assert.match(script, /showView\(view\)/);
+  assert.match(script, /ganttView/);
+  assert.match(script, /taskFormModal/);
+  assert.match(script, /diaryResourceDetail/);
+  assert.match(script, /Lập phiếu thu/);
+  assert.match(script, /Lập phiếu chi/);
+});
