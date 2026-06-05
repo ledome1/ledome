@@ -2,7 +2,7 @@
 const money = (value) => new Intl.NumberFormat("vi-VN").format(value);
 const moneyInput = (value) => Number(value || 0).toLocaleString("vi-VN");
 const parseMoneyInput = (value) => Number(String(value || "").replace(/[^\d]/g, "")) || 0;
-const state = { page: location.hash.slice(1) || "projects", nav: [], account: null, customerId: "", customerQuery: "", customerFilter: "Tất cả", crmQuery: "", crmStatus: "Tất cả", crmSupplierCategory: "Tất cả", driveQuery: "", driveScope: "Tất cả", financeQuery: "", financeKind: "Tất cả", personalQuery: "", personalKind: "Tất cả", navCollapsed: {} };
+const state = { page: location.hash.slice(1) || "projects", nav: [], account: null, customerId: "", customerQuery: "", customerFilter: "Tất cả", crmQuery: "", crmStatus: "Tất cả", crmSupplierCategory: "Tất cả", catalogType: "constructionCategories", catalogQuery: "", driveQuery: "", driveScope: "Tất cả", financeQuery: "", financeKind: "Tất cả", personalQuery: "", personalKind: "Tất cả", navCollapsed: {} };
 const AUTH_STORAGE = "ledome.auth.v1";
 const LOGIN_REMEMBER_STORAGE = "ledome.login.remember.v1";
 const NAV_COLLAPSE_STORAGE = "ledome.navCollapsed.v1";
@@ -394,15 +394,98 @@ const CRM_DIRECTORY = {
 
 const crmStatusClass = (status) => status === "Đang hợp tác" ? "active" : status === "Tiềm năng" ? "lead" : "paused";
 const crmProjects = (projects = []) => `<div class="directory-projects">${projects.map((project) => `<i>${escapeHtml(project)}</i>`).join("")}</div>`;
-const DIRECTORY_COLUMN_STORAGE = "ledome.directoryColumnWidths.v1";
-const DIRECTORY_DEFAULT_WIDTHS = [80, 230, 160, 130, 120, 150, 135, 135, 190, 280, 72];
-const DIRECTORY_SUPPLIER_WIDTHS = [190, 85, 230, 155, 130, 115, 135, 135, 190, 310, 72];
+const CATALOG_FALLBACK = {
+  constructionCategories: ["KHẢO SÁT - ĐO ĐẠC", "CHE PHỦ", "PHÁ DỠ", "VẬN CHUYỂN", "XÂY TRÁT", "CHỐNG THẤM", "ĐIỆN NƯỚC", "PCCC / AN TOÀN KỸ THUẬT", "ĐIỀU HÒA", "THIẾT BỊ THÔNG MINH - MẠNG - CAMERA", "THẠCH CAO", "ỐP LÁT", "ĐÁ", "SƠN BẢ", "SÀN GỖ - SÀN NHỰA", "CỬA", "NHÔM KÍNH", "SẮT", "GỖ NỘI THẤT", "RÈM", "CÂY - TIỂU CẢNH", "BIỂN BẢNG LOGO", "DEFECT CHẤM VÁ", "VỆ SINH CN", "KHÁC"],
+  materialCategories: ["VẬT LIỆU HOÀN THIỆN", "PHỤ KIỆN ĐỒ NỘI THẤT", "THIẾT BỊ CHIẾU SÁNG", "THIẾT BỊ BẾP", "THIẾT BỊ VỆ SINH", "ĐÈN DECOR", "ĐỒ DECOR", "ĐỒ DECOR BẾP", "CHĂN GA ĐỆM", "ĐỒ THỦ CÔNG", "KHÁC"]
+};
+let catalogData = { constructionCategories: [...CATALOG_FALLBACK.constructionCategories], materialCategories: [...CATALOG_FALLBACK.materialCategories] };
+function catalogList(input, fallback) {
+  const source = Array.isArray(input) ? input : fallback;
+  return [...new Set(source.map((item) => String(item || "").trim()).filter(Boolean))];
+}
+function normalizeCatalogData(input = {}) {
+  return {
+    constructionCategories: catalogList(input.constructionCategories, CATALOG_FALLBACK.constructionCategories),
+    materialCategories: catalogList(input.materialCategories, CATALOG_FALLBACK.materialCategories)
+  };
+}
+const materialCategoryOptions = () => catalogList(catalogData.materialCategories, CATALOG_FALLBACK.materialCategories);
+const constructionCategoryOptions = () => catalogList(catalogData.constructionCategories, CATALOG_FALLBACK.constructionCategories);
+async function loadCatalogData() {
+  try {
+    const body = await api("/catalog");
+    catalogData = normalizeCatalogData(body.data || body);
+  } catch (error) {
+    console.warn("Cannot load catalog", error);
+    catalogData = normalizeCatalogData(catalogData);
+  }
+  return catalogData;
+}
+async function saveCatalogData(data) {
+  const body = await api("/catalog", {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ data: normalizeCatalogData(data) })
+  });
+  catalogData = normalizeCatalogData(body.data || data);
+  return catalogData;
+}
+const plainVietnamese = (value) => String(value || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/đ/g, "d").replace(/Đ/g, "D").toLocaleLowerCase("vi").replace(/\s+/g, " ").trim();
+const MATERIAL_CATEGORY_ALIASES = new Map([
+  ["Vật liệu", "VẬT LIỆU HOÀN THIỆN"],
+  ["Vật liệu xây dựng", "VẬT LIỆU HOÀN THIỆN"],
+  ["Xây dựng", "VẬT LIỆU HOÀN THIỆN"],
+  ["Kết cấu", "VẬT LIỆU HOÀN THIỆN"],
+  ["Vật liệu hoàn thiện", "VẬT LIỆU HOÀN THIỆN"],
+  ["Hoàn thiện", "VẬT LIỆU HOÀN THIỆN"],
+  ["Gạch", "VẬT LIỆU HOÀN THIỆN"],
+  ["Đá", "VẬT LIỆU HOÀN THIỆN"],
+  ["Sơn", "VẬT LIỆU HOÀN THIỆN"],
+  ["Sơn và chống thấm", "VẬT LIỆU HOÀN THIỆN"],
+  ["Thiết bị", "THIẾT BỊ CHIẾU SÁNG"],
+  ["Thiết bị công trình", "THIẾT BỊ CHIẾU SÁNG"],
+  ["Cơ điện", "THIẾT BỊ CHIẾU SÁNG"],
+  ["Đèn", "THIẾT BỊ CHIẾU SÁNG"],
+  ["Đèn trang trí", "ĐÈN DECOR"],
+  ["Đồ nội thất", "PHỤ KIỆN ĐỒ NỘI THẤT"],
+  ["Nội thất", "PHỤ KIỆN ĐỒ NỘI THẤT"],
+  ["Decor", "ĐỒ DECOR"],
+  ["Đồ decor", "ĐỒ DECOR"],
+  ["Đồ décor", "ĐỒ DECOR"],
+  ["Đồ trang trí", "ĐỒ DECOR"],
+  ["Đồ Bếp", "ĐỒ DECOR BẾP"],
+  ["Bếp", "THIẾT BỊ BẾP"],
+  ["Đồ thủ công", "ĐỒ THỦ CÔNG"],
+  ["Thủ công", "ĐỒ THỦ CÔNG"],
+  ["Rèm", "KHÁC"],
+  ["Mành rèm", "KHÁC"],
+  ["Chăn Ga Đệm", "CHĂN GA ĐỆM"],
+  ["Chăn ga gối đệm", "CHĂN GA ĐỆM"]
+].map(([alias, category]) => [plainVietnamese(alias), category]));
+const materialCategoryOrder = (category) => {
+  const options = materialCategoryOptions();
+  const index = options.indexOf(category);
+  return index >= 0 ? index : options.length;
+};
+function normalizeMaterialCategory(value) {
+  const cleaned = String(value || "").replace(/\s*\+\d+\s*$/u, "").trim();
+  if (!cleaned) return "";
+  const aliased = MATERIAL_CATEGORY_ALIASES.get(plainVietnamese(cleaned)) || cleaned;
+  return materialCategoryOptions().find((option) => plainVietnamese(option) === plainVietnamese(aliased)) || aliased;
+}
+function sortMaterialCategories(categories) {
+  return [...new Set(categories.map(normalizeMaterialCategory).filter(Boolean))]
+    .sort((a, b) => materialCategoryOrder(a) - materialCategoryOrder(b) || a.localeCompare(b, "vi", { sensitivity: "base" }));
+}
+const DIRECTORY_COLUMN_STORAGE = "ledome.directoryColumnWidths.v3";
+const DIRECTORY_DEFAULT_WIDTHS = [80, 230, 160, 130, 150, 135, 135, 190, 280, 72];
+const DIRECTORY_SUPPLIER_WIDTHS = [190, 230, 155, 130, 135, 135, 190, 310, 72];
 const DIRECTORY_AUTO_WIDTH_RULES = [
-  [64, 92], [130, 320], [120, 240], [120, 230], [90, 125], [110, 260],
+  [64, 92], [130, 320], [120, 240], [120, 230], [110, 260],
   [120, 150], [120, 150], [140, 320], [220, 680], [72, 72]
 ];
 const DIRECTORY_SUPPLIER_AUTO_WIDTH_RULES = [
-  [150, 360], [70, 100], [130, 320], [120, 240], [120, 230], [90, 125],
+  [150, 360], [130, 320], [120, 240], [120, 230],
   [120, 150], [120, 150], [140, 320], [220, 680], [72, 72]
 ];
 const directoryColumnKey = (type) => type === "suppliers" ? `${DIRECTORY_COLUMN_STORAGE}.${type}.categoryFirst` : `${DIRECTORY_COLUMN_STORAGE}.${type}`;
@@ -484,19 +567,19 @@ function bindDirectoryColumnResize(type) {
 function supplierCategoryParts(value) {
   return String(value || "")
     .replace(/\s*\+\d+\s*$/u, "")
-    .split(",")
-    .map((item) => item.trim())
+    .split(/[,\n;]/u)
+    .map(normalizeMaterialCategory)
     .filter(Boolean);
 }
 
 function supplierNoteCategories(note) {
   return [...String(note || "").matchAll(/^Nguồn:\s*(.+)$/gimu)]
-    .map((match) => match[1].trim())
+    .map((match) => normalizeMaterialCategory(match[1]))
     .filter(Boolean);
 }
 
 function supplierCategories(row) {
-  return [...new Set([...supplierCategoryParts(row[5]), ...supplierNoteCategories(row[9])])];
+  return sortMaterialCategories([...supplierCategoryParts(row[5]), ...supplierNoteCategories(row[9])]);
 }
 
 function supplierDisplayCategory(row) {
@@ -508,8 +591,23 @@ function supplierPrimaryCategory(row) {
 }
 
 function supplierCategoryOptions(rows) {
-  const categories = [...new Set(rows.flatMap(supplierCategories))].sort((a, b) => a.localeCompare(b, "vi", { sensitivity: "base" }));
+  const categories = sortMaterialCategories([...materialCategoryOptions(), ...rows.flatMap(supplierCategories)]);
   return ["Tất cả", ...categories];
+}
+
+function supplierCategoryFieldMarkup() {
+  return `<fieldset class="directory-multi directory-form-wide"><legend>Hạng mục vật tư</legend><div class="directory-check-list">${materialCategoryOptions().map((option) => `<label class="directory-check"><input type="checkbox" name="supplierCategories" value="${escapeHtml(option)}"><span>${escapeHtml(option)}</span></label>`).join("")}</div></fieldset>`;
+}
+
+function setSupplierCategoryChecks(form, categories = []) {
+  const selected = new Set(sortMaterialCategories(categories));
+  form.querySelectorAll('input[name="supplierCategories"]').forEach((input) => {
+    input.checked = selected.has(input.value);
+  });
+}
+
+function supplierSelectedFormCategories(form) {
+  return sortMaterialCategories([...form.querySelectorAll('input[name="supplierCategories"]:checked')].map((input) => input.value));
 }
 
 function directoryFilterMarkup(type, supplierOptions = []) {
@@ -519,9 +617,9 @@ function directoryFilterMarkup(type, supplierOptions = []) {
 
 function directoryRowMarkup(type, row) {
   if (type === "suppliers") {
-    return `<tr><td>${escapeHtml(supplierDisplayCategory(row))}</td><td><b>${escapeHtml(row[0])}</b></td><td>${escapeHtml(row[1])}</td><td>${escapeHtml(row[2])}</td><td>${escapeHtml(row[3])}</td><td><i class="directory-status ${crmStatusClass(row[4])}">${escapeHtml(row[4])}</i></td><td class="directory-money">${money(row[6])}</td><td class="directory-money">${money(row[7])}</td><td>${crmProjects(row[8])}</td><td class="directory-note" title="${escapeHtml(row[9])}">${escapeHtml(row[9])}</td><td class="directory-actions"><button title="Chỉnh sửa" data-directory="edit" data-code="${escapeHtml(row[0])}">✎</button><button title="Xóa" data-directory="delete" data-code="${escapeHtml(row[0])}">×</button></td></tr>`;
+    return `<tr><td>${escapeHtml(supplierDisplayCategory(row))}</td><td>${escapeHtml(row[1])}</td><td>${escapeHtml(row[2])}</td><td>${escapeHtml(row[3])}</td><td class="directory-money">${money(row[6])}</td><td class="directory-money">${money(row[7])}</td><td>${crmProjects(row[8])}</td><td class="directory-note" title="${escapeHtml(row[9])}">${escapeHtml(row[9])}</td><td class="directory-actions"><button title="Chỉnh sửa" data-directory="edit" data-code="${escapeHtml(row[0])}">✎</button><button title="Xóa" data-directory="delete" data-code="${escapeHtml(row[0])}">×</button></td></tr>`;
   }
-  return `<tr><td><b>${escapeHtml(row[0])}</b></td><td>${escapeHtml(row[1])}</td><td>${escapeHtml(row[2])}</td><td>${escapeHtml(row[3])}</td><td><i class="directory-status ${crmStatusClass(row[4])}">${escapeHtml(row[4])}</i></td><td>${escapeHtml(row[5])}</td><td class="directory-money">${money(row[6])}</td><td class="directory-money">${money(row[7])}</td><td>${crmProjects(row[8])}</td><td class="directory-note" title="${escapeHtml(row[9])}">${escapeHtml(row[9])}</td><td class="directory-actions"><button title="Chỉnh sửa" data-directory="edit" data-code="${escapeHtml(row[0])}">✎</button><button title="Xóa" data-directory="delete" data-code="${escapeHtml(row[0])}">×</button></td></tr>`;
+  return `<tr><td><b>${escapeHtml(row[0])}</b></td><td>${escapeHtml(row[1])}</td><td>${escapeHtml(row[2])}</td><td>${escapeHtml(row[3])}</td><td>${escapeHtml(row[5])}</td><td class="directory-money">${money(row[6])}</td><td class="directory-money">${money(row[7])}</td><td>${crmProjects(row[8])}</td><td class="directory-note" title="${escapeHtml(row[9])}">${escapeHtml(row[9])}</td><td class="directory-actions"><button title="Chỉnh sửa" data-directory="edit" data-code="${escapeHtml(row[0])}">✎</button><button title="Xóa" data-directory="delete" data-code="${escapeHtml(row[0])}">×</button></td></tr>`;
 }
 
 async function loadPartnerRows(type) {
@@ -545,14 +643,15 @@ async function savePartnerRows(type) {
 
 async function crmDirectory(type) {
   const config = CRM_DIRECTORY[type];
-  await loadPartnerRows(type);
   const isSupplier = type === "suppliers";
+  if (isSupplier || type === "contractors") await loadCatalogData();
+  await loadPartnerRows(type);
   const groupLabel = type === "customers" ? "Khu vực" : "Hạng mục";
   const supplierOptions = isSupplier ? supplierCategoryOptions(config.rows) : [];
   if (isSupplier && state.crmSupplierCategory !== "Tất cả" && !supplierOptions.includes(state.crmSupplierCategory)) state.crmSupplierCategory = "Tất cả";
   const headers = isSupplier
-    ? ["Hạng mục", "Mã NCC", `Tên ${config.singular}`, "Người liên hệ", "Số điện thoại", "Trạng thái", "Công nợ phải thu", "Công nợ phải trả", "Tên dự án", "Ghi chú", ""]
-    : ["Mã", `Tên ${config.singular}`, "Người liên hệ", "Số điện thoại", "Trạng thái", groupLabel, "Công nợ phải thu", "Công nợ phải trả", "Tên dự án", "Ghi chú", ""];
+    ? ["Hạng mục", `Tên ${config.singular}`, "Người liên hệ", "Số điện thoại", "Công nợ phải thu", "Công nợ phải trả", "Tên dự án", "Ghi chú", ""]
+    : ["Mã", `Tên ${config.singular}`, "Người liên hệ", "Số điện thoại", groupLabel, "Công nợ phải thu", "Công nợ phải trả", "Tên dự án", "Ghi chú", ""];
   const query = state.crmQuery.toLocaleLowerCase("vi");
   const rows = config.rows
     .filter((row) => {
@@ -570,15 +669,20 @@ async function crmDirectory(type) {
     <div class="directory-summary"><article><small>Tổng số</small><b>${config.rows.length}</b><span>${config.title.toLowerCase()} đã lưu</span></article><article><small>Đang hợp tác</small><b>${config.rows.filter((x) => x[4] === "Đang hợp tác").length}</b><span>Đang hoạt động</span></article><article><small>Tiềm năng</small><b>${config.rows.filter((x) => x[4] === "Tiềm năng").length}</b><span>Cần tiếp tục theo dõi</span></article></div>
     <div class="directory-tools"><input id="directory-search" value="${escapeHtml(state.crmQuery)}" placeholder="⌕ Tìm theo mã, tên hoặc người liên hệ">${directoryFilterMarkup(type, supplierOptions)}<button class="directory-auto-fit" data-directory="auto-fit">Tự xếp</button><button data-directory="add">＋ Thêm mới</button></div>
     <div class="directory-table-wrap"><table class="directory-table directory-table-wide directory-resizable-table" data-directory-table="${type}">${directoryColumnMarkup(type, headers.length)}<thead><tr>${directoryHeaderMarkup(headers)}</tr></thead><tbody>${rows.map((row) => directoryRowMarkup(type, row)).join("")}</tbody></table></div>
-    <div class="directory-empty ${rows.length ? "" : "open"}">Không tìm thấy dữ liệu phù hợp.</div>${crmDirectoryModal(config, groupLabel)}
+    <div class="directory-empty ${rows.length ? "" : "open"}">Không tìm thấy dữ liệu phù hợp.</div>${crmDirectoryModal(config, groupLabel, type)}
   </section>`;
   $("#directory-filter").value = isSupplier ? state.crmSupplierCategory : state.crmStatus;
   bindCrmDirectory(type);
   bindDirectoryColumnResize(type);
 }
 
-function crmDirectoryModal(config, groupLabel = "Nhóm") {
-  return `<div class="directory-modal" id="directory-modal"><form id="directory-form"><header><h3 id="directory-modal-title">Thêm ${config.singular}</h3><button type="button" data-directory="close">×</button></header><input type="hidden" name="currentCode"><label>Mã<input name="code" required></label><label>Tên ${config.singular}<input name="name" required placeholder="Nhập tên"></label><label>Người liên hệ<input name="contact" required placeholder="Nhập họ tên"></label><label>Số điện thoại<input name="phone" placeholder="Nhập số điện thoại"></label><label>Trạng thái<select name="status"><option>Đang hợp tác</option><option>Tiềm năng</option><option>Tạm ngưng</option></select></label><label>${groupLabel}<input name="group" placeholder="Nhập ${groupLabel.toLowerCase()}"></label><label>Công nợ phải thu<input name="receivable" inputmode="numeric" data-money-input placeholder="0"></label><label>Công nợ phải trả<input name="payable" inputmode="numeric" data-money-input placeholder="0"></label><label class="directory-form-wide">Tên dự án<input name="projects" placeholder="Nhập nhiều dự án, phân cách bằng dấu phẩy"></label><label class="directory-form-wide">Ghi chú<textarea name="note" placeholder="Nhập ghi chú"></textarea></label><footer><button type="button" class="btn secondary" data-directory="close">Đóng</button><button class="btn">Lưu</button></footer></form></div>`;
+function crmDirectoryModal(config, groupLabel = "Nhóm", type = "") {
+  const groupField = type === "suppliers"
+    ? supplierCategoryFieldMarkup()
+    : type === "contractors"
+      ? `<label>${groupLabel}<select name="group">${constructionCategoryOptions().map((option) => `<option>${escapeHtml(option)}</option>`).join("")}</select></label>`
+      : `<label>${groupLabel}<input name="group" placeholder="Nhập ${groupLabel.toLowerCase()}"></label>`;
+  return `<div class="directory-modal" id="directory-modal"><form id="directory-form"><header><h3 id="directory-modal-title">Thêm ${config.singular}</h3><button type="button" data-directory="close">×</button></header><input type="hidden" name="currentCode"><label>Mã<input name="code" required></label><label>Tên ${config.singular}<input name="name" required placeholder="Nhập tên"></label><label>Người liên hệ<input name="contact" required placeholder="Nhập họ tên"></label><label>Số điện thoại<input name="phone" placeholder="Nhập số điện thoại"></label><label>Trạng thái<select name="status"><option>Đang hợp tác</option><option>Tiềm năng</option><option>Tạm ngưng</option></select></label>${groupField}<label>Công nợ phải thu<input name="receivable" inputmode="numeric" data-money-input placeholder="0"></label><label>Công nợ phải trả<input name="payable" inputmode="numeric" data-money-input placeholder="0"></label><label class="directory-form-wide">Tên dự án<input name="projects" placeholder="Nhập nhiều dự án, phân cách bằng dấu phẩy"></label><label class="directory-form-wide">Ghi chú<textarea name="note" placeholder="Nhập ghi chú"></textarea></label><footer><button type="button" class="btn secondary" data-directory="close">Đóng</button><button class="btn">Lưu</button></footer></form></div>`;
 }
 
 function bindCrmDirectory(type) {
@@ -605,7 +709,9 @@ function bindCrmDirectory(type) {
     if (action === "auto-fit") return directoryAutoFitColumns(type);
     if (action === "add") {
       form.reset();
+      form.elements.currentCode.value = "";
       form.elements.code.value = `${config.code}${String(config.rows.length + 1).padStart(3, "0")}`;
+      if (isSupplier) setSupplierCategoryChecks(form, []);
       $("#directory-modal-title").textContent = `Thêm ${config.singular}`;
       return modal.classList.add("open");
     }
@@ -619,7 +725,9 @@ function bindCrmDirectory(type) {
     }
     if (action === "edit" && index >= 0) {
       const row = config.rows[index];
-      ["code","name","contact","phone","status","group","receivable","payable"].forEach((name, i) => { form.elements[name].value = row[i]; });
+      ["code","name","contact","phone","status"].forEach((name, i) => { form.elements[name].value = row[i]; });
+      if (isSupplier) setSupplierCategoryChecks(form, supplierCategories(row));
+      else form.elements.group.value = row[5];
       form.elements.receivable.value = moneyInput(row[6]);
       form.elements.payable.value = moneyInput(row[7]);
       form.elements.projects.value = row[8].join(", ");
@@ -632,7 +740,12 @@ function bindCrmDirectory(type) {
   form.onsubmit = async (event) => {
     event.preventDefault();
     const data = Object.fromEntries(new FormData(form));
-    const row = [data.code, data.name, data.contact, data.phone, data.status, data.group, parseMoneyInput(data.receivable), parseMoneyInput(data.payable), data.projects.split(",").map((project) => project.trim()).filter(Boolean), data.note];
+    const categories = isSupplier ? supplierSelectedFormCategories(form) : [];
+    if (isSupplier && !categories.length) {
+      alert("Chọn ít nhất một hạng mục vật tư cho nhà cung cấp.");
+      return;
+    }
+    const row = [data.code, data.name, data.contact, data.phone, data.status, isSupplier ? categories.join(", ") : data.group, parseMoneyInput(data.receivable), parseMoneyInput(data.payable), data.projects.split(",").map((project) => project.trim()).filter(Boolean), data.note];
     const index = config.rows.findIndex((item) => item[0] === data.currentCode);
     if (index >= 0) config.rows[index] = row;
     else config.rows.unshift(row);

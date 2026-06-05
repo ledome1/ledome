@@ -29,6 +29,7 @@ const technicalMetaFile = dataPath("runtime-technical-meta.json");
 const accountsFile = dataPath("runtime-accounts.json");
 const diaryReportsFile = dataPath("runtime-diary-reports.json");
 const partnersFile = dataPath("runtime-partners.json");
+const catalogFile = dataPath("runtime-catalog.json");
 const financeFile = dataPath("runtime-finance.json");
 const personalFinanceFile = dataPath("runtime-personal-finance.json");
 const driveFile = dataPath("runtime-drive.json");
@@ -836,6 +837,64 @@ function saveDebtData(type, projectId, data) {
   writeJsonAtomic(debtProjectFile(type, projectId), data);
 }
 
+const catalogSeed = {
+  constructionCategories: [
+    "KHẢO SÁT - ĐO ĐẠC",
+    "CHE PHỦ",
+    "PHÁ DỠ",
+    "VẬN CHUYỂN",
+    "XÂY TRÁT",
+    "CHỐNG THẤM",
+    "ĐIỆN NƯỚC",
+    "PCCC / AN TOÀN KỸ THUẬT",
+    "ĐIỀU HÒA",
+    "THIẾT BỊ THÔNG MINH - MẠNG - CAMERA",
+    "THẠCH CAO",
+    "ỐP LÁT",
+    "ĐÁ",
+    "SƠN BẢ",
+    "SÀN GỖ - SÀN NHỰA",
+    "CỬA",
+    "NHÔM KÍNH",
+    "SẮT",
+    "GỖ NỘI THẤT",
+    "RÈM",
+    "CÂY - TIỂU CẢNH",
+    "BIỂN BẢNG LOGO",
+    "DEFECT CHẤM VÁ",
+    "VỆ SINH CN",
+    "KHÁC"
+  ],
+  materialCategories: [
+    "VẬT LIỆU HOÀN THIỆN",
+    "PHỤ KIỆN ĐỒ NỘI THẤT",
+    "THIẾT BỊ CHIẾU SÁNG",
+    "THIẾT BỊ BẾP",
+    "THIẾT BỊ VỆ SINH",
+    "ĐÈN DECOR",
+    "ĐỒ DECOR",
+    "ĐỒ DECOR BẾP",
+    "CHĂN GA ĐỆM",
+    "ĐỒ THỦ CÔNG",
+    "KHÁC"
+  ]
+};
+
+function catalogList(input, fallback) {
+  const source = Array.isArray(input) ? input : fallback;
+  return [...new Set(source.map((item) => String(item || "").trim()).filter(Boolean))];
+}
+
+function normalizeCatalog(input = {}) {
+  return {
+    constructionCategories: catalogList(input.constructionCategories, catalogSeed.constructionCategories),
+    materialCategories: catalogList(input.materialCategories, catalogSeed.materialCategories)
+  };
+}
+
+function readCatalog() { return normalizeCatalog(readJsonFile(catalogFile, catalogSeed)); }
+function writeCatalog(data) { writeJsonAtomic(catalogFile, normalizeCatalog(data)); }
+
 const partnersSeed = {
   customers: [
     ["KH001","Công ty CP Đầu tư An Phú","Nguyễn Minh Anh","0901 234 567","Đang hợp tác","Hà Nội",1850000000,320000000,["Green City","Le Dome Office"],"Ưu tiên đối soát cuối tháng"],
@@ -974,6 +1033,21 @@ function api(req, res, pathname) {
   if (pathname === "/api/v1/admin/backups" && req.method === "GET") {
     if (!requireAccount(req, res, "config.accounts")) return;
     return json(res, 200, { data: listBackups() });
+  }
+  if (pathname === "/api/v1/catalog") {
+    if (req.method === "GET") {
+      if (!requireAccount(req, res)) return;
+      return json(res, 200, { data: readCatalog() });
+    }
+    if (req.method === "PATCH") {
+      if (!requireAccount(req, res, "config")) return;
+      return readJson(req, (error, input) => {
+        if (error) return json(res, 400, { error: error.message });
+        const data = normalizeCatalog(input.data || input);
+        writeCatalog(data);
+        return json(res, 200, { data });
+      });
+    }
   }
   const partnerMatch = pathname.match(/^\/api\/v1\/partners\/(customers|contractors|suppliers)$/);
   if (partnerMatch) {
