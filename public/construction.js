@@ -1,4 +1,4 @@
-document.head.insertAdjacentHTML("beforeend",'<link rel="stylesheet" href="/construction-overrides.css?v=120">');
+document.head.insertAdjacentHTML("beforeend",'<link rel="stylesheet" href="/construction-overrides.css?v=139">');
 document.head.insertAdjacentHTML("beforeend",'<link rel="stylesheet" href="/construction-gantt.css?v=110">');
 const fmt=(v)=>new Intl.NumberFormat("vi-VN").format(v||0);
 const id=location.pathname.split("/").filter(Boolean).pop();
@@ -12,6 +12,24 @@ const companyPeople=["DINH Cong Hoang","Bùi Xuân Dũng","Nguyễn Hoàng Hải
 const projectTypeOptions=["Nội thất","Kiến trúc","Nội thất kiến trúc","Khác"];
 const projectBuildingTypeOptions=["Căn hộ","Nhà phố","Biệt thự","Homestay","Nhà hàng","Quán cafe","Bar","Văn phòng","Khác"];
 const projectGroupOptions=["Thiết kế","Thi công","Thiết kế Thi công"];
+const projectStageModeOptions=[{value:"auto",label:"Tự động theo tiến độ"},{value:"manual",label:"Chọn tay"}];
+const projectLifecycleStages=[
+  {id:"lead-intake",label:"Nhận thông tin",desc:"Tiếp nhận nhu cầu từ khách hàng"},
+  {id:"brief",label:"Làm rõ nhu cầu",desc:"Xác định phạm vi, ngân sách, mong muốn"},
+  {id:"survey",label:"Khảo sát hiện trạng",desc:"Đo đạc, chụp ảnh, lấy input hiện trạng"},
+  {id:"proposal",label:"Đề xuất phương án",desc:"Tư vấn hướng triển khai và báo giá sơ bộ"},
+  {id:"design-contract",label:"Hợp đồng thiết kế",desc:"Chốt phạm vi thiết kế, tạm ứng, lịch làm việc"},
+  {id:"concept",label:"Concept / mặt bằng",desc:"Mặt bằng công năng và định hướng concept"},
+  {id:"design-3d",label:"Thiết kế 3D",desc:"Phối cảnh, vật liệu, màu sắc, ánh sáng"},
+  {id:"technical",label:"Hồ sơ kỹ thuật",desc:"Bản vẽ thi công, cấu tạo, chi tiết kỹ thuật"},
+  {id:"quote",label:"Báo giá thi công",desc:"Bóc tách khối lượng, dự toán, báo giá gửi CDT"},
+  {id:"construction-contract",label:"Hợp đồng thi công",desc:"Chốt hợp đồng, tiến độ, thanh toán"},
+  {id:"mobilization",label:"Chuẩn bị thi công",desc:"Mặt bằng, nhân lực, vật tư, nhà thầu"},
+  {id:"execution",label:"Triển khai thi công",desc:"Thi công phần thô, M&E, các hạng mục chính"},
+  {id:"finishing",label:"Hoàn thiện / lắp đặt",desc:"Hoàn thiện bề mặt, nội thất, thiết bị"},
+  {id:"acceptance",label:"Nghiệm thu bàn giao",desc:"Nghiệm thu, xử lý tồn đọng, bàn giao"},
+  {id:"final-settlement",label:"Quyết toán",desc:"Đối soát phát sinh, công nợ và hồ sơ quyết toán"}
+];
 const money=(label,value)=>`<div><span>${label}</span><b>${fmt(value)}</b></div>`;
 const empty=(text,icon="⚒")=>`<div class="empty-block"><b>${icon}</b><span>${text}</span></div>`;
 const materialRows=[["Bê tông C10","0","105","25"],["Bê tông C10 độ sụt 12+-2","0","234","233"],["đồ bảo hộ","0","100","70"],["mũ","0","100","100"],["Cát","0","10.001","999"]];
@@ -88,16 +106,47 @@ function currentLoginId(){return currentSession()?.loginId||"HoangDinh"}
 function accountLevel(){const session=currentSession(),login=String(session?.loginId||"HoangDinh").trim().toLowerCase();return staffLevelOverrides[session?.staffCode]||accountLevels[login]||3}
 function canEditProjectInfo(){return accountLevel()<=2}
 function projectInfoValue(project,key,fallback){return project[key]||fallback}
-function projectInfoCard(p,progress,budget,spent){
-  const planProgress=Math.min(100,progress+4),canEdit=canEditProjectInfo();
-  const info=[
-    ["Mã dự án",projectInfoValue(p,"code",id)],["Phạm vi",projectInfoValue(p,"type","Nội thất")],["Loại hình",projectInfoValue(p,"buildingType","Căn hộ")],["Chủ đầu tư",projectInfoValue(p,"owner","Le Dome")],
-    ["Khách hàng",projectInfoValue(p,"client","Chưa cập nhật")],["Địa điểm",projectInfoValue(p,"location","Chưa cập nhật")],["Giám đốc dự án",projectInfoValue(p,"manager","Chưa phân công")],["Chỉ huy trưởng",projectInfoValue(p,"commander","Chưa phân công")],
-    ["QS phụ trách",projectInfoValue(p,"qs","Chưa phân công")],["Ngày bắt đầu",projectInfoValue(p,"startDate","01/02/2023")],["Ngày kết thúc",projectInfoValue(p,"endDate","11/07/2023")],
-    ["Thời gian",projectInfoValue(p,"duration","161 ngày")],["Trạng thái",projectInfoValue(p,"status","Kế hoạch")],["Ngân sách",fmt(budget)]
-  ];
-  return `<section class="project-summary project-info box"><header><div><h2>${p.name}</h2><p><i></i>${projectInfoValue(p,"status","Kế hoạch")} · ${projectInfoValue(p,"health","Bình thường")}</p></div><div class="project-permission"><button data-project-edit class="${canEdit?"":"readonly"}">Sửa thông tin</button></div></header><small>${projectInfoValue(p,"description","Theo dõi tổng thể tiến độ, tài chính và nguồn lực dự án.")}</small><div class="project-info-grid">${info.map(([label,value])=>`<p><span>${label}</span><b>${value}</b></p>`).join("")}</div></section>`;
+function projectStageOptions(){return projectLifecycleStages.map(stage=>({value:stage.id,label:`${stage.label} - ${stage.desc}`}))}
+function projectStageIndex(stageId){return Math.max(0,projectLifecycleStages.findIndex(stage=>stage.id===stageId))}
+function projectAutoStageId(project,progress=0){
+  const group=textKey(projectInfoValue(project,"group","Thi công"));
+  const status=textKey(projectInfoValue(project,"status",""));
+  if(status.includes("hoan thanh")||Number(progress)>=98)return "final-settlement";
+  const value=Math.max(0,Math.min(100,Number(progress)||0));
+  const hasConstruction=group.includes("thi cong")||!group.includes("thiet ke");
+  const thresholds=hasConstruction
+    ? [[0,"lead-intake"],[5,"brief"],[10,"survey"],[15,"proposal"],[20,"design-contract"],[28,"concept"],[36,"design-3d"],[45,"technical"],[52,"quote"],[58,"construction-contract"],[64,"mobilization"],[72,"execution"],[84,"finishing"],[93,"acceptance"],[98,"final-settlement"]]
+    : [[0,"lead-intake"],[8,"brief"],[16,"survey"],[24,"proposal"],[32,"design-contract"],[44,"concept"],[58,"design-3d"],[74,"technical"],[90,"acceptance"],[98,"final-settlement"]];
+  return thresholds.reduce((current,[min,stage])=>value>=min?stage:current,thresholds[0][1]);
 }
+function projectCurrentStageId(project,progress){
+  const manual=project.projectStageMode==="manual"&&projectLifecycleStages.some(stage=>stage.id===project.projectStage);
+  return manual?project.projectStage:projectAutoStageId(project,progress);
+}
+function projectLifecycleCard(project,progress,canEdit){
+  const currentId=projectCurrentStageId(project,progress);
+  const currentIndex=projectStageIndex(currentId);
+  const mode=project.projectStageMode==="manual"?"Ch\u1ecdn tay":"T\u1ef1 \u0111\u1ed9ng theo ti\u1ebfn \u0111\u1ed9";
+  return `<section class="project-stage-control"><header><div><h3>Qu\u1ea3n l\u00fd giai \u0111o\u1ea1n</h3><p>Theo d\u00f5i quy tr\u00ecnh t\u1eeb nh\u1eadn th\u00f4ng tin, thi\u1ebft k\u1ebf, thi c\u00f4ng \u0111\u1ebfn quy\u1ebft to\u00e1n.</p></div><span>${mode}</span></header><div class="project-stage-track" style="--stage-percent:${currentIndex*100/Math.max(1,projectLifecycleStages.length-1)}%">${projectLifecycleStages.map((stage,index)=>{const state=index<currentIndex?"done":index===currentIndex?"active":"upcoming";return `<button type="button" class="${state}" data-project-stage="${stage.id}" ${canEdit?"":"disabled"} title="${stage.desc}"><b>${String(index+1).padStart(2,"0")}</b><span>${stage.label}</span><small>${stage.desc}</small></button>`}).join("")}</div></section>`;
+}
+function projectInfoCard(p,progress,budget,spent){
+  const canEdit=canEditProjectInfo(),disabled="disabled",readonly="readonly";
+  const esc=(value)=>String(value??"").replaceAll("&","&amp;").replaceAll('"',"&quot;").replaceAll("<","&lt;");
+  const inputField=(key,label,value,wide=false,attrs="")=>`<label class="${wide?"wide":""}"><span>${label}</span><input name="${key}" value="${esc(value)}" ${attrs} ${readonly}></label>`;
+  const selectField=(key,label,value,options,wide=false)=>`<label class="${wide?"wide":""}"><span>${label}</span><select name="${key}" ${disabled}>${options.map(option=>{const optionValue=typeof option==="string"?option:option.value,optionLabel=typeof option==="string"?option:option.label;return `<option value="${esc(optionValue)}" ${optionValue===value?"selected":""}>${optionLabel}</option>`}).join("")}</select></label>`;
+  const otherLabel="Kh\u00e1c";
+  const staffField=(key,label,value)=>{const current=value||"",isKnown=companyPeople.includes(current),selected=isKnown?current:"Kh\u00e1c",otherValue=isKnown?"":current;if(!canEdit){return `<label><span>${label}</span><b>${current||""}</b></label>`;}return `<label class="staff-select"><span>${label}</span><select name="${key}" data-staff-select><option value=""></option>${companyPeople.map(person=>`<option value="${esc(person)}" ${person===selected?"selected":""}>${person}</option>`).join("")}<option value="Kh\u00e1c" ${selected==="Kh\u00e1c"?"selected":""}>Kh\u00e1c</option></select><input name="${key}Other" data-staff-other value="${esc(otherValue)}" placeholder="" ${selected==="Kh\u00e1c"?"":"hidden"}></label>`;};
+  const status=projectInfoValue(p,"status","K\u1ebf ho\u1ea1ch"),health=projectInfoValue(p,"health","B\u00ecnh th\u01b0\u1eddng");
+  return `<section class="project-summary project-info project-info-inline box" data-project-info-inline>
+    <header><div><h2>${esc(p.name)}</h2><p><i></i>${status} - ${health}</p></div><div class="project-info-actions">${canEdit?`<button data-project-info-save disabled>L\u01b0u th\u00f4ng tin</button><button data-project-info-edit>Thay \u0111\u1ed5i</button>`:`<span>Ch\u1ec9 xem</span>`}</div></header>
+    <form class="project-info-inline-form">
+      <fieldset class="identity"><legend>Nh\u1eadn di\u1ec7n d\u1ef1 \u00e1n</legend>${inputField("name","T\u00ean d\u1ef1 \u00e1n",p.name,true)}${inputField("code","M\u00e3 d\u1ef1 \u00e1n",p.code||id)}${inputField("owner","Ch\u1ee7 \u0111\u1ea7u t\u01b0",p.owner||"Le Dome")}${inputField("location","\u0110\u1ecba \u0111i\u1ec3m",p.location||"",true)}</fieldset>
+      <fieldset class="classification"><legend>Ph\u00e2n lo\u1ea1i</legend>${selectField("type","Ph\u1ea1m vi",p.type||"N\u1ed9i th\u1ea5t",projectTypeOptions)}${selectField("buildingType","Lo\u1ea1i h\u00ecnh",p.buildingType||"C\u0103n h\u1ed9",projectBuildingTypeOptions)}${selectField("group","Nh\u00f3m d\u1ef1 \u00e1n",p.group||"Thi c\u00f4ng",projectGroupOptions)}<p><span>Tr\u1ea1ng th\u00e1i</span><b>${status}</b></p><p><span>T\u00ecnh tr\u1ea1ng</span><b>${health}</b></p></fieldset>
+      <fieldset class="people"><legend>Nh\u00e2n s\u1ef1 ph\u1ee5 tr\u00e1ch</legend>${staffField("manager","Gi\u00e1m \u0111\u1ed1c d\u1ef1 \u00e1n",p.manager||"")}${staffField("commander","Ch\u1ec9 huy tr\u01b0\u1edfng",p.commander||"")}${staffField("qs","Gi\u00e1m s\u00e1t d\u1ef1 \u00e1n",p.qs||"")}${staffField("accountant","K\u1ebf to\u00e1n d\u1ef1 \u00e1n",p.accountant||"")}</fieldset>
+      <fieldset class="timeline"><legend>Th\u1eddi gian</legend>${inputField("startDate","Ng\u00e0y b\u1eaft \u0111\u1ea7u",p.startDate||"01/02/2023",false,"data-popup-date readonly")}<p><span>Ng\u00e0y k\u1ebft th\u00fac</span><b>${projectInfoValue(p,"endDate","11/07/2023")}</b></p><p><span>Th\u1eddi gian</span><b>${projectInfoValue(p,"duration","161 ng\u00e0y")}</b></p></fieldset>
+    </form>${projectLifecycleCard(p,progress,false)}</section>`;
+}
+
 function organizeProjectOverview(){
   const app=document.querySelector("#project-app");
   const overview=document.createElement("div");
@@ -106,8 +155,8 @@ function organizeProjectOverview(){
     ["quick-zone","01","Truy c\u1eadp nhanh","M\u1edf nhanh c\u00e1c nghi\u1ec7p v\u1ee5 th\u01b0\u1eddng d\u00f9ng",[".quick"]],
     ["info-zone","02","Th\u00f4ng tin","Th\u00f4ng tin nh\u1eadn di\u1ec7n v\u00e0 nh\u00e2n s\u1ef1 ph\u1ee5 tr\u00e1ch d\u1ef1 \u00e1n",[".project-info"]],
     ["progress-zone","03","Ti\u1ebfn \u0111\u1ed9","Th\u1ed1ng k\u00ea nhanh ti\u1ebfn \u0111\u1ed9 thi c\u00f4ng v\u00e0 c\u00e1c task c\u1ea7n ch\u00fa \u00fd",[".schedule-overview"]],
-    ["finance-zone","04","D\u00f2ng ti\u1ec1n","T\u1ed5ng h\u1ee3p c\u00f4ng n\u1ee3 v\u00e0 c\u00e1c kho\u1ea3n chi g\u1ea7n nh\u1ea5t",[".finance-grid",".expense-quick"]],
-    ["request-zone","05","Y\u00eau c\u1ea7u & v\u1ea5n \u0111\u1ec1","Theo d\u00f5i c\u00e1c n\u1ed9i dung c\u1ea7n ph\u1ea3n h\u1ed3i, ph\u00ea duy\u1ec7t ho\u1eb7c x\u1eed l\u00fd",[".request-grid"]]
+    ["request-zone","04","Y\u00eau c\u1ea7u & v\u1ea5n \u0111\u1ec1","Theo d\u00f5i c\u00e1c n\u1ed9i dung c\u1ea7n ph\u1ea3n h\u1ed3i, ph\u00ea duy\u1ec7t ho\u1eb7c x\u1eed l\u00fd",[".request-grid"]],
+    ["finance-zone","05","D\u00f2ng ti\u1ec1n","T\u1ed5ng h\u1ee3p c\u00f4ng n\u1ee3 v\u00e0 c\u00e1c kho\u1ea3n chi g\u1ea7n nh\u1ea5t",[".finance-grid",".expense-quick"]]
   ];
   zones.forEach(([className,index,title,description,selectors])=>{
     const zone=document.createElement("section");
@@ -122,28 +171,79 @@ function organizeProjectOverview(){
   });
   app.prepend(overview);
 }
-function projectInfoModal(){
-  if(!canEditProjectInfo())return alert("Account hiện tại không có quyền sửa thông tin dự án.");
-  const p=currentProject;
-  const fields=[["name","Tên dự án",p.name],["code","Mã dự án",p.code||id],["type","Phạm vi",p.type||"Nội thất"],["buildingType","Loại hình",p.buildingType||"Căn hộ"],["group","Nhóm dự án",p.group||"Thi công"],["owner","Chủ đầu tư",p.owner||"Le Dome"],["client","Khách hàng",p.client||""],["location","Địa điểm",p.location||""],["manager","Giám đốc dự án",p.manager||""],["commander","Chỉ huy trưởng",p.commander||""],["qs","QS phụ trách",p.qs||""],["accountant","Kế toán dự án",p.accountant||""],["startDate","Ngày bắt đầu",p.startDate||"01/02/2023"]];
-  const esc=(value)=>String(value||"").replaceAll("&","&amp;").replaceAll('"',"&quot;").replaceAll("<","&lt;");
-  const selectField=(key,label,value,options)=>`<label><span>${label}</span><select name="${key}">${options.map(option=>`<option value="${esc(option)}" ${option===value?"selected":""}>${option}</option>`).join("")}</select></label>`;
-  const staffField=(key,label,value)=>{
-    const isKnown=companyPeople.includes(value),selected=isKnown?value:"Khác";
-    return `<label class="staff-select"><span>${label}</span><select name="${key}" data-staff-select>${companyPeople.map(person=>`<option value="${esc(person)}" ${person===selected?"selected":""}>${person}</option>`).join("")}<option value="Khác" ${selected==="Khác"?"selected":""}>Khác</option></select><input name="${key}Other" data-staff-other value="${isKnown?"":esc(value)}" placeholder="Nhập nhân sự khác" ${selected==="Khác"?"":"hidden"}></label>`;
-  };
-  const fieldHtml=fields.map(([key,label,value])=>{
-    if(key==="type")return selectField(key,label,value,projectTypeOptions);
-    if(key==="buildingType")return selectField(key,label,value,projectBuildingTypeOptions);
-    if(key==="group")return selectField(key,label,value,projectGroupOptions);
-    if(["manager","commander","qs","accountant"].includes(key))return staffField(key,label,value);
-    return `<label><span>${label}</span><input name="${key}" value="${esc(value)}" ${/date$/i.test(key)?"data-popup-date readonly":""}></label>`;
-  }).join("");
-  document.body.insertAdjacentHTML("beforeend",`<div class="cash-modal project-info-modal"><section><header><h2>Sửa thông tin dự án</h2><button data-project-info-close>×</button></header><div class="project-info-form">${fieldHtml}<label class="wide"><span>Mô tả</span><textarea name="description">${esc(p.description||"")}</textarea></label></div><footer><button data-project-info-close>Đóng</button><button data-project-info-save>Lưu thay đổi</button></footer></section></div>`);
-  document.querySelectorAll("[data-project-info-close]").forEach(x=>x.onclick=()=>document.querySelector(".project-info-modal").remove());
-  document.querySelectorAll("[data-staff-select]").forEach(select=>select.onchange=()=>{select.nextElementSibling.hidden=select.value!=="Khác"});
-  bindPopupDateFields(document.querySelector(".project-info-modal"));
-  document.querySelector("[data-project-info-save]").onclick=async()=>{const modal=document.querySelector(".project-info-modal"),next={};modal.querySelectorAll("input:not([data-staff-other]),select,textarea").forEach(input=>next[input.name]=input.value.trim());modal.querySelectorAll("[data-staff-select]").forEach(select=>{next[select.name]=select.value==="Khác"?select.nextElementSibling.value.trim():select.value});const response=await fetch(`/api/v1/projects/${id}`,{method:"PATCH",headers:{"content-type":"application/json"},body:JSON.stringify(next)});const saved=await response.json();if(!response.ok)return alert(saved.error||"Không thể lưu thông tin dự án");const merged={...currentProject,...next,...saved};saveProjectDraft(merged);Object.assign(currentProject,merged);modal.remove();render()};
+function collectProjectInfoInline(section){
+  const next={};
+  section.querySelectorAll("input:not([data-staff-other]),select,textarea").forEach(input=>next[input.name]=input.value.trim());
+  section.querySelectorAll("[data-staff-select]").forEach(select=>{next[select.name]=select.value==="Kh\u00e1c"?select.nextElementSibling.value.trim():select.value});
+  return next;
+}
+function projectInfoIsEditing(section){return section?.dataset.projectInfoEditing==="true"}
+function setProjectInfoEditMode(section,editing){
+  if(!section)return;
+  section.dataset.projectInfoEditing=editing?"true":"false";
+  section.classList.toggle("editing",editing);
+  section.classList.toggle("dirty",false);
+  section.querySelectorAll("input,textarea").forEach(input=>{
+    input.readOnly=!editing||input.hasAttribute("data-popup-date");
+    if(input.hasAttribute("data-popup-date"))input.disabled=!editing;
+  });
+  section.querySelectorAll("select").forEach(select=>select.disabled=!editing);
+  section.querySelectorAll("[data-project-stage]").forEach(button=>button.disabled=!editing);
+  const save=section.querySelector("[data-project-info-save]"),
+        reset=section.querySelector("[data-project-info-reset]"),
+        edit=section.querySelector("[data-project-info-edit]");
+  if(save)save.disabled=!editing;
+  if(reset)reset.disabled=!editing;
+  if(edit)edit.disabled=editing;
+}
+async function saveProjectInfoInline(){
+  if(!canEditProjectInfo())return alert("Account hi\u1ec7n t\u1ea1i kh\u00f4ng c\u00f3 quy\u1ec1n s\u1eeda th\u00f4ng tin d\u1ef1 \u00e1n.");
+  const section=document.querySelector("[data-project-info-inline]");
+  if(!section)return;
+  if(!projectInfoIsEditing(section))return;
+  const next=collectProjectInfoInline(section);
+  const button=section.querySelector("[data-project-info-save]");
+  if(button){button.disabled=true;button.textContent="\u0110ang l\u01b0u..."}
+  try{
+    const response=await fetch(`/api/v1/projects/${id}`,{method:"PATCH",headers:{"content-type":"application/json"},body:JSON.stringify(next)});
+    const saved=await response.json();
+    if(!response.ok)throw new Error(saved.error||"Kh\u00f4ng th\u1ec3 l\u01b0u th\u00f4ng tin d\u1ef1 \u00e1n");
+    const merged={...currentProject,...next,...saved};
+    saveProjectDraft(merged);
+    Object.assign(currentProject,merged);
+    section.classList.remove("dirty");
+    render();
+  }catch(error){
+    alert(error.message||"Kh\u00f4ng th\u1ec3 l\u01b0u th\u00f4ng tin d\u1ef1 \u00e1n");
+    if(button){button.disabled=false;button.textContent="L\u01b0u th\u00f4ng tin"}
+  }
+}
+function bindProjectInfoInline(){
+  const section=document.querySelector("[data-project-info-inline]");
+  if(!section)return;
+  setProjectInfoEditMode(section,false);
+  const markDirty=()=>{if(projectInfoIsEditing(section))section.classList.add("dirty")};
+  section.querySelector("[data-project-info-edit]")?.addEventListener("click",()=>{
+    setProjectInfoEditMode(section,true);
+    bindPopupDateFields(section);
+  });
+  section.querySelectorAll("[data-staff-select]").forEach(select=>select.onchange=()=>{if(!projectInfoIsEditing(section))return;select.nextElementSibling.hidden=select.value!=="Kh\u00e1c";markDirty()});
+  section.querySelectorAll("input,select,textarea").forEach(input=>input.addEventListener("input",markDirty));
+  section.querySelectorAll("select").forEach(input=>input.addEventListener("change",markDirty));
+  section.querySelector("[data-project-info-save]")?.addEventListener("click",saveProjectInfoInline);
+  section.querySelector("[data-project-info-reset]")?.addEventListener("click",()=>render());
+}
+function projectInfoModal(){setProjectInfoEditMode(document.querySelector("[data-project-info-inline]"),true)}
+
+async function setProjectStage(stageId){
+  if(!canEditProjectInfo())return alert("Account hiện tại không có quyền sửa giai đoạn dự án.");
+  if(!projectLifecycleStages.some(stage=>stage.id===stageId))return;
+  const next={projectStageMode:"manual",projectStage:stageId};
+  const response=await fetch(`/api/v1/projects/${id}`,{method:"PATCH",headers:{"content-type":"application/json"},body:JSON.stringify(next)});
+  const saved=await response.json();
+  if(!response.ok)return alert(saved.error||"Không thể lưu giai đoạn dự án");
+  Object.assign(currentProject,next,saved);
+  render();
 }
 async function render(){
   document.querySelector(".toolbar").style.display="";
@@ -156,7 +256,7 @@ async function render(){
   document.querySelector("#crumb-name").innerText=p.name;
   document.title=`LE DOME - ${p.name}`;
   document.querySelector("#project-app").innerHTML=`
-  <section class="quick box"><h2>Truy cập nhanh</h2><div class="quick-grid quick-grid-three"><div><b>Công nợ</b><a data-view-link="debt-owner">Công nợ CDT theo DA ↗</a><a data-view-link="debt-vendor">Công nợ nhà thầu theo DA ↗</a><a data-view-link="debt-supplier">Công nợ NCC ↗</a></div><div><b>Công trường</b><a data-form="diary">Thêm nhật ký thi công</a><a data-form="slip-in">Thêm phiếu nhập</a><a data-form="expense">Thêm phiếu chi</a><a data-view-link="issues">Thêm vấn đề cần xử lý</a></div><div><b>CDT</b><a data-view-link="rfa">Thêm yêu cầu phê duyệt CDT</a><a data-view-link="owner-request">Thêm yêu cầu CDT</a></div></div></section>
+  <section class="quick box"><h2>Truy cập nhanh</h2><div class="quick-grid quick-grid-three"><div><b>Công nợ</b><a data-view-link="debt-owner">Công nợ CDT ↗</a><a data-view-link="debt-vendor">Công nợ nhà thầu ↗</a><a data-view-link="debt-supplier">Công nợ NCC ↗</a></div><div><b>Công trường</b><a data-form="diary">Thêm nhật ký thi công</a><a data-form="slip-in">Thêm phiếu nhập kho</a><a data-form="expense">Thêm phiếu chi</a><a data-view-link="issues">Thêm vấn đề cần xử lý</a></div><div><b>CDT</b><a data-view-link="rfa">Thêm yêu cầu phê duyệt CDT</a><a data-view-link="owner-request">Thêm yêu cầu CDT</a></div></div></section>
   ${projectInfoCard(p,progress,budget,spent)}
   ${scheduleOverviewReport()}
   <section class="finance-grid">${financeBox("owner","CHỦ ĐẦU TƯ",[["Hợp đồng",10419962702],["Đã thực hiện",16385814818],["Đã nghiệm thu",2779314400],["Đề nghị thanh toán",2042461974],["Giá trị giữ lại",0],["Thu thực tế",42461974]],"CĐT còn nợ",2000000000)}${financeBox("contractor","NHÀ THẦU",[["Hợp đồng",1429623737],["Đã thực hiện",958201030],["Đã nghiệm thu",252527868],["Đề nghị thanh toán",258279892],["Giá trị giữ lại",0],["Trả thực tế",0]],"Còn nợ NT",258279892)}${financeBox("supplier","NHÀ CUNG CẤP",[["Hợp đồng",155924000],["Đề nghị thanh toán",1900329517],["Trả thực tế",200179000]],"Còn nợ NCC",1700150517)}</section>
@@ -170,7 +270,8 @@ async function render(){
 }
 function bind(){
   document.querySelectorAll("[data-collapse]").forEach(x=>x.onclick=()=>{const box=x.closest(".data-box");box.classList.toggle("collapsed");x.innerText=box.classList.contains("collapsed")?"+":"−"});
-  document.querySelector("[data-project-edit]")?.addEventListener("click",projectInfoModal);
+  bindProjectInfoInline();
+  document.querySelectorAll("[data-project-stage]").forEach(x=>x.onclick=()=>setProjectStage(x.dataset.projectStage));
   document.querySelectorAll("[data-view-link]").forEach(x=>x.onclick=()=>showView(x.dataset.viewLink));
   document.querySelectorAll("[data-form]").forEach(x=>x.onclick=()=>showForm(x.dataset.form));
   document.querySelectorAll("[data-material-filter]").forEach(x=>x.onchange=()=>alert(`Đang lọc: ${x.value}`));
@@ -186,17 +287,113 @@ function showForm(type){
   if(type==="diary")return formShell("Thêm mới nhật ký thi công",`<div class="form-tabs">Công việc　 Hạng mục <button data-import>↥ Nhập dữ liệu</button></div><div class="split-form"><section class="work-list"><input placeholder="⌕ Tìm công việc theo tên ..."><button data-diary-task>1. Lát nền, sàn gạch ceramic 50x50 vữa M75 trệt</button></section><section class="form-fields"><h3>THÔNG TIN NHẬT KÝ</h3><div class="media-row"><div class="photo">▣<small>Ảnh hiện trường</small></div><div class="photo">▧<small>BIM</small></div><div class="photo">⌘<small>Tệp đính kèm</small></div></div>${field("Mã nhật ký","Nhập mã nhật ký")}${field("Nhật ký ngày *","31/05/2026")}${field("Người theo dõi","Chọn người theo dõi")}<h4>Tình hình thi công trong ngày</h4><p>Công tác an toàn　 ◉ Tốt　○ Trung bình　○ Kém</p><p>Chất lượng thi công　 ◉ Tốt　○ Trung bình　○ Kém</p><p>Tiến độ thi công　 ◉ Tốt　○ Trung bình　○ Kém</p><p>Công tác vệ sinh　 ◉ Tốt　○ Trung bình　○ Kém</p></section></div>`);
   if(type==="volume-log")return formShell("Thêm mới nhật ký khối lượng",`<div class="split-form"><section class="work-list"><input placeholder="⌕ Tìm hạng mục theo tên ..."></section><section class="form-fields"><button data-import>↥ Nhập dữ liệu</button><h3>THÔNG TIN NHẬT KÝ</h3><div class="photo">▣<small>Ảnh hiện trường</small></div>${field("Mã nhật ký","Nhập mã nhật ký")}${field("Nhật ký ngày *","31/05/2026")}${field("Hợp đồng","Chọn hợp đồng")}${field("Tổ đội thi công","Nhập tổ đội thi công")}${field("Người theo dõi","Chọn người theo dõi")}<h4>Thời tiết</h4><div class="weather">　　Sáng　　 Chiều　　 Tối　　 Đêm<br>Điều kiện　＿＿＿＿　＿＿＿＿　＿＿＿＿　＿＿＿＿<br>Nhiệt độ　 ＿＿＿＿　＿＿＿＿　＿＿＿＿　＿＿＿＿</div><h4>Tình hình thi công trong ngày</h4><p>Công tác an toàn　 ◉ Tốt　○ Trung bình　○ Kém</p><p>Chất lượng thi công　 ◉ Tốt　○ Trung bình　○ Kém</p><p>Tiến độ thi công　 ◉ Tốt　○ Trung bình　○ Kém</p><textarea placeholder="Báo cáo sự cố"></textarea><textarea placeholder="Đề xuất - kiến nghị"></textarea><textarea placeholder="Ghi chú"></textarea></section></div>`);
   if(type==="approval")return formShell("Thêm đề xuất",`<div class="approval-grid"><section><h3>THÔNG TIN ĐỀ XUẤT</h3>${field("Loại đề xuất *","Chọn loại đề xuất")}${field("Phòng ban *","KD4MB CƠ ĐIỆN")}${field("Người xét duyệt *","Chọn người phê duyệt")}${field("Người nhận thông báo","Chọn người nhận thông báo")}${field("Thời hạn duyệt mong muốn","Nhập thời hạn mong muốn")}${field("Liên kết với đề xuất","Chọn đề xuất liên kết")}<h4>Nội dung</h4><div class="editor">Edit　 View　 Insert　 Format　 Tools　 Table<br><b>↗　☷　B　I　U　A　☰</b></div></section><section>${field("Tên đề xuất *","Nhập tên đề xuất")}${field("Người đề xuất","TÀI KHOẢN TRẢI NGHIỆM")}${field("Người theo dõi","Chọn người theo dõi")}<aside class="approval-flow"><h3>QUY TRÌNH XÉT DUYỆT</h3><b>QUY TRÌNH</b><br><br><b>NGƯỜI XÉT DUYỆT</b></aside></section></div>`);
-  if(type==="slip-in"||type==="slip-out")return formShell(type==="slip-in"?"Tạo phiếu nhập":"Tạo phiếu xuất",`<div class="split-form"><section><div class="form-tabs"><input placeholder="⌕ Tìm hàng hóa theo mã, tên ..."><button>＋</button>　☐ Tách dòng</div><table class="form-table"><tr><th>STT</th><th>Hàng hóa</th><th>Thương hiệu</th><th>Xuất xứ</th><th>Đơn vị</th><th>Số lượng</th><th>Đơn giá</th><th>Thành tiền</th><th>VAT (%)</th></tr></table></section><section class="form-fields"><div class="photo">▣<small>Ảnh hiện trường</small></div>${field("Mã phiếu","Nhập mã phiếu")}${field("Nhà cung cấp *","Tìm kiếm nhà cung cấp")}${field("Đơn hàng mua","Tìm kiếm đơn hàng mua")}${field("Hợp đồng NCC","Chọn hợp đồng NCC")}${field("Kế hoạch vật tư","Chọn kế hoạch")}${field("Kho nhận *","Kho dự án")}${field("Người nhận *","TÀI KHOẢN TRẢI NGHIỆM")}${field("Ngày nhận *","31/05/2026 21:39")}${field("Người giao","Nhập tên người giao")}${field("Biển số xe","Nhập biển số xe")}</section></div>`);
+  if(type==="slip-in"||type==="slip-out")return formShell(type==="slip-in"?"Tạo phiếu nhập kho":"Tạo phiếu xuất",`<div class="split-form"><section><div class="form-tabs"><input placeholder="⌕ Tìm hàng hóa theo mã, tên ..."><button>＋</button>　☐ Tách dòng</div><table class="form-table"><tr><th>STT</th><th>Hàng hóa</th><th>Thương hiệu</th><th>Xuất xứ</th><th>Đơn vị</th><th>Số lượng</th><th>Đơn giá</th><th>Thành tiền</th><th>VAT (%)</th></tr></table></section><section class="form-fields"><div class="photo">▣<small>Ảnh hiện trường</small></div>${field("Mã phiếu","Nhập mã phiếu")}${field("Nhà cung cấp *","Tìm kiếm nhà cung cấp")}${field("Đơn hàng mua","Tìm kiếm đơn hàng mua")}${field("Hợp đồng NCC","Chọn hợp đồng NCC")}${field("Kế hoạch vật tư","Chọn kế hoạch")}${field("Kho nhận *","Kho dự án")}${field("Người nhận *","TÀI KHOẢN TRẢI NGHIỆM")}${field("Ngày nhận *","31/05/2026 21:39")}${field("Người giao","Nhập tên người giao")}${field("Biển số xe","Nhập biển số xe")}</section></div>`);
   if(type==="acceptance")return formShell("Thêm mới nghiệm thu",`<div class="form-tabs">Thông tin　 Hạng mục</div><div class="approval-grid"><section>${field("Tên gói thầu","Nhập tên gói thầu")}${field("Chủ đầu tư","Tìm kiếm chủ đầu tư")}${field("Căn cứ xác định","Nhập căn cứ xác định")}${field("Người theo dõi","Chọn người theo dõi")}${field("Đính kèm","Đính kèm liên kết")}</section><section>${field("Hợp đồng","Tìm kiếm hợp đồng")}${field("PL bổ sung","Nhập phụ lục")}${field("Nghiệm thu lần","Nhập lần nghiệm thu")}${field("VAT (%)","Nhập VAT")}</section></div>`);
   if(type==="payment")return formShell("Thêm mới thanh toán",`<div class="form-tabs">Thông tin　 <b>Hạng mục</b>　 Vật tư khấu trừ <button data-import>↥ Nhập dữ liệu</button><button>⟳ Điều chỉnh khối lượng</button></div><div class="payment-wrap"><input placeholder="⌕ Tìm kiếm hạng mục"><table class="payment-table"><thead><tr><th>Chỉ mục</th><th>Mã số</th><th>Hạng mục</th><th>Đơn vị</th><th>Khối lượng theo hợp đồng</th><th>Khối lượng đã nghiệm thu</th><th>Thực hiện kỳ này</th><th>% Hoàn thành</th><th>Đơn giá thanh toán</th><th>VAT (%)</th><th>Thành tiền kỳ này</th></tr></thead><tbody>${paymentRows()}</tbody></table></div>`);
   if(type==="receipt"||type==="expense")return showCashModal(type);
 }
 function showCashModal(type){const receipt=type==="receipt";document.body.insertAdjacentHTML("beforeend",`<div class="cash-modal"><section><header><h2>${receipt?"Lập phiếu thu":"Lập phiếu chi"}</h2><button data-dismiss>×</button></header>${field("Mã phiếu","Mã phiếu")}${field("Ngày lập phiếu *","31/05/2026")}${field("Giá trị *","0")}${field("Quỹ *","Chọn quỹ")}${field("Người theo dõi","Người theo dõi")}${field(receipt?"Khách hàng":"Nhà cung cấp","Chọn đối tượng")}${field(receipt?"Thuộc hợp đồng":"Thuộc hợp đồng","Hợp đồng")}${field("Phòng ban","Chọn phòng ban")}${field("Nhân viên","Chọn nhân viên")}${field(receipt?"Loại thu":"Loại chi",receipt?"Chọn loại thu":"Chọn loại chi")}${field("Ghi chú",receipt?"Thu tiền":"Trả tiền")}<h3>DIỄN GIẢI CHI TIẾT</h3>${field("Dự án",currentProject.name)}${field("Giai đoạn","Chọn giai đoạn")}${field("Công việc","Công việc")}<table class="form-table"><tr><th>STT</th><th>Diễn giải</th><th>Số tiền</th><th>Đối tượng</th><th>Chứng từ ghi nợ</th></tr><tr><td>1</td><td>${receipt?"Thu tiền":"Trả tiền"}</td><td>0</td><td>Đối tượng</td><td>Chứng từ ghi nợ</td></tr></table><footer><button data-dismiss>Đóng</button><button data-save-modal>Lưu và đóng</button></footer></section></div>`);document.querySelectorAll("[data-dismiss]").forEach(x=>x.onclick=()=>document.querySelector(".cash-modal").remove());document.querySelector("[data-save-modal]").onclick=()=>{alert("Đã lưu phiếu demo.");document.querySelector(".cash-modal").remove()};bindPopupDateFields()}
+const supplierFallbackOptions=["Vật liệu xây dựng Hòa Phát","Thiết bị điện Ánh Dương","Sơn và chống thấm Đại Việt","Thép Việt Nhật"];
+let supplierOptions=supplierFallbackOptions.slice();
+let supplierOptionsLoaded=false;
+const supplierWarehouseOptions=["Văn phòng","Tại dự án"];
+const supplierStatusOptions=["Chờ chuyển kho","Đang vận chuyển","Chờ kiểm tra","Đã nhập kho","Đã hủy"];
+let supplierOrdersEditing=false;
+let supplierOrderRows=[
+  {code:"DX-NCC-001",content:"Xuất vật tư hoàn thiện tầng 1",category:"VẬT LIỆU HOÀN THIỆN",supplier:"Vật liệu xây dựng Hòa Phát",warehouse:"Tại dự án",status:"Chờ chuyển kho",date:"03/06/2026",value:12500000},
+  {code:"DX-NCC-002",content:"Xuất thiết bị điện khu phòng khách",category:"THIẾT BỊ CHIẾU SÁNG",supplier:"Thiết bị điện Ánh Dương",warehouse:"Tại dự án",status:"Đang vận chuyển",date:"02/06/2026",value:25000000},
+  {code:"DX-NCC-003",content:"Xuất sơn và chống thấm WC",category:"CHỐNG THẤM",supplier:"Sơn và chống thấm Đại Việt",warehouse:"Văn phòng",status:"Chờ kiểm tra",date:"01/06/2026",value:37500000},
+  {code:"DX-NCC-004",content:"Xuất phụ kiện trần thạch cao",category:"THẠCH CAO",supplier:"Vật liệu xây dựng Hòa Phát",warehouse:"Tại dự án",status:"Đã nhập kho",date:"31/05/2026",value:50000000},
+  {code:"DX-NCC-005",content:"Xuất mẫu vật tư duyệt nội bộ",category:"PHỤ KIỆN ĐỒ NỘI THẤT",supplier:"Sơn và chống thấm Đại Việt",warehouse:"Văn phòng",status:"Chờ chuyển kho",date:"30/05/2026",value:62500000}
+];
+const supplierOrderStorageKey=()=>`ledome.supplier.orders.${id}`;
+const supplierEscape=(value)=>String(value??"").replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll('"',"&quot;");
+const supplierUnique=(items)=>[...new Set(items.filter(Boolean))];
+const supplierCategoryOptions=()=>supplierUnique(contractMaterialSections);
+const supplierCategoryValue=(value)=>supplierCategoryOptions().includes(value)?value:(supplierCategoryOptions()[0]||"");
+async function loadSupplierOptions(){
+  if(supplierOptionsLoaded)return supplierOptions;
+  supplierOptionsLoaded=true;
+  try{
+    const body=await fetch("/api/v1/partners/suppliers").then(res=>res.ok?res.json():Promise.reject());
+    const names=(body.data||[]).map(row=>row[1]).filter(Boolean);
+    if(names.length)supplierOptions=supplierUnique([...names,...supplierFallbackOptions]);
+  }catch{}
+  return supplierOptions;
+}
+function loadSupplierOrderRows(){
+  try{
+    const saved=JSON.parse(localStorage.getItem(supplierOrderStorageKey())||"[]");
+    if(Array.isArray(saved)&&saved.length)supplierOrderRows=supplierOrderRows.map((row,index)=>({...row,...(saved[index]||saved.find(item=>item.code===row.code)||{})}));
+  }catch{}
+  supplierOrderRows=supplierOrderRows.map(row=>({...row,category:supplierCategoryValue(row.category)}));
+}
+function saveSupplierOrderRows(){
+  localStorage.setItem(supplierOrderStorageKey(),JSON.stringify(supplierOrderRows));
+}
+function supplierParseMoney(value){return Number(String(value||"").replace(/[^\d-]/g,""))||0}
+function supplierInput(value,attr,type="text"){
+  if(!supplierOrdersEditing)return supplierEscape(value);
+  const displayValue=type==="money"?fmt(value):value;
+  return `<input class="supplier-edit-input ${type==="money"?"money":""}" ${attr} value="${supplierEscape(displayValue)}">`;
+}
+function supplierSelect(options,value,attr,index,extraClass=""){
+  const selectOptions=supplierUnique([value,...options]);
+  const selected=selectOptions.includes(value)?value:(selectOptions[0]||"");
+  return `<select class="supplier-order-select ${extraClass}" ${attr}="${index}" ${supplierOrdersEditing?"":"disabled"}>${selectOptions.map(option=>`<option value="${supplierEscape(option)}" ${option===selected?"selected":""}>${supplierEscape(option)}</option>`).join("")}</select>`;
+}
+function supplierOrderRowsMarkup(){
+  const categories=supplierCategoryOptions();
+  return supplierOrderRows.map((row,index)=>`<tr data-supplier-row="${index}" data-search-base="${supplierEscape([row.content,row.code,row.date,fmt(row.value)].join(" "))}"><td>${index+1}</td><td>${supplierOrdersEditing?supplierInput(row.content,'data-supplier-field="content"'):`<a>${supplierEscape(row.content)}</a>`}</td><td>${supplierSelect(categories,supplierCategoryValue(row.category),"data-supplier-category",index,"supplier-category-select")}</td><td>${supplierSelect(supplierOptions,row.supplier,"data-supplier-name",index,"supplier-name-select")}</td><td>${supplierSelect(supplierWarehouseOptions,row.warehouse,"data-supplier-warehouse",index,"supplier-warehouse-select")}</td><td>${supplierSelect(supplierStatusOptions,row.status,"data-supplier-status",index,"supplier-status-select")}</td><td>${supplierInput(row.date,'data-supplier-field="date"')}</td><td>${supplierInput(row.value,'data-supplier-field="value"',"money")}</td></tr>`).join("");
+}
+async function supplierView(){
+  await loadSupplierOptions();
+  loadSupplierOrderRows();
+  document.querySelector("#project-app").innerHTML=`<section class="module-view supplier-order-view ${supplierOrdersEditing?"editing":""} box"><header><h2>Hóa đơn</h2><div><button data-add-module>+ Thêm mới</button><button data-supplier-edit>${supplierOrdersEditing?"Hủy sửa":"Sửa"}</button><button data-supplier-save ${supplierOrdersEditing?"":"disabled"}>Lưu</button><button data-back-dashboard>← Tổng quan</button></div></header><div class="module-tools supplier-order-tools"><input data-supplier-search placeholder="⌕ Tìm kiếm đơn xuất NCC"><select data-supplier-warehouse-filter><option value="all">Tất cả kho nhận</option>${supplierWarehouseOptions.map(option=>`<option value="${supplierEscape(option)}">${supplierEscape(option)}</option>`).join("")}</select><button data-supplier-refresh>Tải lại</button></div><table class="module-table supplier-order-table"><thead><tr><th>STT</th><th>Nội dung</th><th>Hạng mục</th><th>NCC</th><th>Kho nhận</th><th>Trạng thái</th><th>Ngày xuất</th><th>Giá trị</th></tr></thead><tbody>${supplierOrderRowsMarkup()}</tbody></table></section>`;
+  bindSupplierView();
+}
+function filterSupplierOrders(){
+  const query=(document.querySelector("[data-supplier-search]")?.value||"").toLowerCase();
+  const warehouse=document.querySelector("[data-supplier-warehouse-filter]")?.value||"all";
+  document.querySelectorAll("[data-supplier-row]").forEach(row=>{
+    const currentWarehouse=row.querySelector("[data-supplier-warehouse]")?.value||row.dataset.warehouse;
+    const currentText=[row.dataset.searchBase,row.querySelector("[data-supplier-category]")?.value,row.querySelector("[data-supplier-name]")?.value,currentWarehouse,row.querySelector("[data-supplier-status]")?.value].join(" ").toLowerCase();
+    const matchText=currentText.includes(query);
+    const matchWarehouse=warehouse==="all"||currentWarehouse===warehouse;
+    row.hidden=!(matchText&&matchWarehouse);
+  });
+}
+function bindSupplierView(){
+  document.querySelector("[data-back-dashboard]").onclick=()=>{history.replaceState(null,"",location.pathname);render()};
+  document.querySelector("[data-add-module]").onclick=()=>alert(`Tạo mới đơn xuất NCC sẽ được lưu trong dự án ${currentProject.name}.`);
+  document.querySelector("[data-supplier-edit]").onclick=()=>{supplierOrdersEditing=!supplierOrdersEditing;supplierView()};
+  document.querySelector("[data-supplier-save]").onclick=()=>{
+    document.querySelectorAll("[data-supplier-row]").forEach(row=>{
+      const index=Number(row.dataset.supplierRow);
+      if(!supplierOrderRows[index])return;
+      supplierOrderRows[index].content=row.querySelector('[data-supplier-field="content"]')?.value.trim()||supplierOrderRows[index].content;
+      supplierOrderRows[index].category=row.querySelector("[data-supplier-category]")?.value||supplierOrderRows[index].category;
+      supplierOrderRows[index].supplier=row.querySelector("[data-supplier-name]")?.value||supplierOrderRows[index].supplier;
+      supplierOrderRows[index].warehouse=row.querySelector("[data-supplier-warehouse]")?.value||supplierOrderRows[index].warehouse;
+      supplierOrderRows[index].status=row.querySelector("[data-supplier-status]")?.value||supplierOrderRows[index].status;
+      supplierOrderRows[index].date=row.querySelector('[data-supplier-field="date"]')?.value.trim()||supplierOrderRows[index].date;
+      supplierOrderRows[index].value=supplierParseMoney(row.querySelector('[data-supplier-field="value"]')?.value||supplierOrderRows[index].value);
+    });
+    saveSupplierOrderRows();
+    supplierOrdersEditing=false;
+    supplierView();
+    alert("Đã lưu thông tin đơn xuất NCC.");
+  };
+  document.querySelector("[data-supplier-refresh]").onclick=()=>supplierView();
+  document.querySelector("[data-supplier-search]").oninput=filterSupplierOrders;
+  document.querySelector("[data-supplier-warehouse-filter]").onchange=filterSupplierOrders;
+  document.querySelectorAll(".supplier-order-select").forEach(select=>select.onchange=filterSupplierOrders);
+}
 const warehouseRows=[["A24.0010","Đá 4x6","m3","16,4556353","1.000","0","1.000"],["V00750","Vật liệu khác","%","0","220,275","0","220,275"],["A33.0524","Cao su","m2","0","100","100","0"],["A33.0318","Que hàn không rỉ","kg","0","100","30","70"],["V42250","Thép tròn Fi >18mm","kg","0","100","98","2"],["A33.0115","Que hàn","kg","32,50773","80","30","50"],["A33.0739","BE D200mm","cái","0","1","1","0"],["A33.0698","BU D100mm","cái","0","1","1","0"]];
 function warehouseView(){const rows=warehouseRows.map((r,i)=>`<tr><td><input type="checkbox"></td><td>⌄　<a>${r[0]}</a></td><td>${r[1]}</td><td></td><td></td><td></td><td>${r[2]}</td><td>${r[3]}</td><td>${r[4]}${i===0||i===5?"　⚠":""}</td><td>${r[5]}</td><td>0</td><td>${r[6]}</td></tr>`).join("");document.querySelector("#project-app").innerHTML=`<section class="warehouse-view box"><div class="warehouse-tabs"><button class="active">Kho vật liệu</button><button>Định mức vật liệu</button><button>Lịch sử định mức</button><button>So sánh định mức</button></div><div class="warehouse-tools"><input placeholder="⌕ Tìm kiếm vật liệu..."><button data-filter> Bộ lọc⌄</button><span>⚠ 0 VL vượt mức cảnh báo 1</span><em>⚠ 4 VL vượt mức cảnh báo 2</em></div><div class="warehouse-filter"><label>Nhóm vật liệu<select><option>Chọn nhóm vật liệu</option></select></label><label>Kho dự án<select><option>Tất cả kho dự án</option><option>Kho dự án - ${currentProject.name}</option></select></label><label>Loại hàng hóa<input></label><button>Áp dụng</button></div><table class="warehouse-table"><thead><tr><th></th><th>Mã vật liệu</th><th>Tên vật liệu</th><th>Chủng loại</th><th>Thương hiệu</th><th>Xuất xứ</th><th>Đơn vị</th><th>Định mức</th><th>Tổng nhập</th><th>Tổng xuất</th><th>Tổng hoàn</th><th>Tồn kho</th></tr></thead><tbody>${rows}</tbody></table></section>`;document.querySelector("[data-filter]").onclick=()=>document.querySelector(".warehouse-filter").classList.toggle("open");document.querySelectorAll(".warehouse-tabs button").forEach((x,i)=>x.onclick=()=>{document.querySelectorAll(".warehouse-tabs button").forEach(b=>b.classList.remove("active"));x.classList.add("active");if(i===3)document.querySelector(".warehouse-table").outerHTML=`<div class="empty-module">▱<br>Không có định mức vật liệu nào!</div>`})}
 function existingFileUrl(file){return `/api/v1/projects/${id}/existing-files/download?storedName=${encodeURIComponent(file.storedName)}`}
 function existingFileIcon(file){return file.category==="image"?"Ảnh":file.category==="video"?"Video":"File"}
-function existingFileCard(file){const url=existingFileUrl(file),isImage=file.category==="image",isPdf=/\.pdf$/i.test(file.name),canOpen=isImage||isPdf,openType=isPdf?"pdf":"image",preview=isImage?`<img src="${url}" alt="${contractEscape(file.name)}">`:file.category==="video"?`<video src="${url}" muted controls></video>`:`<div class="existing-file-icon ${isPdf?"pdf":""}">${isPdf?"PDF":existingFileIcon(file)}</div>`;return `<article class="existing-card ${canOpen?"clickable":""}" data-existing-category="${file.category}" ${canOpen?`data-open-file="${url}" data-open-type="${openType}" data-open-title="${contractEscape(file.name)}"`:""}><div class="existing-preview ${canOpen?"clickable":""}">${preview}</div><div class="existing-meta"><b title="${contractEscape(file.name)}">${contractEscape(file.name)}</b><span>${existingFileIcon(file)} · ${contractMoney(Math.ceil(file.size/1024))} KB</span></div><footer><a href="${url}" download>Tải</a><button data-existing-delete="${contractEscape(file.storedName)}">Xóa</button></footer></article>`}
+function existingFileCard(file){const url=existingFileUrl(file),canOpen=canOpenFile(file),openType=fileOpenType(file),preview=filePreviewMarkup(file,url);return `<article class="existing-card ${canOpen?"clickable":""}" data-existing-category="${file.category}" ${canOpen?`data-open-file="${url}" data-open-type="${openType}" data-open-title="${contractEscape(file.name)}"`:""}><div class="existing-preview ${canOpen?"clickable":""}">${preview}</div><div class="existing-meta"><b title="${contractEscape(file.name)}">${contractEscape(file.name)}</b><span>${existingFileIcon(file)} · ${contractMoney(Math.ceil(file.size/1024))} KB</span></div><footer><a href="${url}" download>Tải</a><button data-existing-delete="${contractEscape(file.storedName)}">Xóa</button></footer></article>`}
 
 function existingView(){history.replaceState(null,"",`${location.pathname}?view=project-existing`);document.querySelector("#project-app").innerHTML=`<section class="existing-view"><header><div><h2>Hiện trạng dự án</h2><p>Quản lý toàn bộ ảnh, video và file input hiện trạng dùng làm dữ liệu đầu vào dự án.</p></div><button data-existing-pick>+ Thêm file</button></header><section class="existing-drop" data-existing-drop><input type="file" hidden multiple data-existing-file accept="image/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.csv,.dwg,.zip"><strong>Kéo thả ảnh, video hoặc hồ sơ hiện trạng vào đây</strong><span>Hỗ trợ ảnh, video, PDF, Word, Excel, CAD và file nén. Có thể thả nhiều file cùng lúc.</span><button data-existing-pick>Chọn từ máy</button></section><section class="existing-tools"><input data-existing-search placeholder="Tìm ảnh, video, hồ sơ..."><button class="active" data-existing-filter="all">Tất cả</button><button data-existing-filter="image">Ảnh</button><button data-existing-filter="video">Video</button><button data-existing-filter="file">File</button><span data-existing-count>Đang tải...</span></section><section class="existing-gallery" data-existing-gallery><div class="existing-empty">Đang tải dữ liệu hiện trạng...</div></section></section>`;bindExistingView();loadExistingFiles()}
 function bindExistingView(){document.querySelectorAll("[data-existing-pick]").forEach(button=>button.onclick=()=>document.querySelector("[data-existing-file]").click());document.querySelector("[data-existing-file]").onchange=e=>uploadExistingFiles([...e.target.files]);const drop=document.querySelector("[data-existing-drop]");drop.ondragover=e=>{e.preventDefault();drop.classList.add("dragging")};drop.ondragleave=()=>drop.classList.remove("dragging");drop.ondrop=e=>{e.preventDefault();drop.classList.remove("dragging");uploadExistingFiles([...e.dataTransfer.files])};document.querySelectorAll("[data-existing-filter]").forEach(button=>button.onclick=()=>{document.querySelectorAll("[data-existing-filter]").forEach(x=>x.classList.remove("active"));button.classList.add("active");filterExistingFiles()});document.querySelector("[data-existing-search]").oninput=filterExistingFiles}
@@ -204,7 +401,7 @@ async function loadExistingFiles(){const gallery=document.querySelector("[data-e
 async function uploadExistingFiles(files){for(const file of files){await fetch(`/api/v1/projects/${id}/existing-files?name=${encodeURIComponent(file.name)}`,{method:"POST",body:file})}loadExistingFiles()}
 function filterExistingFiles(){const filter=document.querySelector("[data-existing-filter].active")?.dataset.existingFilter||"all",query=document.querySelector("[data-existing-search]")?.value.toLowerCase()||"";document.querySelectorAll(".existing-card").forEach(card=>{const byType=filter==="all"||card.dataset.existingCategory===filter,byText=card.innerText.toLowerCase().includes(query);card.hidden=!(byType&&byText)})}
 function design3dFileUrl(file){return `/api/v1/projects/${id}/design-3d-files/download?storedName=${encodeURIComponent(file.storedName)}`}
-function design3dCard(file){const url=design3dFileUrl(file),isImage=file.category==="image",isPdf=/\.pdf$/i.test(file.name),canOpen=isImage||isPdf,openType=isPdf?"pdf":"image",preview=isImage?`<img src="${url}" alt="${contractEscape(file.name)}">`:file.category==="video"?`<video src="${url}" muted controls></video>`:`<div class="existing-file-icon ${isPdf?"pdf":""}">${isPdf?"PDF":existingFileIcon(file)}</div>`;return `<article class="existing-card design3d-card ${file.final?"final":""} ${canOpen?"clickable":""}" data-existing-category="${file.category}" ${canOpen?`data-open-file="${url}" data-open-type="${openType}" data-open-title="${contractEscape(file.name)}"`:""}><div class="existing-preview ${canOpen?"clickable":""}">${preview}</div><div class="existing-meta"><b title="${contractEscape(file.name)}">${contractEscape(file.name)}</b><span>${existingFileIcon(file)} · ${contractMoney(Math.ceil(file.size/1024))} KB</span>${file.final?'<em>ĐÃ DUYỆT - File chốt cuối cùng</em>':""}</div><footer><a href="${url}" download>Tải</a>${file.kind==="concept"?`<button class="design3d-approve-button ${file.final?"active":""}" data-design3d-final="${contractEscape(file.storedName)}">${file.final?"BỎ DUYỆT":"ĐÃ DUYỆT"}</button>`:""}<button data-design3d-delete="${contractEscape(file.storedName)}">Xóa</button></footer></article>`}
+function design3dCard(file){const url=design3dFileUrl(file),canOpen=canOpenFile(file),openType=fileOpenType(file),preview=filePreviewMarkup(file,url);return `<article class="existing-card design3d-card ${file.final?"final":""} ${canOpen?"clickable":""}" data-existing-category="${file.category}" ${canOpen?`data-open-file="${url}" data-open-type="${openType}" data-open-title="${contractEscape(file.name)}"`:""}><div class="existing-preview ${canOpen?"clickable":""}">${preview}</div><div class="existing-meta"><b title="${contractEscape(file.name)}">${contractEscape(file.name)}</b><span>${existingFileIcon(file)} · ${contractMoney(Math.ceil(file.size/1024))} KB</span>${file.final?'<em>ĐÃ DUYỆT - File chốt cuối cùng</em>':""}</div><footer><a href="${url}" download>Tải</a>${file.kind==="concept"?`<button class="design3d-approve-button ${file.final?"active":""}" data-design3d-final="${contractEscape(file.storedName)}">${file.final?"BỎ DUYỆT":"ĐÃ DUYỆT"}</button>`:""}<button data-design3d-delete="${contractEscape(file.storedName)}">Xóa</button></footer></article>`}
 
 function design3dDropZone(kind,title,desc){return `<section class="existing-drop design3d-drop" data-design3d-drop="${kind}"><input type="file" hidden multiple data-design3d-file="${kind}" accept="image/*,video/*,.pdf,.doc,.docx,.zip"><strong>${title}</strong><span>${desc}</span><button data-design3d-pick="${kind}">Chọn từ máy</button></section>`}
 function design3dView(){history.replaceState(null,"",`${location.pathname}?view=project-design-3d`);document.querySelector("#project-app").innerHTML=`<section class="existing-view design3d-view"><header><div><h2>Hồ sơ thiết kế 3D</h2><p>Quản lý Proposal, các bản Concept và bản Final dùng trong hồ sơ thiết kế.</p></div></header><div class="design3d-layout"><section class="design3d-panel proposal-panel"><header><div><h3>Proposal</h3><p>Chỉ lưu một bản Proposal chính.</p></div><button data-design3d-pick="proposal">+ Proposal</button></header>${design3dDropZone("proposal","Upload Proposal","Bản đề xuất 3D ban đầu. Bản mới nhất sẽ được hiển thị là Proposal chính.")}<div class="existing-gallery design3d-gallery" data-design3d-list="proposal"><div class="existing-empty">Đang tải Proposal...</div></div></section><section class="design3d-panel concept-panel"><header><div><h3>Concept</h3><p>Có thể lưu nhiều phương án Concept. Chọn một bản làm Final.</p></div><button data-design3d-pick="concept">+ Concept</button></header>${design3dDropZone("concept","Upload Concept","Các phương án 3D concept, render hoặc file phối cảnh.")}<div class="existing-gallery design3d-gallery" data-design3d-list="concept"><div class="existing-empty">Đang tải Concept...</div></div></section></div></section>`;bindDesign3dView();loadDesign3dFiles()}
@@ -262,9 +459,9 @@ function ganttBars(actual=false){return ensureGanttTaskList().map((row,i)=>{if(i
 function ganttTimelineStart(){return new Date(2026,4,23)}
 function ganttCalendar(){const today=new Date();today.setHours(0,0,0,0);const start=ganttTimelineStart();const dates=Array.from({length:42},(_,i)=>{const date=new Date(start);date.setDate(start.getDate()+i);return date});const sameDay=(a,b)=>a.getTime()===b.getTime();const todayIndex=dates.findIndex(date=>sameDay(date,today));const monthGroups=[];dates.forEach(date=>{const label=`Tháng ${String(date.getMonth()+1).padStart(2,"0")}, ${date.getFullYear()}`;const last=monthGroups.at(-1);if(last&&last.label===label)last.days++;else monthGroups.push({label,days:1})});return {dates,todayIndex,months:monthGroups.map(x=>`<span style="grid-column:span ${x.days}">${x.label}</span>`).join("")}}
 function ganttDays(calendar){const weekdays=["CN","T2","T3","T4","T5","T6","T7"];return calendar.dates.map((date,i)=>{const day=date.getDay(),blocked=isApartmentSchedule()&&isWeekendDate(date);return `<b class="${day===0||day===6?"weekend":""} ${day===0?"sunday":""} ${blocked?"blocked":""} ${i===calendar.todayIndex?"today":""}" ${blocked?'title="Ngày nghỉ thi công căn hộ"':""}>${weekdays[day]}<em>${String(date.getDate()).padStart(2,"0")}</em></b>`}).join("")}
-function ganttView(){const calendar=ganttCalendar(),apartment=isApartmentSchedule();document.querySelector("#project-app").innerHTML=`<section class="gantt-view ${apartment?"apartment-schedule":""}"><header class="gantt-app-head"><b>❖ Dự án xây dựng</b><span>♨　?　⌂　▦　◉</span></header><div class="gantt-subhead"><a data-back-dashboard>Danh sách dự án</a> » <b>${currentProject.name}</b>${apartment?'<em class="gantt-workday-rule">Căn hộ: T7/CN không thi công</em>':""}<div class="gantt-toolbar"><button data-gantt-undo title="Hoàn tác (Ctrl+Z)">↶</button><button data-gantt-redo title="Làm lại (Ctrl+Y)">↷</button><button data-reload-gantt>⟳ Tải lại</button><input placeholder="⌕ Tìm kiếm công việc..."><button data-toggle-chart>◉ Ẩn sơ đồ</button><button data-baseline>Baseline⌄</button><button data-utility-gantt class="green">Tiện ích⌄</button></div></div>${apartment?'<div class="gantt-rule-banner">Lịch căn hộ chung cư đang tự ngắt T7 và CN. Các ngày này không được tính vào thời gian thi công.</div>':""}<div class="gantt-layout"><div class="gantt-grid"><table class="gantt-table">${ganttColGroup()}<thead>${ganttHeaderRow()}</thead><tbody>${ganttRows()}</tbody></table></div><button class="gantt-splitter" data-gantt-splitter aria-label="Kéo để thay đổi vùng hiển thị">⋮</button><aside class="gantt-chart"><header>${calendar.months}</header><div class="gantt-days">${ganttDays(calendar)}</div><div class="gantt-bars ${calendar.todayIndex<0?"without-today":""}" style="--today-index:${calendar.todayIndex}">${ganttBars(true)}</div></aside></div><menu class="gantt-menu baseline-menu"><button data-baseline-mode="plan">Kế hoạch</button><button data-baseline-mode="actual">Thực tế so với kế hoạch</button></menu><menu class="gantt-menu utility-menu"><button data-gantt-save-template>Lưu bản mẫu</button><button data-gantt-create-from-template>Xuất từ bản mẫu</button><button data-gantt-export>Xuất dữ liệu</button></menu></section>`;bindGantt();bindGanttScrollSync()}
+function ganttView(){const calendar=ganttCalendar(),apartment=isApartmentSchedule();document.querySelector("#project-app").innerHTML=`<section class="gantt-view ${apartment?"apartment-schedule":""}"><header class="gantt-app-head"><b>❖ Dự án xây dựng</b><span>♨　?　⌂　▦　◉</span></header><div class="gantt-subhead"><a data-back-dashboard>Danh sách dự án</a> » <b>${currentProject.name}</b>${apartment?'<em class="gantt-workday-rule">Căn hộ: T7/CN không thi công</em>':""}<div class="gantt-toolbar"><button data-reload-gantt>⟳ Tải lại</button><input placeholder="⌕ Tìm kiếm công việc..."><button data-toggle-chart>◉ Ẩn sơ đồ</button><button data-baseline>Baseline⌄</button><button data-utility-gantt class="green">Tiện ích⌄</button></div></div>${apartment?'<div class="gantt-rule-banner">Lịch căn hộ chung cư đang tự ngắt T7 và CN. Các ngày này không được tính vào thời gian thi công.</div>':""}<div class="gantt-layout"><div class="gantt-grid"><table class="gantt-table">${ganttColGroup()}<thead>${ganttHeaderRow()}</thead><tbody>${ganttRows()}</tbody></table></div><button class="gantt-splitter" data-gantt-splitter aria-label="Kéo để thay đổi vùng hiển thị">⋮</button><aside class="gantt-chart"><header>${calendar.months}</header><div class="gantt-days">${ganttDays(calendar)}</div><div class="gantt-bars ${calendar.todayIndex<0?"without-today":""}" style="--today-index:${calendar.todayIndex}">${ganttBars(true)}</div></aside></div><menu class="gantt-menu baseline-menu"><button data-baseline-mode="plan">Kế hoạch</button><button data-baseline-mode="actual">Thực tế so với kế hoạch</button></menu><menu class="gantt-menu utility-menu"><button data-gantt-save-template>Lưu bản mẫu</button><button data-gantt-create-from-template>Xuất từ bản mẫu</button><button data-gantt-export>Xuất dữ liệu</button></menu></section>`;bindGantt();bindGanttScrollSync()}
 function bindGanttScrollSync(){const grid=document.querySelector(".gantt-grid"),bars=document.querySelector(".gantt-bars");if(!grid||!bars)return;const sync=()=>bars.style.transform=`translateY(${-grid.scrollTop}px)`;grid.addEventListener("scroll",sync,{passive:true});sync()}
-function bindGantt(){const toggle=(selector)=>document.querySelector(selector).classList.toggle("open");document.querySelector("[data-back-dashboard]").onclick=()=>{history.replaceState(null,"",location.pathname);render()};document.querySelector("[data-toggle-chart]").onclick=e=>{document.querySelector(".gantt-chart").classList.toggle("hidden");document.querySelector(".gantt-layout").classList.toggle("chart-hidden");e.target.innerText=document.querySelector(".gantt-chart").classList.contains("hidden")?"◉ Hiện sơ đồ":"◉ Ẩn sơ đồ"};document.querySelector("[data-baseline]").onclick=()=>toggle(".baseline-menu");document.querySelector("[data-utility-gantt]").onclick=()=>toggle(".utility-menu");document.querySelector("[data-gantt-save-template]").onclick=()=>{document.querySelector(".utility-menu").classList.remove("open");alert("Đã lưu bản mẫu.")};document.querySelector("[data-gantt-create-from-template]").onclick=()=>{document.querySelector(".utility-menu").classList.remove("open");alert("Chọn bản mẫu để xuất bảng tiến độ.")};document.querySelector("[data-gantt-export]").onclick=()=>{document.querySelector(".utility-menu").classList.remove("open");const a=document.createElement("a");a.href="data:text/csv;charset=utf-8,"+encodeURIComponent("Mã số,Công việc,Tiến độ\n1,Hạng mục mẫu,64%");a.download="bang-tien-do.csv";a.click()};document.querySelector("[data-gantt-undo]").onclick=undoGantt;document.querySelector("[data-gantt-redo]").onclick=redoGantt;syncGanttTableWidth();bindGanttColumnResize();bindGanttKeyboard();const layout=document.querySelector(".gantt-layout"),splitter=document.querySelector("[data-gantt-splitter]");splitter.onpointerdown=e=>{splitter.setPointerCapture(e.pointerId);layout.classList.add("resizing")};splitter.onpointermove=e=>{if(!layout.classList.contains("resizing"))return;const rect=layout.getBoundingClientRect();const width=Math.min(rect.width-300,Math.max(360,e.clientX-rect.left));layout.style.setProperty("--grid-width",`${width}px`)};splitter.onpointerup=e=>{splitter.releasePointerCapture(e.pointerId);layout.classList.remove("resizing")};document.querySelectorAll("[data-collapse-group]").forEach(x=>x.onclick=e=>{e.stopPropagation();const group=x.dataset.collapseGroup;const hidden=!x.classList.contains("collapsed");const ids=[group,...taskDescendantIds(group)];ids.forEach(id=>document.querySelectorAll(`[data-gantt-parent="${id}"],[data-gantt-bar-parent="${id}"]`).forEach(item=>item.classList.toggle("gantt-child-hidden",hidden)));x.classList.toggle("collapsed",hidden);x.innerText=hidden?"▸":"▾"});document.querySelectorAll("[data-add-task]").forEach(x=>x.onclick=e=>{e.stopPropagation();taskFormModal(Number(x.dataset.addTask))});document.querySelectorAll("[data-delete-task]").forEach(x=>x.onclick=e=>{e.stopPropagation();selectTaskRow(ensureGanttTaskList()[Number(x.dataset.deleteTask)]?.id);deleteTaskModal()});document.querySelectorAll("[data-baseline-mode]").forEach(x=>x.onclick=()=>{document.querySelector(".gantt-bars").innerHTML=ganttBars(x.dataset.baselineMode==="actual");bindGanttBars();document.querySelector(".baseline-menu").classList.remove("open")});bindGanttRows();bindGanttDragDrop();bindGanttBars();document.querySelector("[data-reload-gantt]").onclick=()=>ganttView()}
+function bindGantt(){const toggle=(selector)=>document.querySelector(selector).classList.toggle("open");document.querySelector("[data-back-dashboard]").onclick=()=>{history.replaceState(null,"",location.pathname);render()};document.querySelector("[data-toggle-chart]").onclick=e=>{document.querySelector(".gantt-chart").classList.toggle("hidden");document.querySelector(".gantt-layout").classList.toggle("chart-hidden");e.target.innerText=document.querySelector(".gantt-chart").classList.contains("hidden")?"◉ Hiện sơ đồ":"◉ Ẩn sơ đồ"};document.querySelector("[data-baseline]").onclick=()=>toggle(".baseline-menu");document.querySelector("[data-utility-gantt]").onclick=()=>toggle(".utility-menu");document.querySelector("[data-gantt-save-template]").onclick=()=>{document.querySelector(".utility-menu").classList.remove("open");alert("Đã lưu bản mẫu.")};document.querySelector("[data-gantt-create-from-template]").onclick=()=>{document.querySelector(".utility-menu").classList.remove("open");alert("Chọn bản mẫu để xuất bảng tiến độ.")};document.querySelector("[data-gantt-export]").onclick=()=>{document.querySelector(".utility-menu").classList.remove("open");const a=document.createElement("a");a.href="data:text/csv;charset=utf-8,"+encodeURIComponent("Mã số,Công việc,Tiến độ\n1,Hạng mục mẫu,64%");a.download="bang-tien-do.csv";a.click()};const btnUndo=document.querySelector("[data-gantt-undo]"),btnRedo=document.querySelector("[data-gantt-redo]");if(btnUndo)btnUndo.onclick=undoGantt;if(btnRedo)btnRedo.onclick=redoGantt;syncGanttTableWidth();bindGanttColumnResize();bindGanttKeyboard();const layout=document.querySelector(".gantt-layout"),splitter=document.querySelector("[data-gantt-splitter]");splitter.onpointerdown=e=>{splitter.setPointerCapture(e.pointerId);layout.classList.add("resizing")};splitter.onpointermove=e=>{if(!layout.classList.contains("resizing"))return;const rect=layout.getBoundingClientRect();const width=Math.min(rect.width-300,Math.max(360,e.clientX-rect.left));layout.style.setProperty("--grid-width",`${width}px`)};splitter.onpointerup=e=>{splitter.releasePointerCapture(e.pointerId);layout.classList.remove("resizing")};document.querySelectorAll("[data-collapse-group]").forEach(x=>x.onclick=e=>{e.stopPropagation();const group=x.dataset.collapseGroup;const hidden=!x.classList.contains("collapsed");const ids=[group,...taskDescendantIds(group)];ids.forEach(id=>document.querySelectorAll(`[data-gantt-parent="${id}"],[data-gantt-bar-parent="${id}"]`).forEach(item=>item.classList.toggle("gantt-child-hidden",hidden)));x.classList.toggle("collapsed",hidden);x.innerText=hidden?"▸":"▾"});document.querySelectorAll("[data-add-task]").forEach(x=>x.onclick=e=>{e.stopPropagation();taskFormModal(Number(x.dataset.addTask))});document.querySelectorAll("[data-delete-task]").forEach(x=>x.onclick=e=>{e.stopPropagation();selectTaskRow(ensureGanttTaskList()[Number(x.dataset.deleteTask)]?.id);deleteTaskModal()});document.querySelectorAll("[data-baseline-mode]").forEach(x=>x.onclick=()=>{document.querySelector(".gantt-bars").innerHTML=ganttBars(x.dataset.baselineMode==="actual");bindGanttBars();document.querySelector(".baseline-menu").classList.remove("open")});bindGanttRows();bindGanttDragDrop();bindGanttBars();document.querySelector("[data-reload-gantt]").onclick=()=>ganttView()}
 function syncGanttTableWidth(){const table=document.querySelector(".gantt-table");if(!table)return;const width=ganttColumnWidths().reduce((sum,x)=>sum+x,0);table.style.width=`${width}px`;table.style.minWidth=`${width}px`}
 function bindGanttColumnResize(){let state=null;const minWidth=i=>i===2?160:i===3?90:i>=10?70:32;document.querySelectorAll("[data-gantt-col]").forEach(handle=>{handle.onpointerdown=e=>{e.preventDefault();e.stopPropagation();const index=Number(handle.dataset.ganttCol);const widths=ganttColumnWidths();state={index,startX:e.clientX,startWidth:widths[index],widths};handle.setPointerCapture(e.pointerId);document.querySelector(".gantt-view").classList.add("col-resizing")};handle.onpointermove=e=>{if(!state)return;const next=Math.max(minWidth(state.index),state.startWidth+e.clientX-state.startX);state.widths[state.index]=next;const col=document.querySelectorAll(".gantt-table col")[state.index];if(col)col.style.width=`${next}px`;const table=document.querySelector(".gantt-table");const total=state.widths.reduce((sum,x)=>sum+x,0);table.style.width=`${total}px`;table.style.minWidth=`${total}px`};handle.onpointerup=e=>{if(!state)return;localStorage.setItem(ganttColumnStorageKey,JSON.stringify(state.widths));handle.releasePointerCapture(e.pointerId);document.querySelector(".gantt-view").classList.remove("col-resizing");state=null}})}
 function bindGanttRows(){document.querySelectorAll("[data-gantt-row]").forEach(row=>{row.onclick=e=>{if(e.target.closest("button,.gantt-inline-editor"))return;document.querySelectorAll("[data-gantt-row]").forEach(r=>r.classList.remove("selected"));row.classList.add("selected");const cell=e.target.closest("td");if(cell)editGanttCell(row,cell)}})}
@@ -450,8 +647,12 @@ function diaryView(mode="month"){
   document.querySelector("#project-app").innerHTML=`<section class="diary-view diary-smart box">${diaryToolbar(mode)}${content}</section>`;
   bindDiaryCommon();
 }
+function fileOpenType(file){const name=String(file?.name||file||"").toLowerCase(),category=file?.category||"";if(category==="image"||/\.(jpe?g|png|webp|gif|bmp)$/i.test(name))return "image";if(/\.pdf$/i.test(name))return "pdf";if(/\.(txt|md|note|log|csv)$/i.test(name))return "text";if(/\.(doc|docx|xls|xlsx|ppt|pptx)$/i.test(name))return "office";return "file"}
+function fileTypeLabel(file){const type=fileOpenType(file);return type==="image"?"Ảnh":type==="pdf"?"PDF":type==="text"?"Note/Text":type==="office"?"Office":existingFileIcon(file)}
+function filePreviewMarkup(file,url){const type=fileOpenType(file);if(type==="image")return `<img src="${url}" alt="${contractEscape(file.name)}">`;if(type==="pdf")return `<div class="existing-file-icon pdf">PDF</div>`;if(type==="text")return `<div class="existing-file-icon note">NOTE</div>`;if(type==="office")return `<div class="existing-file-icon office">${/\.(xls|xlsx)$/i.test(file.name)?"XLS":/\.(ppt|pptx)$/i.test(file.name)?"PPT":"DOC"}</div>`;return file.category==="video"?`<video src="${url}" muted controls></video>`:`<div class="existing-file-icon">${existingFileIcon(file)}</div>`}
+function canOpenFile(file){return ["image","pdf","text","office"].includes(fileOpenType(file))}
 function bindFileOpeners(scope=document){scope.querySelectorAll("[data-open-file]").forEach(card=>card.onclick=event=>{if(event.target.closest("footer,a,button"))return;openFileViewer(card.dataset.openFile,card.dataset.openTitle||"File",card.dataset.openType||"file")})}
-function openFileViewer(src,title,type="image"){document.querySelector(".diary-lightbox")?.remove();const safeTitle=contractEscape(title),imageSrc=src.includes("site-thumb")?"/diary-assets/site-stairs.jpg":src,body=type==="pdf"?`<iframe src="${imageSrc}" title="${safeTitle}"></iframe>`:`<img src="${imageSrc}" alt="${safeTitle}">`;document.body.insertAdjacentHTML("beforeend",`<div class="diary-lightbox file-viewer-modal ${type==="pdf"?"pdf-viewer":""}"><button data-diary-lightbox-close aria-label="Đóng">×</button>${body}<p>${safeTitle}</p></div>`);const box=document.querySelector(".diary-lightbox"),close=()=>{box?.remove();document.removeEventListener("keydown",onKey)},onKey=e=>{if(e.key==="Escape")close()};box.querySelector("[data-diary-lightbox-close]").onclick=close;document.addEventListener("keydown",onKey)}
+async function openFileViewer(src,title,type="image"){document.querySelector(".diary-lightbox")?.remove();const safeTitle=contractEscape(title),imageSrc=src.includes("site-thumb")?"/diary-assets/site-stairs.jpg":src;let body=type==="pdf"?`<iframe src="${imageSrc}" title="${safeTitle}"></iframe>`:type==="image"?`<img src="${imageSrc}" alt="${safeTitle}">`:type==="text"?`<pre class="file-text-preview">Đang tải nội dung...</pre>`:type==="office"?`<div class="office-preview"><iframe src="${imageSrc}" title="${safeTitle}"></iframe><small>Nếu trình duyệt không hiển thị file Office trực tiếp, hãy dùng nút Tải.</small></div>`:`<div class="office-preview"><a href="${imageSrc}" download>Tải file</a></div>`;document.body.insertAdjacentHTML("beforeend",`<div class="diary-lightbox file-viewer-modal ${type==="pdf"?"pdf-viewer":""} ${type==="office"?"office-viewer":""}"><button data-diary-lightbox-close aria-label="Đóng">×</button>${body}<p>${safeTitle}</p></div>`);const box=document.querySelector(".diary-lightbox"),close=()=>{box?.remove();document.removeEventListener("keydown",onKey)},onKey=e=>{if(e.key==="Escape")close()};box.querySelector("[data-diary-lightbox-close]").onclick=close;document.addEventListener("keydown",onKey);if(type==="text"){try{const content=await fetch(imageSrc).then(res=>res.text());const pre=box.querySelector(".file-text-preview");if(pre)pre.textContent=content}catch{const pre=box.querySelector(".file-text-preview");if(pre)pre.textContent="Không tải được nội dung file."}}}
 function diaryLightbox(src){openFileViewer(src,"Ảnh hiện trường","image")}
 
 function diaryExport(){const a=document.createElement("a");a.href="data:text/csv;charset=utf-8,"+encodeURIComponent("Ngày nhật ký,Người tạo,Công việc\n"+diaryEntries.map(x=>`${x.date},TÀI KHOẢN TRẢI NGHIỆM,${x.text}`).join("\n"));a.download=`Nhat_ky_thi_cong_${Date.now()}.csv`;a.click()}
@@ -519,10 +720,10 @@ const contractQuoteSources=[
     ["PHỤ KIỆN NỘI THẤT","Led thanh","Led nhôm profile mặt mica","md",10,275000]
   ]}
 ];
-let activeContractQuote="tay-son",activeContractGroup="VẬN CHUYỂN";
+let activeContractQuote="tay-son",activeContractGroup="VẬN CHUYỂN",activeContractSection="construction";
 const contractEscape=(value)=>String(value??"").replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll('"',"&quot;");
 const contractMoney=(value)=>new Intl.NumberFormat("vi-VN").format(Number(value)||0);
-function contractDropZone(kind,title,desc){const sheetKinds=["quote","estimate","settlement"];return `<section class="contract-drop" data-contract-drop="${kind}"><input type="file" hidden multiple data-contract-file="${kind}" accept="${sheetKinds.includes(kind)?".xlsx,.xls,.csv":".pdf,.doc,.docx,.xls,.xlsx,.dwg"}"><div><b>${title}</b><span>${desc}</span></div><button type="button" data-contract-pick="${kind}">Chọn file</button></section>`}
+function contractDropZone(kind,title,desc){const sheetKinds=["quote","estimate","settlement"];return `<section class="contract-drop" data-contract-drop="${kind}"><input type="file" hidden multiple data-contract-file="${kind}" accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.csv,.ppt,.pptx,.txt,.md,.note,.png,.jpg,.jpeg"><div><b>${title}</b><span>${desc}</span></div><button type="button" data-contract-pick="${kind}">Chọn file</button></section>`}
 function contractSection(title,desc,body){return `<section class="contract-docs contract-block"><header><div><h3>${title}</h3><p>${desc}</p></div></header>${body}</section>`}
 function contractEstimateFiles(){return contractSection("Dự toán","Lưu hồ sơ dự toán và các file Excel dự toán dùng để kiểm soát chi phí.",`<div class="contract-drop-grid single">${contractDropZone("estimate","Hồ sơ dự toán","Excel, CSV hoặc bảng dự toán")}</div><div class="contract-file-list" data-contract-kind-list="estimate"><span>Đang tải danh sách hồ sơ dự toán...</span></div>`)}
 function contractSignedFiles(){return `<div class="contract-drop-grid">${contractDropZone("contract","Hợp đồng ký kết","PDF, Word hoặc Excel")}${contractDropZone("drawing","Hồ sơ bản vẽ hợp đồng","PDF, CAD, Word hoặc Excel")}</div><div class="contract-file-list" data-contract-kind-list="contract,drawing"><span>Đang tải hồ sơ hợp đồng...</span></div>`}
@@ -531,24 +732,68 @@ function contractOwnerFiles(){return contractSection("Hợp đồng nhận thầ
 function contractExtraRows(){const rows=[["PS-CDT-001","Thay đổi vật liệu hoàn thiện khu WC","Chờ CDT xác nhận","02/06/2026",18500000],["PS-CDT-002","Bổ sung đèn hắt khu phòng khách","Đang báo giá","31/05/2026",9200000],["PS-CDT-003","Điều chỉnh kích thước tủ giày theo bản vẽ mới","Đã duyệt","28/05/2026",12600000]];return `<table class="contract-extra-table"><thead><tr><th>Mã phát sinh</th><th>Nội dung phát sinh của CDT</th><th>Trạng thái</th><th>Ngày ghi nhận</th><th>Giá trị</th></tr></thead><tbody>${rows.map(row=>`<tr><td>${row[0]}</td><td>${row[1]}</td><td>${row[2]}</td><td>${row[3]}</td><td>${contractMoney(row[4])}</td></tr>`).join("")}</tbody></table>`}
 function contractExtraSection(){return contractSection("Phát sinh","Danh sách phát sinh của Chủ đầu tư trong quá trình thi công.",`<div class="contract-extra-head"><button class="green">+ Thêm phát sinh</button><button>Xuất dữ liệu</button></div>${contractExtraRows()}`)}
 function contractSettlementFiles(){return contractSection("Quyết toán","Lưu hồ sơ quyết toán, bảng tổng hợp và tài liệu chốt giá trị cuối dự án.",`<div class="contract-drop-grid single">${contractDropZone("settlement","Hồ sơ quyết toán","Excel, CSV, PDF hoặc Word")}</div><div class="contract-file-list" data-contract-kind-list="settlement"><span>Đang tải hồ sơ quyết toán...</span></div>`)}
-const contractItemSections=["VẬN CHUYỂN","CHE PHỦ","PHÁ DỠ","VỆ SINH","TRẦN","TƯỜNG","SÀN","ĐIỆN NƯỚC","GỖ","KÍNH","SẮT","ĐÁ","RÈM","ĐIỀU HÒA","ĐỆM","LẮP ĐẶT THIẾT BỊ","CHIẾU SÁNG"];
-function contractItemSection(item){const text=`${item[0]} ${item[1]} ${item[2]}`.toLocaleUpperCase("vi");if(/VẬN CHUYỂN|TRẠC THẢI|RÁC/.test(text))return "VẬN CHUYỂN";if(/BẢO VỆ|BỌC|DÁN LÓT|CHE PHỦ/.test(text))return "CHE PHỦ";if(/PHÁ|THÁO|ĐẬP|RÓC/.test(text))return "PHÁ DỠ";if(/VỆ SINH|VSCN/.test(text))return "VỆ SINH";if(/TRẦN/.test(text))return "TRẦN";if(/TƯỜNG|VÁCH/.test(text))return "TƯỜNG";if(/SÀN|ỐP LÁT|GẠCH|NẸP|PHÀO/.test(text))return "SÀN";if(/ĐIỆN NƯỚC|THIẾT BỊ ĐIỆN|CHỐNG THẤM/.test(text))return "ĐIỆN NƯỚC";if(/GỖ|TỦ|KỆ|BÀN|GHẾ|GIƯỜNG|SOFA|QUẦY|PANTRY|BẾP|BAN THỜ|TATAMI|MDF|MELAMINE/.test(text))return "GỖ";if(/KÍNH|GƯƠNG|CỬA LÙA|CỬA SỔ/.test(text))return "KÍNH";if(/SẮT|THÉP|INOX/.test(text))return "SẮT";if(/ĐÁ/.test(text))return "ĐÁ";if(/RÈM/.test(text))return "RÈM";if(/ĐIỀU HÒA|MÁY LẠNH/.test(text))return "ĐIỀU HÒA";if(/ĐỆM|MÚT/.test(text))return "ĐỆM";if(/LẮP|NHÂN CÔNG/.test(text))return "LẮP ĐẶT THIẾT BỊ";if(/ĐÈN|LED|CHIẾU SÁNG|DOWNLIGHT|RỌI/.test(text))return "CHIẾU SÁNG";return "GỖ"}
+const contractItemSections=["KHẢO SÁT - ĐO ĐẠC","CHE PHỦ","PHÁ DỠ","VẬN CHUYỂN","XÂY TRÁT","CHỐNG THẤM","ĐIỆN NƯỚC","PCCC / AN TOÀN KỸ THUẬT","ĐIỀU HÒA","THIẾT BỊ THÔNG MINH - MẠNG - CAMERA","THẠCH CAO","ỐP LÁT","ĐÁ","SƠN BẢ","SÀN GỖ - SÀN NHỰA","CỬA","NHÔM KÍNH","SẮT","GỖ NỘI THẤT","RÈM","CÂY - TIỂU CẢNH","BIỂN BẢNG LOGO","DEFECT CHẤM VÁ","VỆ SINH CN","KHÁC"];
+const contractMaterialSections=["VẬT LIỆU HOÀN THIỆN","PHỤ KIỆN ĐỒ NỘI THẤT","THIẾT BỊ CHIẾU SÁNG","THIẾT BỊ BẾP","THIẾT BỊ VỆ SINH","ĐÈN DECOR","ĐỒ DECOR","ĐỒ DECOR BẾP","CHĂN GA ĐỆM","ĐỒ THỦ CÔNG","KHÁC"];
+function contractItemSection(item){
+  const text=`${item[0]} ${item[1]} ${item[2]}`.toLocaleUpperCase("vi");
+  if(/KHẢO SÁT|ĐO ĐẠC|ĐỊNH VỊ|TIM TRỤC|CAO ĐỘ|HIỆN TRẠNG/.test(text))return "KHẢO SÁT - ĐO ĐẠC";
+  if(/VẬN CHUYỂN|TRẠC THẢI|RÁC/.test(text))return "VẬN CHUYỂN";
+  if(/BẢO VỆ|BỌC|DÁN LÓT|CHE PHỦ/.test(text))return "CHE PHỦ";
+  if(/PHÁ|THÁO|ĐẬP|RÓC/.test(text))return "PHÁ DỠ";
+  if(/VỆ SINH CÔNG NGHIỆP|VỆ SINH CN|TỔNG VỆ SINH|ĐÁNH BÓNG SÀN/.test(text))return "VỆ SINH CN";
+  if(/VỆ SINH|VSCN/.test(text))return "VỆ SINH CN";
+  if(/DEFECT|CHẤM VÁ|CHẤM|VÁ LỖ|SỬA LỖI|SỬA CHỮA/.test(text))return "DEFECT CHẤM VÁ";
+  if(/CHỐNG THẤM|CHỐNG ẨM|SƠN CHỐNG THẤM/.test(text))return "CHỐNG THẤM";
+  if(/SƠN|BẢ|BÃ|MATIT|MATTIT/.test(text))return "SƠN BẢ";
+  if(/THẠCH CAO|TRẦN/.test(text))return "THẠCH CAO";
+  if(/XÂY|TRÁT|TƯỜNG|VÁCH/.test(text))return "XÂY TRÁT";
+  if(/SÀN GỖ|SÀN NHỰA|SÀN SPC|SÀN LAMINATE|SÀN VINYL/.test(text))return "SÀN GỖ - SÀN NHỰA";
+  if(/VẬT LIỆU HOÀN THIỆN|VLHT|KEO DÁN|SILICONE|NẸP|PHÀO|LEN CHÂN TƯỜNG|BỘT TRÉT|VỮA|XI MĂNG/.test(text))return "VẬT LIỆU HOÀN THIỆN";
+  if(/THIẾT BỊ BẾP|BẾP TỪ|BẾP ĐIỆN|HÚT MÙI|CHẬU RỬA|VÒI RỬA|LÒ NƯỚNG|LÒ VI SÓNG|MÁY RỬA BÁT/.test(text))return "THIẾT BỊ BẾP";
+  if(/ĐỒ BẾP|TỦ BẾP|PHỤ KIỆN BẾP|KỆ BẾP|RỔ XOONG|RỔ CHÉN|DAO THỚT|THÙNG GẠO/.test(text))return "ĐỒ DECOR BẾP";
+  if(/THIẾT BỊ VỆ SINH|BỒN CẦU|LAVABO|SEN TẮM|VÒI SEN|VÒI CHẬU|GƯƠNG PHÒNG TẮM|PHỤ KIỆN WC/.test(text))return "THIẾT BỊ VỆ SINH";
+  if(/SMART HOME|THÔNG MINH|WIFI|WI-FI|MẠNG LAN|LAN|CAMERA|ÂM THANH|CHUÔNG HÌNH|ROUTER|SWITCH|ACCESS POINT/.test(text))return "THIẾT BỊ THÔNG MINH - MẠNG - CAMERA";
+  if(/THIẾT BỊ CÔNG TRÌNH|THIẾT BỊ THI CÔNG|MÁY KHOAN|MÁY CẮT|MÁY MÀI|GIÀN GIÁO|THANG|XE RÙA/.test(text))return "KHÁC";
+  if(/PCCC|PHÒNG CHÁY|CHỮA CHÁY|BÁO CHÁY|BÌNH CHỮA CHÁY|EXIT|ĐÈN SỰ CỐ|AN TOÀN KỸ THUẬT/.test(text))return "PCCC / AN TOÀN KỸ THUẬT";
+  if(/BIỂN BẢNG|BẢNG HIỆU|LOGO|DECAL|CHỮ NỔI|BIỂN PHÒNG/.test(text))return "BIỂN BẢNG LOGO";
+  if(/ĐÈN DECOR|ĐÈN TRANG TRÍ|ĐÈN HẮT|ĐÈN THẢ|ĐÈN BÀN|ĐÈN SÀN|ĐÈN CHÙM/.test(text))return "ĐÈN DECOR";
+  if(/ĐỒ DECOR|DECOR|TRANG TRÍ|ĐỒ TRANG TRÍ|TRANH|TƯỢNG|BÌNH|LỌ HOA|GƯƠNG TRANG TRÍ/.test(text))return "ĐỒ DECOR";
+  if(/ĐỒ THỦ CÔNG|THỦ CÔNG|MÂY TRE|GỐM|SỨ|HANDMADE/.test(text))return "ĐỒ THỦ CÔNG";
+  if(/CỬA|KHÓA CỬA|BẢN LỀ|RAY CỬA/.test(text))return "CỬA";
+  if(/CÂY|CẢNH QUAN|CHẬU CÂY|TIỂU CẢNH/.test(text))return "CÂY - TIỂU CẢNH";
+  if(/ỐP LÁT|ỐP|LÁT|SÀN|GẠCH|NẸP|PHÀO/.test(text))return "ỐP LÁT";
+  if(/ĐIỆN NƯỚC|THIẾT BỊ ĐIỆN/.test(text))return "ĐIỆN NƯỚC";
+  if(/CHĂN|GA|GỐI|ĐỆM|MÚT|NỆM/.test(text))return "CHĂN GA ĐỆM";
+  if(/PHỤ KIỆN ĐỒ NỘI THẤT|PHỤ KIỆN NỘI THẤT|TAY NẮM|RAY TRƯỢT|KHÓA TỦ|PÍT TÔNG|GIÁ TREO/.test(text))return "PHỤ KIỆN ĐỒ NỘI THẤT";
+  if(/ĐỒ NỘI THẤT|NỘI THẤT|BÀN|GHẾ|GIƯỜNG|SOFA|TỦ|KỆ|TAB|BÀN TRÀ|BÀN ĂN/.test(text))return "GỖ NỘI THẤT";
+  if(/GỖ|TỦ|KỆ|BÀN|GHẾ|GIƯỜNG|SOFA|QUẦY|PANTRY|BẾP|BAN THỜ|TATAMI|MDF|MELAMINE/.test(text))return "GỖ NỘI THẤT";
+  if(/NHÔM|KÍNH|GƯƠNG|CỬA LÙA|CỬA SỔ/.test(text))return "NHÔM KÍNH";
+  if(/SẮT|THÉP|INOX/.test(text))return "SẮT";
+  if(/ĐÁ/.test(text))return "ĐÁ";
+  if(/RÈM/.test(text))return "RÈM";
+  if(/ĐIỀU HÒA|MÁY LẠNH/.test(text))return "ĐIỀU HÒA";
+  if(/LẮP|NHÂN CÔNG/.test(text))return "KHÁC";
+  if(/THIẾT BỊ CHIẾU SÁNG/.test(text))return "THIẾT BỊ CHIẾU SÁNG";
+  if(/ĐÈN|LED|CHIẾU SÁNG|DOWNLIGHT|RỌI/.test(text))return "THIẾT BỊ CHIẾU SÁNG";
+  return "KHÁC";
+}
 
-function contractQuoteSidebar(){return `<aside class="contract-quote-side"><h3>HẠNG MỤC</h3>${contractItemSections.map(group=>`<button class="${activeContractGroup===group?"active":""}" data-contract-group="${group}">${group}</button>`).join("")}</aside>`}
+function contractQuoteSection(title,items,attribute,section){return `<h3>${title}</h3>${items.map(group=>`<button class="${activeContractGroup===group&&activeContractSection===section?"active":""}" ${attribute}="${group}" data-contract-section="${section}">${group}</button>`).join("")}`}
+function contractQuoteSidebar(){return `<aside class="contract-quote-side">${contractQuoteSection("HẠNG MỤC THI CÔNG",contractItemSections,"data-contract-group","construction")}${contractQuoteSection("HẠNG MỤC VẬT TƯ",contractMaterialSections,"data-contract-group","material")}</aside>`}
 function contractQuoteTable(){const source=contractQuoteSources.find(item=>item.id===activeContractQuote)||contractQuoteSources[0],items=source.items.filter(item=>activeContractGroup==="all"||contractItemSection(item)===activeContractGroup);return `<div class="contract-quote-main"><header><div><h3>Thông tin báo giá với CDT</h3><p>Hiển thị các đầu mục, khối lượng và giá trị báo giá gửi Chủ đầu tư.</p></div><div><button data-contract-check-all>Chọn tất cả</button><button class="green" data-contract-create-schedule>Cập nhật đầu mục báo giá</button></div></header><div class="contract-quote-tools"><input data-contract-item-search placeholder="Tìm thông tin báo giá..."><span>${items.length} đầu mục</span></div><table><thead><tr><th></th><th>Nhóm</th><th>Đầu mục báo giá</th><th>Mô tả / quy cách</th><th>Đơn vị</th><th>Khối lượng</th><th>Đơn giá</th><th>Thành tiền</th></tr></thead><tbody>${items.map((item,index)=>`<tr><td><input type="checkbox" data-contract-item="${index}"></td><td><b>${item[0]}</b></td><td>${item[1]}</td><td>${item[2]}</td><td>${item[3]}</td><td>${item[4]}</td><td>${contractMoney(item[5])}</td><td>${contractMoney(Number(item[4])*Number(item[5]))}</td></tr>`).join("")}</tbody></table></div>`}
 function contractQuoteManager(){return `<section class="contract-quotes">${contractQuoteSidebar()}${contractQuoteTable()}</section>`}
 function contractOwnerView(){history.replaceState(null,"",`${location.pathname}?view=contract-owner`);document.querySelector("#project-app").innerHTML=`<section class="contract-owner-page">${contractEstimateFiles()}${contractOwnerFiles()}${contractExtraSection()}${contractSettlementFiles()}</section>`;bindContractOwner();loadContractFiles()}
 function contractFileKindLabel(kind){return kind==="quote"?"Báo giá hợp đồng":kind==="estimate"?"Dự toán":kind==="drawing"?"Bản vẽ hợp đồng":kind==="settlement"?"Quyết toán":"Hợp đồng ký kết"}
-async function loadContractFiles(){const lists=[...document.querySelectorAll("[data-contract-kind-list]")];if(!lists.length)return;try{const response=await fetch(`/api/v1/projects/${id}/contract-files`),body=await response.json();const render=(list)=>{const kinds=list.dataset.contractKindList.split(","),files=body.data.filter(file=>kinds.includes(file.kind)),empty=`Chưa có ${kinds.map(contractFileKindLabel).join(", ")} nào được lưu.`;list.innerHTML=files.length?files.map(file=>`<article><div><b>${contractFileKindLabel(file.kind)}</b><span>${contractEscape(file.name)}</span><small>${contractMoney(Math.ceil(file.size/1024))} KB</small></div><a href="/api/v1/projects/${id}/contract-files/download?storedName=${encodeURIComponent(file.storedName)}">Tải xuống</a><button data-contract-delete="${contractEscape(file.storedName)}">×</button></article>`).join(""):`<span>${empty}</span>`;list.querySelectorAll("[data-contract-delete]").forEach(button=>button.onclick=async()=>{await fetch(`/api/v1/projects/${id}/contract-files?storedName=${encodeURIComponent(button.dataset.contractDelete)}`,{method:"DELETE"});loadContractFiles()})};lists.forEach(render)}catch{lists.forEach(list=>list.innerHTML="<span>Không tải được danh sách hồ sơ.</span>")}}
+async function loadContractFiles(){const lists=[...document.querySelectorAll("[data-contract-kind-list]")];if(!lists.length)return;try{const response=await fetch(`/api/v1/projects/${id}/contract-files`),body=await response.json();const render=(list)=>{const kinds=list.dataset.contractKindList.split(","),files=body.data.filter(file=>kinds.includes(file.kind)),empty=`Chưa có ${kinds.map(contractFileKindLabel).join(", ")} nào được lưu.`;list.innerHTML=files.length?files.map(file=>{const url=`/api/v1/projects/${id}/contract-files/download?storedName=${encodeURIComponent(file.storedName)}`,canOpen=canOpenFile(file),type=fileOpenType(file),preview=filePreviewMarkup(file,url);return `<article class="contract-file-card ${canOpen?"clickable":""}" ${canOpen?`data-open-file="${url}" data-open-type="${type}" data-open-title="${contractEscape(file.name)}"`:""}><div class="contract-file-preview">${preview}</div><div><b>${contractFileKindLabel(file.kind)}</b><span>${contractEscape(file.name)}</span><small>${fileTypeLabel(file)} · ${contractMoney(Math.ceil(file.size/1024))} KB</small></div><a href="${url}" download>Tải xuống</a><button data-contract-delete="${contractEscape(file.storedName)}">×</button></article>`}).join(""):`<span>${empty}</span>`;list.querySelectorAll("[data-contract-delete]").forEach(button=>button.onclick=async()=>{await fetch(`/api/v1/projects/${id}/contract-files?storedName=${encodeURIComponent(button.dataset.contractDelete)}`,{method:"DELETE"});loadContractFiles()});bindFileOpeners(list)};lists.forEach(render)}catch{lists.forEach(list=>list.innerHTML="<span>Không tải được danh sách hồ sơ.</span>")}}
 async function uploadContractFiles(kind,files){for(const file of files){await fetch(`/api/v1/projects/${id}/contract-files?kind=${kind}&name=${encodeURIComponent(file.name)}`,{method:"POST",body:file})}loadContractFiles()}
 function renderContractQuoteManager(){const current=document.querySelector(".contract-quotes");if(current){current.outerHTML=contractQuoteManager();bindContractQuoteManager()}}
 function createScheduleFromQuote(){const selected=[...document.querySelectorAll("[data-contract-item]:checked")];if(!selected.length)return alert("Chọn ít nhất một đầu mục báo giá để cập nhật.");alert(`Đã cập nhật ${selected.length} đầu mục báo giá với CDT.`)}
-function bindContractQuoteManager(){document.querySelectorAll("[data-contract-group]").forEach(button=>button.onclick=()=>{activeContractGroup=button.dataset.contractGroup;renderContractQuoteManager()});document.querySelector("[data-contract-check-all]")?.addEventListener("click",()=>document.querySelectorAll("[data-contract-item]").forEach(input=>input.checked=true));document.querySelector("[data-contract-create-schedule]")?.addEventListener("click",createScheduleFromQuote);document.querySelector("[data-contract-item-search]")?.addEventListener("input",event=>{const query=event.target.value.toLowerCase();document.querySelectorAll(".contract-quote-main tbody tr").forEach(row=>row.hidden=!row.innerText.toLowerCase().includes(query))})}
+function bindContractQuoteManager(){document.querySelectorAll("[data-contract-group]").forEach(button=>button.onclick=()=>{activeContractGroup=button.dataset.contractGroup;activeContractSection=button.dataset.contractSection||"construction";renderContractQuoteManager()});document.querySelector("[data-contract-check-all]")?.addEventListener("click",()=>document.querySelectorAll("[data-contract-item]").forEach(input=>input.checked=true));document.querySelector("[data-contract-create-schedule]")?.addEventListener("click",createScheduleFromQuote);document.querySelector("[data-contract-item-search]")?.addEventListener("input",event=>{const query=event.target.value.toLowerCase();document.querySelectorAll(".contract-quote-main tbody tr").forEach(row=>row.hidden=!row.innerText.toLowerCase().includes(query))})}
 function bindContractOwner(){document.querySelector("[data-back-dashboard]")?.addEventListener("click",()=>{history.replaceState(null,"",location.pathname);render()});document.querySelectorAll("[data-contract-pick]").forEach(button=>button.onclick=()=>document.querySelector(`[data-contract-file="${button.dataset.contractPick}"]`).click());document.querySelectorAll("[data-contract-file]").forEach(input=>input.onchange=()=>uploadContractFiles(input.dataset.contractFile,[...input.files]));document.querySelectorAll("[data-contract-drop]").forEach(zone=>{zone.ondragover=event=>{event.preventDefault();zone.classList.add("dragging")};zone.ondragleave=()=>zone.classList.remove("dragging");zone.ondrop=event=>{event.preventDefault();zone.classList.remove("dragging");uploadContractFiles(zone.dataset.contractDrop,[...event.dataTransfer.files])}});bindContractQuoteManager()}
 
 function showView(view){
   const requestedTab=new URLSearchParams(location.search).get("tab");
-  const labels={gantt:"Bảng tiến độ",plan:"Kế hoạch thi công",diary:"Nhật ký thi công","contract-owner":"Hợp đồng nhận thầu","boq-owner":"Bảng khối lượng nhận thầu","month-owner":"Kế hoạch tháng","log-owner":"Nhật ký khối lượng","payment-owner":"Nghiệm thu, thanh toán","debt-owner":"Công nợ CDT theo DA","extra-owner":"Phát sinh hợp đồng nhận thầu","contract-vendor":"Hợp đồng giao thầu","boq-vendor":"Bảng khối lượng giao thầu","debt-vendor":"Công nợ nhà thầu theo DA","extra-vendor":"Phát sinh hợp đồng giao thầu",supplier:"Hóa đơn","material-plan":"Kế hoạch vật tư",warehouse:"Quản lý kho","material-slip":"Phiếu nhập kho","debt-supplier":"Công nợ NCC",rfi:"Yêu cầu Phát sinh của CDT",rfa:"Yêu cầu phê duyệt","owner-request":"Yêu cầu của CDT",issues:"Vấn đề sự cố","project-existing":"Hiện trạng","project-design-3d":"Hồ sơ thiết kế 3D","project-technical":"Hồ sơ kỹ thuật","project-design-construction":"Hồ sơ thiết kế thi công","project-technical-construction":"Hồ sơ kỹ thuật thi công","project-owner-request":"Hồ sơ phát sinh","project-other":"Khác",cash:"Quản lý thu chi",approval:"Đề xuất và phê duyệt"};
+  const labels={gantt:"Bảng tiến độ",plan:"Kế hoạch thi công",diary:"Nhật ký thi công","contract-owner":"Hợp đồng nhận thầu","boq-owner":"Bảng khối lượng nhận thầu","month-owner":"Kế hoạch tháng","log-owner":"Nhật ký khối lượng","payment-owner":"Nghiệm thu, thanh toán","debt-owner":"Công nợ CDT","extra-owner":"Phát sinh hợp đồng nhận thầu","contract-vendor":"Hợp đồng giao thầu","boq-vendor":"Bảng khối lượng giao thầu","debt-vendor":"Công nợ nhà thầu","extra-vendor":"Phát sinh hợp đồng giao thầu",supplier:"Hóa đơn","material-plan":"Kế hoạch vật tư",warehouse:"Quản lý kho","material-slip":"Phiếu nhập kho","debt-supplier":"Công nợ NCC",rfi:"Yêu cầu Phát sinh của CDT",rfa:"Yêu cầu phê duyệt","owner-request":"Yêu cầu của CDT",issues:"Vấn đề sự cố","project-existing":"Hiện trạng","project-design-3d":"Hồ sơ thiết kế 3D","project-technical":"Hồ sơ kỹ thuật","project-design-construction":"Hồ sơ thiết kế thi công","project-technical-construction":"Hồ sơ kỹ thuật thi công","project-owner-request":"Hồ sơ phát sinh","project-other":"Khác",cash:"Quản lý thu chi",approval:"Đề xuất và phê duyệt"};
   history.replaceState(null,"",`${location.pathname}?view=${view}`);
   document.querySelector(".toolbar").style.display="";
   document.querySelector("#project-app").style.padding="";
@@ -559,6 +804,7 @@ function showView(view){
   if(view==="settings")return settingsView(requestedTab||"info");
   if(view==="contract-owner")return contractOwnerView();
   if(view==="contract-vendor")return contractVendorView();
+  if(view==="supplier")return supplierView();
   if(view==="debt-owner")return debtView("owner");
   if(view==="debt-vendor")return debtView("vendor");
   if(view==="debt-supplier")return debtView("supplier");
@@ -1018,7 +1264,7 @@ function sendDossierToContractorModal(apiType, storedName, dossierTitle){
 
 function contractDropZoneVendor(kind,title,desc){
   const sheetKinds=["quote","estimate","settlement"];
-  return `<section class="contract-drop" data-vendor-contract-drop="${kind}"><input type="file" hidden multiple data-vendor-contract-file="${kind}" accept="${sheetKinds.includes(kind)?".xlsx,.xls,.csv":".pdf,.doc,.docx,.xls,.xlsx,.dwg"}"><div><b>${title}</b><span>${desc}</span></div><button type="button" data-vendor-contract-pick="${kind}">Chọn file</button></section>`
+  return `<section class="contract-drop" data-vendor-contract-drop="${kind}"><input type="file" hidden multiple data-vendor-contract-file="${kind}" accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.csv,.ppt,.pptx,.txt,.md,.note,.png,.jpg,.jpeg"><div><b>${title}</b><span>${desc}</span></div><button type="button" data-vendor-contract-pick="${kind}">Chọn file</button></section>`
 }
 
 function contractSignedFilesVendor(){
@@ -1030,7 +1276,7 @@ function contractQuoteFilesVendor(){
 }
 
 function contractQuoteSidebarVendor(){
-  return `<aside class="contract-quote-side"><h3>HẠNG MỤC</h3>${contractItemSections.map(group=>`<button class="${activeContractGroup===group?"active":""}" data-vendor-contract-group="${group}">${group}</button>`).join("")}</aside>`
+  return `<aside class="contract-quote-side">${contractQuoteSection("HẠNG MỤC THI CÔNG",contractItemSections,"data-vendor-contract-group")}${contractQuoteSection("HẠNG MỤC VẬT TƯ",contractMaterialSections,"data-vendor-contract-group")}</aside>`
 }
 
 function contractQuoteTableVendor(){
@@ -1071,29 +1317,7 @@ function contractVendorView(){
   loadVendorContractFiles();
 }
 
-async function loadVendorContractFiles(){
-  const lists=[...document.querySelectorAll("[data-vendor-contract-kind-list]")];
-  if(!lists.length)return;
-  try{
-    const response=await fetch(`/api/v1/projects/${id}/vendor-contract-files`),
-          body=await response.json();
-    const render=(list)=>{
-      const kinds=list.dataset.vendorContractKindList.split(","),
-            files=body.data.filter(file=>kinds.includes(file.kind)),
-            empty=`Chưa có ${kinds.map(contractFileKindLabel).join(", ")} nào được lưu.`;
-      list.innerHTML=files.length?files.map(file=>`<article><div><b>${contractFileKindLabel(file.kind)}</b><span>${contractEscape(file.name)}</span><small>${contractMoney(Math.ceil(file.size/1024))} KB</small></div><a href="/api/v1/projects/${id}/vendor-contract-files/download?storedName=${encodeURIComponent(file.storedName)}">Tải xuống</a><button data-vendor-contract-delete="${contractEscape(file.storedName)}">×</button></article>`).join(""):`<span>${empty}</span>`;
-      
-      list.querySelectorAll("[data-vendor-contract-delete]").forEach(button=>button.onclick=async()=>{
-        await fetch(`/api/v1/projects/${id}/vendor-contract-files?storedName=${encodeURIComponent(button.dataset.vendorContractDelete)}`,{method:"DELETE"});
-        loadVendorContractFiles();
-      });
-    };
-    lists.forEach(render);
-  }catch{
-    lists.forEach(list=>list.innerHTML="<span>Không tải được danh sách hồ sơ.</span>");
-  }
-}
-
+async function loadVendorContractFiles(){const lists=[...document.querySelectorAll("[data-vendor-contract-kind-list]")];if(!lists.length)return;try{const response=await fetch(`/api/v1/projects/${id}/vendor-contract-files`),body=await response.json();const render=(list)=>{const kinds=list.dataset.vendorContractKindList.split(","),files=body.data.filter(file=>kinds.includes(file.kind)),empty=`Chưa có ${kinds.map(contractFileKindLabel).join(", ")} nào được lưu.`;list.innerHTML=files.length?files.map(file=>{const url=`/api/v1/projects/${id}/vendor-contract-files/download?storedName=${encodeURIComponent(file.storedName)}`,canOpen=canOpenFile(file),type=fileOpenType(file),preview=filePreviewMarkup(file,url);return `<article class="contract-file-card ${canOpen?"clickable":""}" ${canOpen?`data-open-file="${url}" data-open-type="${type}" data-open-title="${contractEscape(file.name)}"`:""}><div class="contract-file-preview">${preview}</div><div><b>${contractFileKindLabel(file.kind)}</b><span>${contractEscape(file.name)}</span><small>${fileTypeLabel(file)} · ${contractMoney(Math.ceil(file.size/1024))} KB</small></div><a href="${url}" download>Tải xuống</a><button data-vendor-contract-delete="${contractEscape(file.storedName)}">×</button></article>`}).join(""):`<span>${empty}</span>`;list.querySelectorAll("[data-vendor-contract-delete]").forEach(button=>button.onclick=async()=>{await fetch(`/api/v1/projects/${id}/vendor-contract-files?storedName=${encodeURIComponent(button.dataset.vendorContractDelete)}`,{method:"DELETE"});loadVendorContractFiles()});bindFileOpeners(list)};lists.forEach(render)}catch{lists.forEach(list=>list.innerHTML="<span>Không tải được danh sách hồ sơ.</span>")}}
 async function uploadVendorContractFiles(kind,files){
   for(const file of files){
     await fetch(`/api/v1/projects/${id}/vendor-contract-files?kind=${kind}&name=${encodeURIComponent(file.name)}`,{method:"POST",body:file});
@@ -1155,9 +1379,9 @@ function bindContractVendor(){
 function debtView(type){
   history.replaceState(null,"",`${location.pathname}?view=debt-${type}`);
   const titleText = type === "owner" 
-    ? "Công nợ Chủ đầu tư theo DA" 
+    ? "Công nợ Chủ đầu tư" 
     : type === "vendor" 
-      ? "Công nợ Nhà thầu theo DA" 
+      ? "Công nợ Nhà thầu" 
       : "Công nợ Nhà cung cấp";
   document.querySelector("#project-app").innerHTML=`
     <div class="debt-dashboard-container">

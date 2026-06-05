@@ -1,6 +1,6 @@
-# ConstructFlow
+# Ledome-MGMT
 
-Clean-room construction operations platform starter. The current vertical slice is dependency-free so it can run in the bundled Node runtime while the production Next.js/NestJS migration is prepared.
+LE DOME construction management platform. The current vertical slice is dependency-free so it can run in the bundled Node runtime while the production Next.js/NestJS migration is prepared.
 
 ## Run
 
@@ -36,7 +36,7 @@ Caddy, startup task, `app.ledome.vn`, runtime data, and backup deployment checkl
 One-command Windows server install:
 
 ```powershell
-Set-ExecutionPolicy -Scope Process Bypass -Force; Invoke-WebRequest -UseBasicParsing "https://raw.githubusercontent.com/ledome1/ledome/main/deploy/windows/install-server.ps1" -OutFile "$env:TEMP\install-constructflow.ps1"; powershell -ExecutionPolicy Bypass -File "$env:TEMP\install-constructflow.ps1" -Domain "app.ledome.vn"
+Set-ExecutionPolicy -Scope Process Bypass -Force; Invoke-WebRequest -UseBasicParsing "https://raw.githubusercontent.com/ledome1/ledome/main/deploy/windows/install-server.ps1" -OutFile "$env:TEMP\install-ledome-mgmt.ps1"; powershell -ExecutionPolicy Bypass -File "$env:TEMP\install-ledome-mgmt.ps1" -Domain "app.ledome.vn"
 ```
 
 ## Delivery status

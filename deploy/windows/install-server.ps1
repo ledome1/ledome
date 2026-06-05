@@ -1,7 +1,7 @@
 param(
   [string]$RepoZipUrl = "https://github.com/ledome1/ledome/archive/refs/heads/main.zip",
   [string]$Domain = "app.ledome.vn",
-  [string]$InstallRoot = "C:\ConstructFlow",
+  [string]$InstallRoot = "C:\Ledome-MGMT",
   [int]$Port = 3000,
   [int64]$UploadMaxBytes = 104857600,
   [int]$SessionTtlHours = 12
@@ -98,8 +98,8 @@ function Ensure-Caddy {
 function Install-AppCode {
   param([string]$Url, [string]$AppDir)
   Write-Host "Installing app code from $Url"
-  $zip = Join-Path $env:TEMP "constructflow-main.zip"
-  $extract = Join-Path $env:TEMP "constructflow-main"
+  $zip = Join-Path $env:TEMP "ledome-mgmt-main.zip"
+  $extract = Join-Path $env:TEMP "ledome-mgmt-main"
   Download-File $Url $zip
   Expand-ZipClean $zip $extract
   $source = Get-ChildItem -Path $extract -Directory | Select-Object -First 1
@@ -145,7 +145,7 @@ function Write-LaunchScripts {
     [int]$SessionTtlHours
   )
 
-  $appScript = Join-Path $BinDir "start-constructflow.ps1"
+  $appScript = Join-Path $BinDir "start-ledome-mgmt.ps1"
   $caddyScript = Join-Path $BinDir "start-caddy.ps1"
 
   @"
@@ -157,7 +157,7 @@ function Write-LaunchScripts {
 `$env:UPLOAD_MAX_BYTES = "$UploadMaxBytes"
 `$env:SESSION_TTL_HOURS = "$SessionTtlHours"
 Set-Location -LiteralPath "$AppDir"
-& "$NodeExe" "server.js" *>> "$LogsDir\constructflow.out.log"
+& "$NodeExe" "server.js" *>> "$LogsDir\ledome-mgmt.out.log"
 "@ | Set-Content -LiteralPath $appScript -Encoding ASCII
 
   @"
@@ -204,11 +204,11 @@ function Show-Diagnostics {
 
   Write-Host ""
   Write-Host "Diagnostics:"
-  Get-ScheduledTask -TaskName ConstructFlow, ConstructFlowCaddy -ErrorAction SilentlyContinue | Format-Table TaskName, State -AutoSize | Out-Host
+  Get-ScheduledTask -TaskName "Ledome-MGMT", "Ledome-MGMT-Caddy" -ErrorAction SilentlyContinue | Format-Table TaskName, State -AutoSize | Out-Host
   Get-CimInstance Win32_Process -Filter "name = 'node.exe'" | Where-Object { $_.CommandLine -and $_.CommandLine.Contains("server.js") } | Select-Object ProcessId, CommandLine | Format-List | Out-Host
   netstat -ano | Select-String ":$Port\s+.*LISTENING" | Out-Host
 
-  foreach ($file in @("constructflow.out.log", "caddy.out.log")) {
+  foreach ($file in @("ledome-mgmt.out.log", "caddy.out.log")) {
     $path = Join-Path $LogsDir $file
     if (Test-Path $path) {
       Write-Host ""
@@ -274,13 +274,13 @@ $scripts = Write-LaunchScripts `
 Stop-MatchingProcesses -ExecutableName "node.exe" -CommandNeedle $appDir
 Stop-MatchingProcesses -ExecutableName "caddy.exe" -CommandNeedle $caddyFile
 
-Ensure-StartupTask -Name "ConstructFlow" -ScriptPath $scripts.App
-Ensure-StartupTask -Name "ConstructFlowCaddy" -ScriptPath $scripts.Caddy
+Ensure-StartupTask -Name "Ledome-MGMT" -ScriptPath $scripts.App
+Ensure-StartupTask -Name "Ledome-MGMT-Caddy" -ScriptPath $scripts.Caddy
 Start-DetachedScript $scripts.App
 Start-DetachedScript $scripts.Caddy
 
-Set-FirewallRule "ConstructFlow HTTP 80" 80
-Set-FirewallRule "ConstructFlow HTTPS 443" 443
+Set-FirewallRule "Ledome-MGMT HTTP 80" 80
+Set-FirewallRule "Ledome-MGMT HTTPS 443" 443
 
 $healthUrl = "http://127.0.0.1:$Port/api/v1/health"
 try {
@@ -291,9 +291,9 @@ try {
 }
 
 Write-Host ""
-Write-Host "ConstructFlow install complete."
+Write-Host "Ledome-MGMT install complete."
 Write-Host "Local health: $healthUrl"
-Write-Host "Startup tasks: ConstructFlow, ConstructFlowCaddy"
+Write-Host "Startup tasks: Ledome-MGMT, Ledome-MGMT-Caddy"
 Write-Host "Public URL after DNS/router setup: https://$Domain"
 Write-Host ""
 Write-Host "Next required network steps:"

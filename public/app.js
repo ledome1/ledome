@@ -2,20 +2,21 @@
 const money = (value) => new Intl.NumberFormat("vi-VN").format(value);
 const moneyInput = (value) => Number(value || 0).toLocaleString("vi-VN");
 const parseMoneyInput = (value) => Number(String(value || "").replace(/[^\d]/g, "")) || 0;
-const state = { page: location.hash.slice(1) || "projects", nav: [], account: null, customerId: "", customerQuery: "", customerFilter: "Tất cả", crmQuery: "", crmStatus: "Tất cả", driveQuery: "", driveScope: "Tất cả", financeQuery: "", financeKind: "Tất cả", personalQuery: "", personalKind: "Tất cả", navCollapsed: {} };
+const state = { page: location.hash.slice(1) || "projects", nav: [], account: null, customerId: "", customerQuery: "", customerFilter: "Tất cả", crmQuery: "", crmStatus: "Tất cả", crmSupplierCategory: "Tất cả", driveQuery: "", driveScope: "Tất cả", financeQuery: "", financeKind: "Tất cả", personalQuery: "", personalKind: "Tất cả", navCollapsed: {} };
 const AUTH_STORAGE = "ledome.auth.v1";
+const LOGIN_REMEMBER_STORAGE = "ledome.login.remember.v1";
 const NAV_COLLAPSE_STORAGE = "ledome.navCollapsed.v1";
 const FINANCE_STORAGE = "ledome.finance.v1";
 const PERSONAL_FINANCE_STORAGE = "ledome.personalFinance.v1";
 const MODULE_PERMISSION = {
-  projects: "projects", insight: "projects", drive: "projects", tasks: "projects", approval: "projects", fleet: "projects",
-  customers: "partners", contractors: "partners", suppliers: "partners",
-  "hrm-staff": "hrm", "hrm-attendance": "hrm", "hrm-payroll": "hrm",
+  projects: "projects", "projects-overview": "projects", insight: "projects", drive: "projects", tasks: "projects", approval: "projects", fleet: "projects",
+  "partners-overview": "partners", customers: "partners", contractors: "partners", suppliers: "partners",
+  "hrm-overview": "hrm", "hrm-staff": "hrm", "hrm-attendance": "hrm", "hrm-payroll": "hrm",
   "finance-overview": "finance", "finance-ledome": "finance", "finance-projects": "finance",
   "personal-finance-overview": "personalFinance", "personal-finance-transactions": "personalFinance", "personal-finance-budget": "personalFinance", "personal-finance-report": "personalFinance",
-  catalog: "config", accounts: "config"
+  catalog: "config", materials: "config", processes: "config", standards: "config", accounts: "config"
 };
-const pageTitles = { home: "DASHBOARD", insight: "INSIGHT", projects: "❖ Danh sách dự án", drive: "▰ LE DOME DRIVE", customers: "♟ Khách hàng", contractors: "▣ Nhà thầu", suppliers: "▤ Nhà cung cấp", "hrm-staff": "♟ Nhân sự", "hrm-attendance": "▣ Chấm công", "hrm-payroll": "$ Lương", "finance-overview": "▣ Tổng quan", "finance-ledome": "▣ Le Dome", "finance-projects": "▤ Dự án", "personal-finance-overview": "◈ Tài chính cá nhân", "personal-finance-transactions": "▤ Giao dịch cá nhân", "personal-finance-budget": "▣ Ngân sách tháng", "personal-finance-report": "◉ Báo cáo tháng", accounts: "▣ Tài khoản" };
+const pageTitles = { home: "DASHBOARD", insight: "INSIGHT", projects: "❖ Danh sách dự án", "projects-overview": "▣ Tổng quan dự án", drive: "▰ LE DOME DRIVE", "partners-overview": "▣ Tổng quan đối tác", customers: "♟ Khách hàng", contractors: "▣ Nhà thầu", suppliers: "▤ Nhà cung cấp", "hrm-overview": "▣ Tổng quan nhân sự", "hrm-staff": "♟ Nhân sự", "hrm-attendance": "▣ Chấm công", "hrm-payroll": "$ Lương", "finance-overview": "▣ Tổng quan", "finance-ledome": "▣ Le Dome", "finance-projects": "▤ Dự án", "personal-finance-overview": "◈ Tài chính cá nhân", "personal-finance-transactions": "▤ Giao dịch cá nhân", "personal-finance-budget": "▣ Ngân sách tháng", "personal-finance-report": "◉ Báo cáo tháng", catalog: "▰ Danh mục", materials: "▰ Vật liệu", processes: "▰ Quy trình", standards: "▰ Quy chuẩn", accounts: "▣ Tài khoản" };
 const api = (url, options = {}) => fetch(`/api/v1${url}`, { credentials: "same-origin", ...options }).then(async (res) => {
   const body = await res.json();
   if (!res.ok) throw new Error(body.error || `API ${res.status}`);
@@ -30,15 +31,17 @@ const NOTIFICATIONS = [
   { audience: ["config"], title: "Danh sách tài khoản đã được cập nhật theo nhân sự thật và vị trí kiêm nhiệm.", time: "3 ngày trước", unread: true, avatar: "CH" }
 ];
 const ui = { sortBy: "updated", sortDir: "desc", dateType: "all", dateRange: "Mọi lúc", hiddenWelcome: false };
+const isFinalSettlementProject = (project) => String(project?.projectStage || "").trim() === "final-settlement";
+const activeProjectsOnly = (items = []) => items.filter((project) => !isFinalSettlementProject(project));
 const PROJECT_NAV_FALLBACK = [
   ["▰  Khu phức hợp Riverside", "project/p1"],
   ["▰  Nhà máy điện tử Đông Nam", "project/p2"],
   ["▰  Cầu vượt tuyến vành đai", "project/p3"]
 ];
-let projectNavItems = PROJECT_NAV_FALLBACK;
+let projectNavItems = null;
 
 function setTitle(page, subtitle = "") {
-  $("#title").textContent = pageTitles[page] || state.nav.find((x) => x[1] === page)?.[0] || "ConstructFlow";
+  $("#title").textContent = pageTitles[page] || state.nav.find((x) => x[1] === page)?.[0] || "Ledome-MGMT";
   $("#subtitle").textContent = subtitle;
 }
 
@@ -89,14 +92,14 @@ function renderNotifications() {
 }
 
 function renderNav() {
-  const activeProjects = projectNavItems.length ? projectNavItems : PROJECT_NAV_FALLBACK;
+  const activeProjects = Array.isArray(projectNavItems) ? projectNavItems : PROJECT_NAV_FALLBACK;
   const groups = [
     ["", [["⌕  Tìm kiếm dự án...", "projects"], ["◉  INSIGHT", "insight"], ["▰  LE DOME DRIVE", "drive"]]],
-    ["DỰ ÁN", activeProjects],
-    ["ĐỐI TÁC", [["♟  Khách hàng", "customers"], ["▣  Nhà thầu", "contractors"], ["▤  Nhà cung cấp", "suppliers"]]],
-    ["NHÂN SỰ", [["♟  Nhân sự", "hrm-staff"], ["▣  Chấm công", "hrm-attendance"], ["$  Lương", "hrm-payroll"]]],
+    ["DỰ ÁN", [["▣  Tổng quan", "projects-overview"], ...activeProjects]],
+    ["ĐỐI TÁC", [["▣  Tổng quan", "partners-overview"], ["♟  Khách hàng", "customers"], ["▣  Nhà thầu", "contractors"], ["▤  Nhà cung cấp", "suppliers"]]],
+    ["NHÂN SỰ", [["▣  Tổng quan", "hrm-overview"], ["♟  Nhân sự", "hrm-staff"], ["▣  Chấm công", "hrm-attendance"], ["$  Lương", "hrm-payroll"]]],
     ["TÀI CHÍNH", [["▣  Tổng quan", "finance-overview"], ["▣  Le Dome", "finance-ledome"], ["▤  Dự án", "finance-projects"]]],
-    ["CẤU HÌNH", [["▰  DANH MỤC", "catalog"], ["▰  VẬT LIỆU", "catalog"], ["▣  Tài khoản", "accounts"]]],
+    ["CẤU HÌNH", [["▰  Danh mục", "catalog"], ["▰  Vật liệu", "materials"], ["▰  Quy trình", "processes"], ["▰  Quy chuẩn", "standards"], ["▣  Tài khoản", "accounts"]]],
     ["", [["✣  DỰ ÁN MẪU", "projects"], ["⊘  DỰ ÁN ĐÓNG", "projects"]]],
     ["TÀI CHÍNH CÁ NHÂN", [["◈  Tổng quan", "personal-finance-overview"], ["▤  Giao dịch", "personal-finance-transactions"], ["▣  Ngân sách tháng", "personal-finance-budget"], ["◉  Báo cáo tháng", "personal-finance-report"]]]
   ].map(([group, items]) => [group, items.filter(([, id]) => canAccess(id))]).filter(([, items]) => items.length);
@@ -138,7 +141,7 @@ const badge = (text) => `<span class="badge ${text.includes("Chậm") ? "danger"
 async function projectLanding() {
   const data = await api("/dashboard");
   setTitle("projects", "");
-  const sourceProjects = (await api("/projects")).data;
+  const sourceProjects = activeProjectsOnly((await api("/projects")).data);
   const sortedProjects = [...sourceProjects].sort((a, b) => {
     const field = ui.sortBy === "code" ? "code" : ui.sortBy === "name" ? "name" : ui.sortBy === "status" ? "status" : "id";
     return String(a[field]).localeCompare(String(b[field]), "vi") * (ui.sortDir === "asc" ? 1 : -1);
@@ -221,7 +224,8 @@ function bindLanding() {
 }
 
 async function projectTable() {
-  const { data } = await api("/projects");
+  const response = await api("/projects");
+  const data = activeProjectsOnly(response.data);
   setTitle("projects", "Quản lý danh sách và trạng thái dự án xây dựng");
   $("#app").innerHTML = `<div class="hero"><div><h2>Danh sách dự án</h2><span class="muted">${data.length} dự án đang hiển thị</span></div><button class="btn">+ Tạo dự án</button></div>
   <table><thead><tr><th>Mã dự án</th><th>Tên dự án</th><th>Loại</th><th>Quản lý</th><th>Tiến độ</th><th>Tình trạng</th><th>Ngân sách</th></tr></thead><tbody>
@@ -390,6 +394,135 @@ const CRM_DIRECTORY = {
 
 const crmStatusClass = (status) => status === "Đang hợp tác" ? "active" : status === "Tiềm năng" ? "lead" : "paused";
 const crmProjects = (projects = []) => `<div class="directory-projects">${projects.map((project) => `<i>${escapeHtml(project)}</i>`).join("")}</div>`;
+const DIRECTORY_COLUMN_STORAGE = "ledome.directoryColumnWidths.v1";
+const DIRECTORY_DEFAULT_WIDTHS = [80, 230, 160, 130, 120, 150, 135, 135, 190, 280, 72];
+const DIRECTORY_SUPPLIER_WIDTHS = [190, 85, 230, 155, 130, 115, 135, 135, 190, 310, 72];
+const DIRECTORY_AUTO_WIDTH_RULES = [
+  [64, 92], [130, 320], [120, 240], [120, 230], [90, 125], [110, 260],
+  [120, 150], [120, 150], [140, 320], [220, 680], [72, 72]
+];
+const DIRECTORY_SUPPLIER_AUTO_WIDTH_RULES = [
+  [150, 360], [70, 100], [130, 320], [120, 240], [120, 230], [90, 125],
+  [120, 150], [120, 150], [140, 320], [220, 680], [72, 72]
+];
+const directoryColumnKey = (type) => type === "suppliers" ? `${DIRECTORY_COLUMN_STORAGE}.${type}.categoryFirst` : `${DIRECTORY_COLUMN_STORAGE}.${type}`;
+const directoryDefaultWidths = (type) => type === "suppliers" ? DIRECTORY_SUPPLIER_WIDTHS : DIRECTORY_DEFAULT_WIDTHS;
+const directoryAutoWidthRules = (type) => type === "suppliers" ? DIRECTORY_SUPPLIER_AUTO_WIDTH_RULES : DIRECTORY_AUTO_WIDTH_RULES;
+function directoryColumnWidths(type, count) {
+  const defaults = directoryDefaultWidths(type);
+  try {
+    const saved = JSON.parse(localStorage.getItem(directoryColumnKey(type)) || "[]");
+    return Array.from({ length: count }, (_, index) => Math.max(56, Number(saved[index] || defaults[index] || 120)));
+  } catch {
+    return defaults.slice(0, count);
+  }
+}
+function directoryColumnMarkup(type, count) {
+  return `<colgroup>${directoryColumnWidths(type, count).map((width) => `<col style="width:${width}px">`).join("")}</colgroup>`;
+}
+function directoryAutoFitColumns(type) {
+  const table = document.querySelector("[data-directory-table]");
+  if (!table) return;
+  const cols = [...table.querySelectorAll("col")];
+  const canvas = document.createElement("canvas");
+  const ctx = canvas.getContext("2d");
+  const font = getComputedStyle(table).font || "11px Inter, Segoe UI, Arial";
+  if (ctx) ctx.font = font;
+  const measure = (text) => ctx ? ctx.measureText(String(text || "").trim()).width : String(text || "").trim().length * 7;
+  const rules = directoryAutoWidthRules(type);
+  const widths = cols.map((_, index) => {
+    const rule = rules[index] || [80, 260];
+    const cells = [...table.querySelectorAll(`thead th:nth-child(${index + 1}), tbody td:nth-child(${index + 1})`)];
+    const longest = cells.reduce((max, cell) => Math.max(max, measure(cell.textContent.replace(/\s+/g, " "))), 0);
+    return Math.round(Math.min(Math.max(longest + 34, rule[0]), rule[1]));
+  });
+  localStorage.setItem(directoryColumnKey(type), JSON.stringify(widths));
+  cols.forEach((col, index) => { col.style.width = `${widths[index]}px`; });
+  const total = widths.reduce((sum, width) => sum + width, 0);
+  table.style.width = `${Math.max(total, table.parentElement?.clientWidth || 0)}px`;
+  table.style.minWidth = `${total}px`;
+}
+function directoryHeaderMarkup(headers) {
+  return headers.map((header, index) => `<th data-directory-col="${index}"><span>${escapeHtml(header)}</span>${index < headers.length - 1 ? `<button type="button" class="directory-col-resizer" data-directory-resize="${index}" aria-label="Đổi chiều rộng cột ${escapeHtml(header)}"></button>` : ""}</th>`).join("");
+}
+function bindDirectoryColumnResize(type) {
+  const table = document.querySelector("[data-directory-table]");
+  if (!table) return;
+  const cols = [...table.querySelectorAll("col")];
+  let drag = null;
+  const setTableWidth = () => {
+    const total = cols.reduce((sum, col) => sum + Number.parseFloat(col.style.width || 0), 0);
+    table.style.width = `${Math.max(total, table.parentElement?.clientWidth || 0)}px`;
+    table.style.minWidth = `${total}px`;
+  };
+  setTableWidth();
+  table.querySelectorAll("[data-directory-resize]").forEach((handle) => {
+    handle.onpointerdown = (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const index = Number(handle.dataset.directoryResize);
+      drag = { index, startX: event.clientX, startWidth: Number.parseFloat(cols[index].style.width || directoryDefaultWidths(type)[index] || 120) };
+      handle.setPointerCapture(event.pointerId);
+      table.classList.add("column-resizing");
+    };
+    handle.onpointermove = (event) => {
+      if (!drag) return;
+      const nextWidth = Math.max(56, drag.startWidth + event.clientX - drag.startX);
+      cols[drag.index].style.width = `${nextWidth}px`;
+      setTableWidth();
+    };
+    handle.onpointerup = (event) => {
+      if (!drag) return;
+      handle.releasePointerCapture(event.pointerId);
+      table.classList.remove("column-resizing");
+      localStorage.setItem(directoryColumnKey(type), JSON.stringify(cols.map((col) => Math.round(Number.parseFloat(col.style.width || 0)))));
+      drag = null;
+    };
+  });
+}
+
+function supplierCategoryParts(value) {
+  return String(value || "")
+    .replace(/\s*\+\d+\s*$/u, "")
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function supplierNoteCategories(note) {
+  return [...String(note || "").matchAll(/^Nguồn:\s*(.+)$/gimu)]
+    .map((match) => match[1].trim())
+    .filter(Boolean);
+}
+
+function supplierCategories(row) {
+  return [...new Set([...supplierCategoryParts(row[5]), ...supplierNoteCategories(row[9])])];
+}
+
+function supplierDisplayCategory(row) {
+  return supplierCategories(row).join(", ") || String(row[5] || "Khác");
+}
+
+function supplierPrimaryCategory(row) {
+  return supplierCategories(row)[0] || String(row[5] || "");
+}
+
+function supplierCategoryOptions(rows) {
+  const categories = [...new Set(rows.flatMap(supplierCategories))].sort((a, b) => a.localeCompare(b, "vi", { sensitivity: "base" }));
+  return ["Tất cả", ...categories];
+}
+
+function directoryFilterMarkup(type, supplierOptions = []) {
+  const options = type === "suppliers" ? supplierOptions : ["Tất cả", "Đang hợp tác", "Tiềm năng", "Tạm ngưng"];
+  return `<select id="directory-filter">${options.map((option) => `<option>${escapeHtml(option)}</option>`).join("")}</select>`;
+}
+
+function directoryRowMarkup(type, row) {
+  if (type === "suppliers") {
+    return `<tr><td>${escapeHtml(supplierDisplayCategory(row))}</td><td><b>${escapeHtml(row[0])}</b></td><td>${escapeHtml(row[1])}</td><td>${escapeHtml(row[2])}</td><td>${escapeHtml(row[3])}</td><td><i class="directory-status ${crmStatusClass(row[4])}">${escapeHtml(row[4])}</i></td><td class="directory-money">${money(row[6])}</td><td class="directory-money">${money(row[7])}</td><td>${crmProjects(row[8])}</td><td class="directory-note" title="${escapeHtml(row[9])}">${escapeHtml(row[9])}</td><td class="directory-actions"><button title="Chỉnh sửa" data-directory="edit" data-code="${escapeHtml(row[0])}">✎</button><button title="Xóa" data-directory="delete" data-code="${escapeHtml(row[0])}">×</button></td></tr>`;
+  }
+  return `<tr><td><b>${escapeHtml(row[0])}</b></td><td>${escapeHtml(row[1])}</td><td>${escapeHtml(row[2])}</td><td>${escapeHtml(row[3])}</td><td><i class="directory-status ${crmStatusClass(row[4])}">${escapeHtml(row[4])}</i></td><td>${escapeHtml(row[5])}</td><td class="directory-money">${money(row[6])}</td><td class="directory-money">${money(row[7])}</td><td>${crmProjects(row[8])}</td><td class="directory-note" title="${escapeHtml(row[9])}">${escapeHtml(row[9])}</td><td class="directory-actions"><button title="Chỉnh sửa" data-directory="edit" data-code="${escapeHtml(row[0])}">✎</button><button title="Xóa" data-directory="delete" data-code="${escapeHtml(row[0])}">×</button></td></tr>`;
+}
 
 async function loadPartnerRows(type) {
   try {
@@ -413,30 +546,52 @@ async function savePartnerRows(type) {
 async function crmDirectory(type) {
   const config = CRM_DIRECTORY[type];
   await loadPartnerRows(type);
+  const isSupplier = type === "suppliers";
+  const groupLabel = type === "customers" ? "Khu vực" : "Hạng mục";
+  const supplierOptions = isSupplier ? supplierCategoryOptions(config.rows) : [];
+  if (isSupplier && state.crmSupplierCategory !== "Tất cả" && !supplierOptions.includes(state.crmSupplierCategory)) state.crmSupplierCategory = "Tất cả";
+  const headers = isSupplier
+    ? ["Hạng mục", "Mã NCC", `Tên ${config.singular}`, "Người liên hệ", "Số điện thoại", "Trạng thái", "Công nợ phải thu", "Công nợ phải trả", "Tên dự án", "Ghi chú", ""]
+    : ["Mã", `Tên ${config.singular}`, "Người liên hệ", "Số điện thoại", "Trạng thái", groupLabel, "Công nợ phải thu", "Công nợ phải trả", "Tên dự án", "Ghi chú", ""];
   const query = state.crmQuery.toLocaleLowerCase("vi");
-  const rows = config.rows.filter((row) => (!query || row.join(" ").toLocaleLowerCase("vi").includes(query)) && (state.crmStatus === "Tất cả" || row[4] === state.crmStatus));
+  const rows = config.rows
+    .filter((row) => {
+      const searchText = isSupplier ? [...row, supplierDisplayCategory(row)].join(" ") : row.join(" ");
+      const matchQuery = !query || searchText.toLocaleLowerCase("vi").includes(query);
+      const matchFilter = isSupplier ? state.crmSupplierCategory === "Tất cả" || supplierCategories(row).includes(state.crmSupplierCategory) : state.crmStatus === "Tất cả" || row[4] === state.crmStatus;
+      return matchQuery && matchFilter;
+    })
+    .sort((a, b) => isSupplier
+      ? supplierPrimaryCategory(a).localeCompare(supplierPrimaryCategory(b), "vi", { sensitivity: "base" }) || String(a[0]).localeCompare(String(b[0]), "vi", { numeric: true })
+      : 0);
   setTitle(type, "");
   $("#app").innerHTML = `<section class="directory">
     <header class="directory-head"><div><h2>${config.icon} ${config.title}</h2><p>Quản lý danh sách và thông tin liên hệ</p></div><button class="btn" data-directory="add">＋ Thêm ${config.singular}</button></header>
     <div class="directory-summary"><article><small>Tổng số</small><b>${config.rows.length}</b><span>${config.title.toLowerCase()} đã lưu</span></article><article><small>Đang hợp tác</small><b>${config.rows.filter((x) => x[4] === "Đang hợp tác").length}</b><span>Đang hoạt động</span></article><article><small>Tiềm năng</small><b>${config.rows.filter((x) => x[4] === "Tiềm năng").length}</b><span>Cần tiếp tục theo dõi</span></article></div>
-    <div class="directory-tools"><input id="directory-search" value="${state.crmQuery}" placeholder="⌕ Tìm theo mã, tên hoặc người liên hệ"><select id="directory-status"><option>Tất cả</option><option>Đang hợp tác</option><option>Tiềm năng</option><option>Tạm ngưng</option></select><button data-directory="add">＋ Thêm mới</button></div>
-    <div class="directory-table-wrap"><table class="directory-table directory-table-wide"><thead><tr><th>Mã</th><th>Tên ${config.singular}</th><th>Người liên hệ</th><th>Số điện thoại</th><th>Trạng thái</th><th>${type === "customers" ? "Khu vực" : "Nhóm"}</th><th>Công nợ phải thu</th><th>Công nợ phải trả</th><th>Tên dự án</th><th>Ghi chú</th><th></th></tr></thead><tbody>${rows.map((row) => `<tr><td><b>${escapeHtml(row[0])}</b></td><td>${escapeHtml(row[1])}</td><td>${escapeHtml(row[2])}</td><td>${escapeHtml(row[3])}</td><td><i class="directory-status ${crmStatusClass(row[4])}">${escapeHtml(row[4])}</i></td><td>${escapeHtml(row[5])}</td><td class="directory-money">${money(row[6])}</td><td class="directory-money">${money(row[7])}</td><td>${crmProjects(row[8])}</td><td class="directory-note" title="${escapeHtml(row[9])}">${escapeHtml(row[9])}</td><td class="directory-actions"><button title="Chỉnh sửa" data-directory="edit" data-code="${escapeHtml(row[0])}">✎</button><button title="Xóa" data-directory="delete" data-code="${escapeHtml(row[0])}">×</button></td></tr>`).join("")}</tbody></table></div>
-    <div class="directory-empty ${rows.length ? "" : "open"}">Không tìm thấy dữ liệu phù hợp.</div>${crmDirectoryModal(config)}
+    <div class="directory-tools"><input id="directory-search" value="${escapeHtml(state.crmQuery)}" placeholder="⌕ Tìm theo mã, tên hoặc người liên hệ">${directoryFilterMarkup(type, supplierOptions)}<button class="directory-auto-fit" data-directory="auto-fit">Tự xếp</button><button data-directory="add">＋ Thêm mới</button></div>
+    <div class="directory-table-wrap"><table class="directory-table directory-table-wide directory-resizable-table" data-directory-table="${type}">${directoryColumnMarkup(type, headers.length)}<thead><tr>${directoryHeaderMarkup(headers)}</tr></thead><tbody>${rows.map((row) => directoryRowMarkup(type, row)).join("")}</tbody></table></div>
+    <div class="directory-empty ${rows.length ? "" : "open"}">Không tìm thấy dữ liệu phù hợp.</div>${crmDirectoryModal(config, groupLabel)}
   </section>`;
-  $("#directory-status").value = state.crmStatus;
+  $("#directory-filter").value = isSupplier ? state.crmSupplierCategory : state.crmStatus;
   bindCrmDirectory(type);
+  bindDirectoryColumnResize(type);
 }
 
-function crmDirectoryModal(config) {
-  return `<div class="directory-modal" id="directory-modal"><form id="directory-form"><header><h3 id="directory-modal-title">Thêm ${config.singular}</h3><button type="button" data-directory="close">×</button></header><input type="hidden" name="currentCode"><label>Mã<input name="code" required></label><label>Tên ${config.singular}<input name="name" required placeholder="Nhập tên"></label><label>Người liên hệ<input name="contact" required placeholder="Nhập họ tên"></label><label>Số điện thoại<input name="phone" placeholder="Nhập số điện thoại"></label><label>Trạng thái<select name="status"><option>Đang hợp tác</option><option>Tiềm năng</option><option>Tạm ngưng</option></select></label><label>Phân nhóm<input name="group" placeholder="Nhập khu vực hoặc nhóm"></label><label>Công nợ phải thu<input name="receivable" inputmode="numeric" data-money-input placeholder="0"></label><label>Công nợ phải trả<input name="payable" inputmode="numeric" data-money-input placeholder="0"></label><label class="directory-form-wide">Tên dự án<input name="projects" placeholder="Nhập nhiều dự án, phân cách bằng dấu phẩy"></label><label class="directory-form-wide">Ghi chú<textarea name="note" placeholder="Nhập ghi chú"></textarea></label><footer><button type="button" class="btn secondary" data-directory="close">Đóng</button><button class="btn">Lưu</button></footer></form></div>`;
+function crmDirectoryModal(config, groupLabel = "Nhóm") {
+  return `<div class="directory-modal" id="directory-modal"><form id="directory-form"><header><h3 id="directory-modal-title">Thêm ${config.singular}</h3><button type="button" data-directory="close">×</button></header><input type="hidden" name="currentCode"><label>Mã<input name="code" required></label><label>Tên ${config.singular}<input name="name" required placeholder="Nhập tên"></label><label>Người liên hệ<input name="contact" required placeholder="Nhập họ tên"></label><label>Số điện thoại<input name="phone" placeholder="Nhập số điện thoại"></label><label>Trạng thái<select name="status"><option>Đang hợp tác</option><option>Tiềm năng</option><option>Tạm ngưng</option></select></label><label>${groupLabel}<input name="group" placeholder="Nhập ${groupLabel.toLowerCase()}"></label><label>Công nợ phải thu<input name="receivable" inputmode="numeric" data-money-input placeholder="0"></label><label>Công nợ phải trả<input name="payable" inputmode="numeric" data-money-input placeholder="0"></label><label class="directory-form-wide">Tên dự án<input name="projects" placeholder="Nhập nhiều dự án, phân cách bằng dấu phẩy"></label><label class="directory-form-wide">Ghi chú<textarea name="note" placeholder="Nhập ghi chú"></textarea></label><footer><button type="button" class="btn secondary" data-directory="close">Đóng</button><button class="btn">Lưu</button></footer></form></div>`;
 }
 
 function bindCrmDirectory(type) {
   const config = CRM_DIRECTORY[type];
+  const isSupplier = type === "suppliers";
   const modal = $("#directory-modal");
   const form = $("#directory-form");
   $("#directory-search").oninput = (event) => { state.crmQuery = event.target.value; crmDirectory(type); };
-  $("#directory-status").onchange = (event) => { state.crmStatus = event.target.value; crmDirectory(type); };
+  $("#directory-filter").onchange = (event) => {
+    if (isSupplier) state.crmSupplierCategory = event.target.value;
+    else state.crmStatus = event.target.value;
+    crmDirectory(type);
+  };
   form.querySelectorAll("[data-money-input]").forEach((input) => {
     input.oninput = () => {
       input.value = input.value.replace(/[^\d]/g, "").replace(/\B(?=(\d{3})+(?!\d))/g, ".");
@@ -447,6 +602,7 @@ function bindCrmDirectory(type) {
     if (!button) return;
     const action = button.dataset.directory;
     if (action === "close") return modal.classList.remove("open");
+    if (action === "auto-fit") return directoryAutoFitColumns(type);
     if (action === "add") {
       form.reset();
       form.elements.code.value = `${config.code}${String(config.rows.length + 1).padStart(3, "0")}`;
@@ -1442,8 +1598,19 @@ async function loadSession() {
 
 function renderLogin(message = "") {
   document.body.classList.add("login-mode");
-  $("#app").innerHTML = `<section class="login-page"><form id="login-form" class="login-card"><div class="brand-mark">LD</div><h2>LE DOME</h2><p>Đăng nhập hệ thống quản lý dự án</p>${message ? `<strong>${message}</strong>` : ""}<label>ID đăng nhập<input name="loginId" autocomplete="username" autofocus></label><label>Mật khẩu<input name="password" type="password" autocomplete="current-password"></label><button class="btn">Đăng nhập</button><small>Liên hệ quản trị viên nếu cần cấp lại mật khẩu.</small></form></section>`;
-  $("#login-form").onsubmit = async (event) => {
+  let remembered = {};
+  try {
+    remembered = JSON.parse(localStorage.getItem(LOGIN_REMEMBER_STORAGE) || "{}") || {};
+  } catch {}
+  $("#app").innerHTML = `<section class="login-page"><form id="login-form" class="login-card"><div class="brand-mark">LD</div><h2>LE DOME</h2><p>Đăng nhập hệ thống quản lý dự án</p>${message ? `<strong>${message}</strong>` : ""}<label>ID đăng nhập<input name="loginId" autocomplete="username" autofocus value="${escapeHtml(remembered.loginId || "")}"></label><label>Mật khẩu<input name="password" type="password" autocomplete="current-password" value="${escapeHtml(remembered.password || "")}"></label><div class="login-options"><label><input type="checkbox" name="rememberId" ${remembered.rememberId || remembered.rememberPassword ? "checked" : ""}> Lưu ID</label><label><input type="checkbox" name="rememberPassword" ${remembered.rememberPassword ? "checked" : ""}> Lưu mật khẩu</label></div><button class="btn">Đăng nhập</button><small>Liên hệ quản trị viên nếu cần cấp lại mật khẩu.</small></form></section>`;
+  const form = $("#login-form");
+  form.elements.rememberPassword.onchange = () => {
+    if (form.elements.rememberPassword.checked) form.elements.rememberId.checked = true;
+  };
+  form.elements.rememberId.onchange = () => {
+    if (!form.elements.rememberId.checked) form.elements.rememberPassword.checked = false;
+  };
+  form.onsubmit = async (event) => {
     event.preventDefault();
     const data = Object.fromEntries(new FormData(event.currentTarget));
     const loginId = String(data.loginId || "").trim();
@@ -1456,6 +1623,14 @@ function renderLogin(message = "") {
       });
       state.account = body.account;
       localStorage.setItem(AUTH_STORAGE, JSON.stringify({ staffCode: state.account.staffCode, loginId: state.account.loginId }));
+      const rememberPassword = Boolean(data.rememberPassword);
+      const rememberId = Boolean(data.rememberId) || rememberPassword;
+      localStorage.setItem(LOGIN_REMEMBER_STORAGE, JSON.stringify({
+        rememberId,
+        rememberPassword,
+        loginId: rememberId ? loginId : "",
+        password: rememberPassword ? password : ""
+      }));
       document.body.classList.remove("login-mode");
       await loadNavigation();
       updateUserChrome();
@@ -1489,6 +1664,87 @@ async function logout() {
   renderLogin();
 }
 
+const overviewKpis = (items) => `<div class="overview-kpis">${items.map(([label, value, note, tone = ""]) => `<article class="${tone}"><small>${label}</small><b>${value}</b><span>${note}</span></article>`).join("")}</div>`;
+
+function bindOverviewActions() {
+  $("#app").onclick = (event) => {
+    const pageLink = event.target.closest("[data-page-link]")?.dataset.pageLink;
+    if (pageLink) return void (location.hash = pageLink);
+    const projectId = event.target.closest("[data-project-id]")?.dataset.projectId;
+    if (projectId) return openProjectDetail(projectId);
+  };
+}
+
+async function projectsOverview() {
+  const { data: projects } = await api("/projects");
+  let dashboard = { tasks: [], alerts: [] };
+  try {
+    dashboard = await api("/dashboard");
+  } catch {}
+  const totalBudget = projects.reduce((sum, project) => sum + Number(project.budget || 0), 0);
+  const totalSpent = projects.reduce((sum, project) => sum + Number(project.spent || 0), 0);
+  const activeProjects = projects.filter((project) => project.status === "Đang thực hiện");
+  const averageProgress = projects.length ? Math.round(projects.reduce((sum, project) => sum + Number(project.progress || 0), 0) / projects.length) : 0;
+  const healthGroups = [...new Set(projects.map((project) => project.health || "Chưa cập nhật"))].map((health) => [health, projects.filter((project) => (project.health || "Chưa cập nhật") === health).length]);
+  setTitle("projects-overview", "Hiển thị nhanh tổng quát các dự án bên dưới");
+  $("#app").innerHTML = `<section class="overview-page">
+    <header class="overview-head"><div><h2>▣ Tổng quan dự án</h2><p>Tóm tắt nhanh trạng thái, tiến độ và ngân sách của toàn bộ dự án đang quản lý.</p></div><button data-page-link="projects">Mở danh sách dự án</button></header>
+    ${overviewKpis([["Tổng dự án", projects.length, "Dự án đang có trong hệ thống"], ["Đang thực hiện", activeProjects.length, "Dự án cần theo dõi hằng ngày"], ["Tiến độ trung bình", `${averageProgress}%`, "Theo tiến độ thực tế"], ["Ngân sách", `${money(totalBudget)} đ`, `Đã chi ${money(totalSpent)} đ`, "positive"]])}
+    <div class="overview-layout">
+      <section class="overview-panel overview-wide"><header><h3>Dự án đang mở</h3><button data-page-link="projects">Xem tất cả</button></header><div class="overview-project-list">${projects.map((project) => `<article data-project-id="${escapeHtml(project.id)}"><div><b>${escapeHtml(project.name)}</b><small>${escapeHtml(project.code)} · ${escapeHtml(project.manager || "Chưa cập nhật")}</small></div><span>${escapeHtml(project.status || "Chưa cập nhật")}</span><strong>${project.progress || 0}%</strong>${progress(project.progress || 0)}<em>${badge(project.health || "Theo dõi")}</em></article>`).join("")}</div></section>
+      <aside class="overview-panel"><header><h3>Tình trạng</h3><button data-page-link="insight">Insight</button></header><div class="overview-mini-list">${healthGroups.map(([name, count]) => `<p><span>${escapeHtml(name)}</span><b>${count}</b></p>`).join("")}</div></aside>
+      <aside class="overview-panel"><header><h3>Việc cần chú ý</h3></header><div class="overview-feed">${(dashboard.tasks || []).slice(0, 4).map(([name, date]) => `<p><b>${escapeHtml(name)}</b><small>${escapeHtml(date)}</small></p>`).join("") || "<p><b>Chưa có việc nổi bật</b><small>Dữ liệu đang cập nhật</small></p>"}</div></aside>
+      <aside class="overview-panel"><header><h3>Cảnh báo</h3></header><div class="overview-feed">${(dashboard.alerts || []).slice(0, 4).map(([type, text]) => `<p><b>${escapeHtml(text || type)}</b><small>${escapeHtml(type || "")}</small></p>`).join("") || "<p><b>Không có cảnh báo mới</b><small>Hệ thống chưa ghi nhận rủi ro</small></p>"}</div></aside>
+    </div>
+  </section>`;
+  bindOverviewActions();
+}
+
+async function partnersOverview() {
+  const types = ["customers", "contractors", "suppliers"];
+  await Promise.all(types.map(loadPartnerRows));
+  const groups = types.map((type) => ({ type, ...CRM_DIRECTORY[type] }));
+  const allRows = groups.flatMap((group) => group.rows);
+  const totalReceivable = allRows.reduce((sum, row) => sum + Number(row[6] || 0), 0);
+  const totalPayable = allRows.reduce((sum, row) => sum + Number(row[7] || 0), 0);
+  const activeCount = allRows.filter((row) => row[4] === "Đang hợp tác").length;
+  setTitle("partners-overview", "Hiển thị nhanh khách hàng, nhà thầu và nhà cung cấp");
+  $("#app").innerHTML = `<section class="overview-page">
+    <header class="overview-head"><div><h2>▣ Tổng quan đối tác</h2><p>Tóm tắt các nhóm Khách hàng, Nhà thầu và Nhà cung cấp để vào chi tiết nhanh.</p></div><button data-page-link="customers">Mở khách hàng</button></header>
+    ${overviewKpis([["Tổng đối tác", allRows.length, "Tất cả khách hàng, nhà thầu, NCC"], ["Đang hợp tác", activeCount, "Đối tác còn hoạt động"], ["Công nợ phải thu", `${money(totalReceivable)} đ`, "Tổng từ các hồ sơ đối tác", "positive"], ["Công nợ phải trả", `${money(totalPayable)} đ`, "Cần theo dõi thanh toán", "negative"]])}
+    <div class="overview-card-grid">${groups.map((group) => {
+      const receivable = group.rows.reduce((sum, row) => sum + Number(row[6] || 0), 0);
+      const payable = group.rows.reduce((sum, row) => sum + Number(row[7] || 0), 0);
+      return `<article class="overview-panel"><header><h3>${group.icon} ${group.title}</h3><button data-page-link="${group.type}">Chi tiết</button></header><div class="overview-mini-list"><p><span>Tổng số</span><b>${group.rows.length}</b></p><p><span>Đang hợp tác</span><b>${group.rows.filter((row) => row[4] === "Đang hợp tác").length}</b></p><p><span>Phải thu</span><b>${money(receivable)} đ</b></p><p><span>Phải trả</span><b>${money(payable)} đ</b></p></div><div class="overview-feed">${group.rows.slice(0, 4).map((row) => `<p><b>${escapeHtml(row[1])}</b><small>${escapeHtml(row[2])} · ${escapeHtml(row[4])}</small></p>`).join("")}</div></article>`;
+    }).join("")}</div>
+  </section>`;
+  bindOverviewActions();
+}
+
+async function hrmOverview() {
+  await loadOrgStaff();
+  let phoneRows = [];
+  try {
+    const runtime = await api("/attendance/records");
+    phoneRows = Array.isArray(runtime.data) ? runtime.data : [];
+  } catch {}
+  const people = staffPeople();
+  const attendanceRows = phoneRows.map((record) => [record.employeeId, record.employeeName, record.type === "check-in" ? new Date(record.capturedAt).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" }) : "--", record.type === "check-out" ? new Date(record.capturedAt).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" }) : "--", record.siteName, record.faceEvidence || "Đã chụp ảnh", `${record.distanceMeters} m`, record.status]).concat(HRM_ATTENDANCE);
+  const payrollTotal = HRM_PAYROLL.reduce((sum, row) => sum + Number(row[8] || 0), 0);
+  const departmentGroups = [...new Set(ORG_STAFF.map((staff) => staff[3]))].map((department) => [department, ORG_STAFF.filter((staff) => staff[3] === department).length]);
+  setTitle("hrm-overview", "Hiển thị nhanh nhân sự, chấm công và lương");
+  $("#app").innerHTML = `<section class="overview-page">
+    <header class="overview-head"><div><h2>▣ Tổng quan nhân sự</h2><p>Tổng hợp nhanh dữ liệu Nhân sự, Chấm công và Lương của Le Dome.</p></div><button data-page-link="hrm-staff">Mở nhân sự</button></header>
+    ${overviewKpis([["Nhân sự thật", people.length, `${ORG_STAFF.length} vị trí đang đảm nhiệm`], ["Chấm công", attendanceRows.length, "Bản ghi hôm nay / mẫu"], ["Cần kiểm tra", attendanceRows.filter((row) => row[7] === "Cần duyệt" || row[7] === "Đi muộn").length, "Bản ghi chưa ổn", "negative"], ["Quỹ lương mẫu", `${money(payrollTotal)} đ`, `${HRM_PAYROLL.length} nhân sự trong bảng`, "positive"]])}
+    <div class="overview-card-grid">
+      <article class="overview-panel"><header><h3>♟ Nhân sự theo phòng ban</h3><button data-page-link="hrm-staff">Chi tiết</button></header><div class="overview-mini-list">${departmentGroups.map(([department, count]) => `<p><span>${escapeHtml(department)}</span><b>${count}</b></p>`).join("")}</div></article>
+      <article class="overview-panel"><header><h3>▣ Chấm công gần nhất</h3><button data-page-link="hrm-attendance">Chi tiết</button></header><div class="overview-feed">${attendanceRows.slice(0, 6).map((row) => `<p><b>${escapeHtml(row[1])}</b><small>${escapeHtml(row[4])} · ${escapeHtml(row[7])}</small></p>`).join("")}</div></article>
+      <article class="overview-panel"><header><h3>$ Bảng lương</h3><button data-page-link="hrm-payroll">Chi tiết</button></header><div class="overview-feed">${HRM_PAYROLL.slice(0, 6).map((row) => `<p><b>${escapeHtml(row[1])}</b><small>${escapeHtml(row[2])} · ${money(row[8])} đ</small></p>`).join("")}</div></article>
+    </div>
+  </section>`;
+  bindOverviewActions();
+}
+
 function placeholder(page) {
   setTitle(page, "Module đã được định tuyến trong nền tảng");
   $("#app").innerHTML = `<article class="card module-placeholder"><h2>${pageTitles[page] || state.nav.find((x) => x[1] === page)?.[0]}</h2><p class="muted">Module này đã có vị trí trong kiến trúc. Các workflow chi tiết sẽ được triển khai trên cùng API, RBAC và audit trail của nền tảng.</p><button class="btn" onclick="location.hash='projects'">Xem dự án mẫu</button></article>`;
@@ -1509,7 +1765,7 @@ function accessDenied() {
 async function refreshProjectNav() {
   try {
     const { data } = await api("/projects");
-    projectNavItems = data
+    projectNavItems = activeProjectsOnly(data)
       .filter((project) => project.status === "Đang thực hiện")
       .map((project) => ["▰  " + project.name, `project/${project.id}`]);
   } catch (error) {
@@ -1532,7 +1788,7 @@ async function route() {
   renderNav();
   try {
     if (!canAccess(state.page)) {
-      const firstAllowed = ["projects","customers","hrm-staff","finance-overview","catalog","accounts"].find((page) => canAccess(page)) || "projects";
+      const firstAllowed = ["projects-overview","partners-overview","hrm-overview","finance-overview","catalog","materials","processes","standards","accounts"].find((page) => canAccess(page)) || "projects";
       if (state.page !== firstAllowed) {
         location.hash = firstAllowed;
         return;
@@ -1540,9 +1796,11 @@ async function route() {
       return accessDenied();
     }
     if (state.page === "home") return await home();
+    if (state.page === "projects-overview") return await projectsOverview();
     if (state.page === "projects") return await projectLanding();
     if (state.page === "insight") return await insight();
     if (state.page === "drive") return renderDrive();
+    if (state.page === "partners-overview") return partnersOverview();
     if (state.page === "customers") return crmDirectory("customers");
     if (state.page === "contractors") return crmDirectory("contractors");
     if (state.page === "suppliers") return crmDirectory("suppliers");
@@ -1550,6 +1808,7 @@ async function route() {
     if (state.page === "finance-ledome") return renderFinanceLedome();
     if (state.page === "finance-projects") return renderFinanceProjects();
     if (state.page.startsWith("personal-finance-")) return renderPersonalFinancePage(state.page);
+    if (state.page === "hrm-overview") return hrmOverview();
     if (state.page === "hrm-staff") return hrmStaff();
     if (state.page === "hrm-attendance") return hrmAttendance();
     if (state.page === "hrm-payroll") return hrmPayroll();

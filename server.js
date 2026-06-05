@@ -20,6 +20,7 @@ const runtimeProjectUpdatesFile = dataPath("runtime-project-updates.json");
 const attendanceDataFile = dataPath("runtime-attendance.json");
 const contractFilesDir = dataPath("contract-files");
 const vendorContractFilesDir = dataPath("vendor-contract-files");
+const supplierInvoiceFilesDir = dataPath("supplier-invoice-files");
 const existingFilesDir = dataPath("existing-files");
 const design3dFilesDir = dataPath("design-3d-files");
 const design3dMetaFile = dataPath("runtime-design-3d-meta.json");
@@ -31,6 +32,7 @@ const partnersFile = dataPath("runtime-partners.json");
 const financeFile = dataPath("runtime-finance.json");
 const personalFinanceFile = dataPath("runtime-personal-finance.json");
 const driveFile = dataPath("runtime-drive.json");
+const driveFilesDir = dataPath("drive-files");
 const orgStaffFile = dataPath("runtime-org-staff.json");
 const sessionCookie = "ledome_session";
 const sessions = new Map();
@@ -39,7 +41,7 @@ let testStores = {};
 let testBackups = [];
 const uploadMaxBytes = positiveNumber(process.env.UPLOAD_MAX_BYTES, 25 * 1024 * 1024);
 const sessionTtlMs = positiveNumber(process.env.SESSION_TTL_HOURS, 12) * 60 * 60 * 1000;
-const allowedUploadExtensions = new Set([".pdf", ".png", ".jpg", ".jpeg", ".webp", ".mp4", ".mov", ".doc", ".docx", ".xls", ".xlsx", ".csv", ".dwg", ".zip"]);
+const allowedUploadExtensions = new Set([".pdf", ".png", ".jpg", ".jpeg", ".webp", ".mp4", ".mov", ".doc", ".docx", ".xls", ".xlsx", ".csv", ".ppt", ".pptx", ".txt", ".md", ".note", ".dwg", ".zip"]);
 
 // New Dossier configurations for stages
 const dossierConfigs = {
@@ -85,6 +87,17 @@ const mime = {
   ".js": "application/javascript; charset=utf-8",
   ".json": "application/json; charset=utf-8",
   ".pdf": "application/pdf",
+
+  ".txt": "text/plain; charset=utf-8",
+  ".md": "text/markdown; charset=utf-8",
+  ".note": "text/plain; charset=utf-8",
+  ".csv": "text/csv; charset=utf-8",
+  ".doc": "application/msword",
+  ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  ".xls": "application/vnd.ms-excel",
+  ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  ".ppt": "application/vnd.ms-powerpoint",
+  ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
   ".png": "image/png",
   ".jpg": "image/jpeg",
   ".jpeg": "image/jpeg",
@@ -431,7 +444,7 @@ function persistRuntimeProjectUpdates(updates) {
 function updateProject(id, input) {
   const detail = projectDetail[id] || dashboardProjects.find((item) => item.id === id);
   if (!detail) return null;
-  const allowed = ["name", "code", "type", "buildingType", "group", "owner", "client", "location", "manager", "commander", "qs", "accountant", "startDate", "endDate", "duration", "description"];
+  const allowed = ["name", "code", "type", "buildingType", "group", "owner", "client", "location", "manager", "commander", "qs", "accountant", "startDate", "endDate", "duration", "description", "projectStageMode", "projectStage"];
   const changes = {};
   allowed.forEach((key) => {
     if (Object.hasOwn(input, key)) changes[key] = String(input[key] ?? "").trim();
@@ -443,6 +456,10 @@ function updateProject(id, input) {
   const dashboardProject = dashboardProjects.find((item) => item.id === id);
   if (dashboardProject && dashboardProject !== detail) Object.assign(dashboardProject, changes);
   return changes;
+}
+
+function activeProjectList(list) {
+  return list.filter((project) => String(project.projectStage || "").trim() !== "final-settlement");
 }
 
 function loadAttendanceRecords() {
@@ -543,6 +560,11 @@ function technicalProjectDir(projectId) {
   return path.join(technicalFilesDir, safeFileName(projectId));
 }
 
+function driveFileDisplayName(storedName) {
+  const parts = String(storedName || "").split("__");
+  return parts.length > 2 ? parts.slice(2).join("__") : String(storedName || "");
+}
+
 function loadDesign3dMeta() {
   if (process.env.NODE_ENV === "test" || !fs.existsSync(design3dMetaFile)) return {};
   try {
@@ -625,6 +647,22 @@ function fileCategory(filename) {
   if ([".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp"].includes(ext)) return "image";
   if ([".mp4", ".mov", ".webm", ".avi", ".mkv"].includes(ext)) return "video";
   return "file";
+}
+
+function listDriveStoredFiles() {
+  if (!fs.existsSync(driveFilesDir)) return [];
+  return fs.readdirSync(driveFilesDir, { withFileTypes: true }).filter((entry) => entry.isFile()).map((entry) => {
+    const filename = entry.name;
+    const name = driveFileDisplayName(filename);
+    const stats = fs.statSync(path.join(driveFilesDir, filename));
+    return {
+      storedName: filename,
+      name,
+      category: fileCategory(name),
+      size: stats.size,
+      updatedAt: stats.mtime.toISOString()
+    };
+  }).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
 }
 
 function listExistingFiles(projectId) {
@@ -865,7 +903,7 @@ runtimeProjects.slice().reverse().forEach((project) => {
 Object.entries(runtimeProjectUpdates).forEach(([id, changes]) => updateProject(id, changes));
 
 function api(req, res, pathname) {
-  if (pathname === "/api/v1/health") return json(res, 200, { ok: true, service: "constructflow-api" });
+  if (pathname === "/api/v1/health") return json(res, 200, { ok: true, service: "ledome-mgmt-api" });
   if (pathname === "/api/v1/auth/login" && req.method === "POST") {
     return readJson(req, (error, input) => {
       if (error) return json(res, 400, { error: error.message });
@@ -1000,6 +1038,46 @@ function api(req, res, pathname) {
       });
     }
   }
+  if (pathname === "/api/v1/drive-files") {
+    if (req.method === "GET") {
+      if (!requireAccount(req, res, "projects.view")) return;
+      return json(res, 200, { data: listDriveStoredFiles() });
+    }
+    if (req.method === "POST") {
+      if (!requireAccount(req, res, "projects.upload")) return;
+      const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
+      const name = safeFileName(url.searchParams.get("name"));
+      if (!name) return json(res, 400, { error: "File name is required" });
+      const uploadError = validateUploadName(name);
+      if (uploadError) return json(res, 400, { error: uploadError });
+      fs.mkdirSync(driveFilesDir, { recursive: true });
+      const storedName = `drive__${Date.now()}-${crypto.randomBytes(4).toString("hex")}__${name}`;
+      const target = path.join(driveFilesDir, storedName);
+      return handleUpload(req, res, target, () => json(res, 201, listDriveStoredFiles().find((item) => item.storedName === storedName)));
+    }
+    if (req.method === "DELETE") {
+      if (!requireAccount(req, res, "projects.edit")) return;
+      const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
+      const storedName = safeFileName(url.searchParams.get("storedName"));
+      const target = path.join(driveFilesDir, storedName);
+      if (storedName && fs.existsSync(target)) fs.unlinkSync(target);
+      return json(res, 200, { ok: true });
+    }
+  }
+  if (pathname === "/api/v1/drive-files/download" && req.method === "GET") {
+    if (!requireAccount(req, res, "projects.download")) return;
+    const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
+    const storedName = safeFileName(url.searchParams.get("storedName"));
+    const target = path.join(driveFilesDir, storedName);
+    if (!storedName || !fs.existsSync(target)) return json(res, 404, { error: "File not found" });
+    const displayName = driveFileDisplayName(storedName);
+    res.writeHead(200, {
+      "content-type": mime[path.extname(displayName)] || "application/octet-stream",
+      "content-disposition": `attachment; filename*=UTF-8''${encodeURIComponent(displayName)}`,
+      "cache-control": "no-store"
+    });
+    return fs.createReadStream(target).pipe(res);
+  }
   if (pathname === "/api/v1/hrm/staff") {
     if (req.method === "GET") {
       if (!requireAccount(req, res, "hrm.view")) return;
@@ -1040,7 +1118,7 @@ function api(req, res, pathname) {
   if (/\/download$/.test(pathname) && requiredPermission && !requireAccount(req, res, requiredPermission)) return;
   if (pathname === "/api/v1/navigation") return json(res, 200, navigation);
   if (pathname === "/api/v1/dashboard") return json(res, 200, dashboard);
-  if (pathname === "/api/v1/dashboard/projects") return json(res, 200, { data: dashboardProjects });
+  if (pathname === "/api/v1/dashboard/projects") return json(res, 200, { data: activeProjectList(dashboardProjects) });
   if (pathname === "/api/v1/insight") return json(res, 200, insight);
   if (pathname === "/api/v1/attendance/config" && req.method === "GET") {
     if (!requireAccount(req, res)) return;
@@ -1724,7 +1802,7 @@ function staticFile(req, res, pathname) {
       .pipe(res);
   }
   if (requested === "/constructions/detail/index.html") {
-    const html = fs.readFileSync(filename, "utf8").replace("/construction.js", "/construction.js?v=138");
+    const html = fs.readFileSync(filename, "utf8").replace(/\/construction\.js(?:\?v=\d+)?/g, "/construction.js?v=149");
     res.writeHead(200, { "content-type": mime[".html"], "cache-control": "no-cache" });
     return res.end(html);
   }
@@ -1741,7 +1819,7 @@ function createServer() {
 }
 
 if (require.main === module) {
-  createServer().listen(port, () => console.log(`ConstructFlow running at http://localhost:${port}`));
+  createServer().listen(port, () => console.log(`Ledome-MGMT running at http://localhost:${port}`));
 }
 
 module.exports = { createServer };

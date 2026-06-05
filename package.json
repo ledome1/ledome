@@ -1,8 +1,8 @@
 {
-  "name": "constructflow",
+  "name": "ledome-mgmt",
   "version": "0.1.0",
   "private": true,
-  "description": "Clean-room construction operations platform starter",
+  "description": "LE DOME construction management platform",
   "scripts": {
     "start": "node server.js",
     "test": "node --test tests/*.test.js"

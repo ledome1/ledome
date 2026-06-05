@@ -1,4 +1,4 @@
-# Deploy ConstructFlow tren Windows Server cong ty
+# Deploy Ledome-MGMT tren Windows Server cong ty
 
 Tai lieu nay dung cho ban v1: chay truc tiep bang Node.js tren Windows, dung Caddy lam HTTPS reverse proxy, va dung Windows Task Scheduler de app tu khoi dong lai.
 
@@ -14,16 +14,16 @@ Tai lieu nay dung cho ban v1: chay truc tiep bang Node.js tren Windows, dung Cad
 Mo PowerShell bang quyen Administrator tren server, roi chay:
 
 ```powershell
-Set-ExecutionPolicy -Scope Process Bypass -Force; Invoke-WebRequest -UseBasicParsing "https://raw.githubusercontent.com/ledome1/ledome/main/deploy/windows/install-server.ps1" -OutFile "$env:TEMP\install-constructflow.ps1"; powershell -ExecutionPolicy Bypass -File "$env:TEMP\install-constructflow.ps1" -Domain "app.ledome.vn"
+Set-ExecutionPolicy -Scope Process Bypass -Force; Invoke-WebRequest -UseBasicParsing "https://raw.githubusercontent.com/ledome1/ledome/main/deploy/windows/install-server.ps1" -OutFile "$env:TEMP\install-ledome-mgmt.ps1"; powershell -ExecutionPolicy Bypass -File "$env:TEMP\install-ledome-mgmt.ps1" -Domain "app.ledome.vn"
 ```
 
 Lenh nay se tu dong:
 
 - Cai Node.js 22 LTS neu server chua co Node.
 - Tai app tu public GitHub repo `ledome1/ledome`.
-- Tao Windows startup task `ConstructFlow`.
-- Cai Caddy va tao Windows startup task `ConstructFlowCaddy`.
-- Cau hinh `DATA_DIR=C:\ConstructFlow\data`, `BACKUP_DIR=C:\ConstructFlow\backups`, log tai `C:\ConstructFlow\logs`.
+- Tao Windows startup task `Ledome-MGMT`.
+- Cai Caddy va tao Windows startup task `Ledome-MGMT-Caddy`.
+- Cau hinh `DATA_DIR=C:\Ledome-MGMT\data`, `BACKUP_DIR=C:\Ledome-MGMT\backups`, log tai `C:\Ledome-MGMT\logs`.
 - Mo Windows Firewall cho port `80` va `443`.
 - Smoke test `http://127.0.0.1:3000/api/v1/health`.
 
@@ -36,7 +36,7 @@ Mo firewall/router:
 ## 2. Cau truc thu muc sau khi cai
 
 ```text
-C:\ConstructFlow\
+C:\Ledome-MGMT\
   app\       # code tai tu GitHub public repo
   data\      # runtime JSON va file upload, copy rieng tu may hien tai
   backups\   # backup do app tao
@@ -47,13 +47,13 @@ Khong commit `data/`, `backups/`, `logs/`, `.env`, password, token, ho so khach 
 
 ## 3. Bien moi truong production
 
-Installer se thiet lap cac bien nay trong startup task `ConstructFlow`:
+Installer se thiet lap cac bien nay trong startup task `Ledome-MGMT`:
 
 ```powershell
 NODE_ENV=production
 PORT=3000
-DATA_DIR=C:\ConstructFlow\data
-BACKUP_DIR=C:\ConstructFlow\backups
+DATA_DIR=C:\Ledome-MGMT\data
+BACKUP_DIR=C:\Ledome-MGMT\backups
 UPLOAD_MAX_BYTES=104857600
 SESSION_TTL_HOURS=12
 ```
@@ -65,34 +65,34 @@ SESSION_TTL_HOURS=12
 Tren server:
 
 ```powershell
-New-Item -ItemType Directory -Force C:\ConstructFlow\app,C:\ConstructFlow\data,C:\ConstructFlow\backups,C:\ConstructFlow\logs
-git clone https://github.com/<OWNER>/<PUBLIC_REPO>.git C:\ConstructFlow\app
+New-Item -ItemType Directory -Force C:\Ledome-MGMT\app,C:\Ledome-MGMT\data,C:\Ledome-MGMT\backups,C:\Ledome-MGMT\logs
+git clone https://github.com/<OWNER>/<PUBLIC_REPO>.git C:\Ledome-MGMT\app
 ```
 
 Neu repo sau nay chuyen ve private, server can cau hinh lai GitHub authentication bang SSH key, deploy key, GitHub CLI, hoac personal access token truoc khi `git pull`.
 
-Copy thu muc `C:\fastcome\data` hien tai sang `C:\ConstructFlow\data` tren server bang USB, robocopy, hoac file zip noi bo. Khong day thu muc `data` len public repo.
+Copy thu muc `data` hien tai sang `C:\Ledome-MGMT\data` tren server bang USB, robocopy, hoac file zip noi bo. Khong day thu muc `data` len public repo.
 
 Vi du neu copy qua mang noi bo:
 
 ```powershell
-robocopy C:\fastcome\data C:\ConstructFlow\data /MIR
+robocopy C:\duong-dan-workspace\data C:\Ledome-MGMT\data /MIR
 ```
 
 ## 5. Startup tasks
 
 Installer tao 2 Windows Scheduled Tasks chay bang user `SYSTEM`:
 
-- `ConstructFlow`: chay Node app o port `3000`.
-- `ConstructFlowCaddy`: chay Caddy reverse proxy cho `app.ledome.vn`.
+- `Ledome-MGMT`: chay Node app o port `3000`.
+- `Ledome-MGMT-Caddy`: chay Caddy reverse proxy cho `app.ledome.vn`.
 
 Neu can restart thu cong:
 
 ```powershell
-Stop-ScheduledTask -TaskName ConstructFlow -ErrorAction SilentlyContinue
-Stop-ScheduledTask -TaskName ConstructFlowCaddy -ErrorAction SilentlyContinue
-Start-ScheduledTask -TaskName ConstructFlow
-Start-ScheduledTask -TaskName ConstructFlowCaddy
+Stop-ScheduledTask -TaskName "Ledome-MGMT" -ErrorAction SilentlyContinue
+Stop-ScheduledTask -TaskName "Ledome-MGMT-Caddy" -ErrorAction SilentlyContinue
+Start-ScheduledTask -TaskName "Ledome-MGMT"
+Start-ScheduledTask -TaskName "Ledome-MGMT-Caddy"
 ```
 
 Kiem tra app noi bo:
@@ -128,15 +128,15 @@ Kiem tra tren trinh duyet:
 - Dang nhap.
 - Goi thu `https://app.ledome.vn/api/v1/projects` khi chua dang nhap phai tra `401`.
 - Upload/download file du an.
-- Restart task `ConstructFlow`, dang nhap lai va xac nhan data van con.
-- Chay backup trong app va xac nhan co ban sao trong `C:\ConstructFlow\backups`.
+- Restart task `Ledome-MGMT`, dang nhap lai va xac nhan data van con.
+- Chay backup trong app va xac nhan co ban sao trong `C:\Ledome-MGMT\backups`.
 
 ## 8. Cap nhat app sau nay bang 1 lenh
 
-Chay lai lenh cai nhanh. Installer se tai code moi nhat tu GitHub, cap nhat `C:\ConstructFlow\app`, restart startup tasks, va giu nguyen `C:\ConstructFlow\data`.
+Chay lai lenh cai nhanh. Installer se tai code moi nhat tu GitHub, cap nhat `C:\Ledome-MGMT\app`, restart startup tasks, va giu nguyen `C:\Ledome-MGMT\data`.
 
 ```powershell
-Set-ExecutionPolicy -Scope Process Bypass -Force; Invoke-WebRequest -UseBasicParsing "https://raw.githubusercontent.com/ledome1/ledome/main/deploy/windows/install-server.ps1" -OutFile "$env:TEMP\install-constructflow.ps1"; powershell -ExecutionPolicy Bypass -File "$env:TEMP\install-constructflow.ps1" -Domain "app.ledome.vn"
+Set-ExecutionPolicy -Scope Process Bypass -Force; Invoke-WebRequest -UseBasicParsing "https://raw.githubusercontent.com/ledome1/ledome/main/deploy/windows/install-server.ps1" -OutFile "$env:TEMP\install-ledome-mgmt.ps1"; powershell -ExecutionPolicy Bypass -File "$env:TEMP\install-ledome-mgmt.ps1" -Domain "app.ledome.vn"
 ```
 
-Neu co thay doi lien quan data, backup `C:\ConstructFlow\data` truoc khi chay lai installer.
+Neu co thay doi lien quan data, backup `C:\Ledome-MGMT\data` truoc khi chay lai installer.
