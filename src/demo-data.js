@@ -2,7 +2,7 @@ const navigation = [
   ["Tổng quan", "home"], ["Insight", "insight"], ["Dự án", "projects"],
   ["Công việc", "tasks"], ["Phê duyệt", "approval"], ["CRM", "crm"],
   ["Nhân sự", "hrm"], ["Phương tiện", "fleet"], ["Drive", "drive"],
-  ["Danh mục", "catalog"]
+  ["Cơ sở dữ liệu", "catalog"]
 ];
 
 const projects = [

@@ -2,6 +2,7 @@ const http = require("node:http");
 const fs = require("node:fs");
 const path = require("node:path");
 const crypto = require("node:crypto");
+const zlib = require("node:zlib");
 const { URL } = require("node:url");
 const { dashboard, dashboardProjects, insight, projects, projectDetail, navigation } = require("./src/demo-data");
 
@@ -17,6 +18,7 @@ const backupsDir = path.resolve(process.env.BACKUP_DIR || path.join(__dirname, "
 const dataPath = (...segments) => path.join(dataDir, ...segments);
 const runtimeDataFile = dataPath("runtime-projects.json");
 const runtimeProjectUpdatesFile = dataPath("runtime-project-updates.json");
+const runtimeDeletedProjectsFile = dataPath("runtime-deleted-projects.json");
 const attendanceDataFile = dataPath("runtime-attendance.json");
 const contractFilesDir = dataPath("contract-files");
 const vendorContractFilesDir = dataPath("vendor-contract-files");
@@ -42,6 +44,7 @@ let testStores = {};
 let testBackups = [];
 const uploadMaxBytes = positiveNumber(process.env.UPLOAD_MAX_BYTES, 25 * 1024 * 1024);
 const sessionTtlMs = positiveNumber(process.env.SESSION_TTL_HOURS, 12) * 60 * 60 * 1000;
+const driveRetentionMs = positiveNumber(process.env.DRIVE_RETENTION_DAYS, 7) * 24 * 60 * 60 * 1000;
 const allowedUploadExtensions = new Set([".pdf", ".png", ".jpg", ".jpeg", ".webp", ".mp4", ".mov", ".doc", ".docx", ".xls", ".xlsx", ".csv", ".ppt", ".pptx", ".txt", ".md", ".note", ".dwg", ".zip"]);
 
 // New Dossier configurations for stages
@@ -247,6 +250,94 @@ function verifyPassword(account, password) {
   return String(account.password || "").trim() === String(password || "").trim();
 }
 
+const ACCOUNT_PERMISSION_KEYS = [
+  "projects.view",
+  "projects.edit",
+  "projects.upload",
+  "projects.download",
+  "projects.delete",
+  "partners.view",
+  "partners.edit",
+  "partners.delete",
+  "hrm.view",
+  "hrm.edit",
+  "hrm.approve",
+  "finance.view",
+  "finance.edit",
+  "finance.delete",
+  "config.accounts",
+  "private",
+  "personalFinance.view",
+  "personalFinance.edit"
+];
+
+const ACCOUNT_ACCESS_LEVELS = {
+  admin: {
+    rank: 1,
+    label: "Admin",
+    scope: "Toàn hệ thống",
+    permissions: ACCOUNT_PERMISSION_KEYS
+  },
+  leadership: {
+    rank: 2,
+    label: "Lãnh đạo",
+    scope: "Toàn hệ thống trừ Cấu hình",
+    permissions: ACCOUNT_PERMISSION_KEYS.filter((key) => !key.startsWith("config.") && !key.startsWith("personalFinance."))
+  },
+  manager: {
+    rank: 3,
+    label: "Trưởng phòng",
+    scope: "Theo phòng ban / dự án phụ trách",
+    permissions: ["projects.view", "projects.edit", "projects.upload", "projects.download", "partners.view", "partners.edit", "hrm.view"]
+  },
+  staff: {
+    rank: 4,
+    label: "Nhân viên",
+    scope: "Theo công việc được giao",
+    permissions: ["projects.view", "projects.edit", "projects.upload", "projects.download", "partners.view"]
+  },
+  guest: {
+    rank: 5,
+    label: "Guest",
+    scope: "Chỉ xem giới hạn",
+    permissions: ["projects.view", "partners.view"]
+  }
+};
+
+const LEGACY_MODULE_ACTIONS = {
+  projects: ["view", "edit", "upload", "download"],
+  partners: ["view", "edit"],
+  hrm: ["view", "edit", "approve"],
+  finance: ["view", "edit", "delete"],
+  personalFinance: ["view", "edit"]
+};
+
+function knownAccessLevel(level) {
+  return Object.hasOwn(ACCOUNT_ACCESS_LEVELS, String(level || ""));
+}
+
+function accountSearchText(account) {
+  const parts = [
+    account.staffName,
+    account.role,
+    account.department,
+    account.title,
+    ...(account.roles || []),
+    ...(account.departments || []),
+    ...(account.positions || [])
+  ];
+  return parts.join(" ").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+}
+
+function inferAccessLevel(account = {}) {
+  const loginId = String(account.loginId || "").trim().toLowerCase();
+  const text = accountSearchText(account);
+  if (loginId === "hoangdinh" || account.staffCode === "NS001" || account.permissions?.personalFinance) return "admin";
+  if (loginId === "dungbui" || text.includes("ban lanh") || text.includes("pho giam")) return "leadership";
+  if (text.includes("truong phong")) return "manager";
+  return "staff";
+}
+
 function hasPermission(account, permission) {
   if (!permission) return true;
   const permissions = account?.permissions || {};
@@ -255,39 +346,47 @@ function hasPermission(account, permission) {
   return Boolean(permissions[module]);
 }
 
-function expandPermissions(permissions = {}, loginId = "") {
-  const next = { ...permissions };
-  const grant = (module, actions) => actions.forEach((action) => { next[`${module}.${action}`] = Boolean(next[`${module}.${action}`] || next[module]); });
-  grant("projects", ["view", "edit", "upload", "download"]);
-  grant("partners", ["view", "edit"]);
-  grant("hrm", ["view", "edit", "approve"]);
-  grant("finance", ["view", "edit", "delete"]);
-  if (next.config) next["config.accounts"] = true;
-  if (next.personalFinance || String(loginId).toLowerCase() === "hoangdinh") {
-    next.personalFinance = true;
-    next["personalFinance.view"] = true;
-    next["personalFinance.edit"] = true;
-  }
-  if (next.config) {
+function expandPermissions(permissions = {}) {
+  const source = permissions && typeof permissions === "object" ? permissions : {};
+  const next = {};
+  ACCOUNT_PERMISSION_KEYS.forEach((key) => { next[key] = Boolean(source[key]); });
+  Object.entries(LEGACY_MODULE_ACTIONS).forEach(([module, actions]) => {
+    if (source[module]) actions.forEach((action) => { next[`${module}.${action}`] = true; });
+  });
+  if (source.config) {
+    next["config.accounts"] = true;
     next["projects.delete"] = true;
     next["partners.delete"] = true;
   }
+  next.projects = ["view", "edit", "upload", "download", "delete"].some((action) => next[`projects.${action}`]);
+  next.partners = ["view", "edit", "delete"].some((action) => next[`partners.${action}`]);
+  next.hrm = ["view", "edit", "approve"].some((action) => next[`hrm.${action}`]);
+  next.finance = ["view", "edit", "delete"].some((action) => next[`finance.${action}`]);
+  next.config = Boolean(next["config.accounts"]);
+  next.private = Boolean(next.private || source.private);
+  next.personalFinance = ["view", "edit"].some((action) => next[`personalFinance.${action}`]);
   return next;
 }
 
-function defaultAccountPermissions(person) {
-  const departments = person.departments || [person.department].filter(Boolean);
-  const roles = person.roles || [person.role].filter(Boolean);
-  const isLeader = departments.includes("Ban lãnh đạo") || roles.some((role) => ["Giám đốc", "Phó giám đốc"].includes(role));
+function permissionsForAccessLevel(accessLevel) {
+  const config = ACCOUNT_ACCESS_LEVELS[knownAccessLevel(accessLevel) ? accessLevel : "staff"];
+  const allowed = new Set(config.permissions);
+  const permissions = {};
+  ACCOUNT_PERMISSION_KEYS.forEach((key) => { permissions[key] = allowed.has(key); });
+  return expandPermissions(permissions);
+}
+
+function normalizeAccountAccess(account = {}) {
+  const accessLevel = knownAccessLevel(account.accessLevel) ? account.accessLevel : inferAccessLevel(account);
   return {
-    projects: true,
-    partners: true,
-    hrm: isLeader || departments.includes("Khối văn phòng") || roles.includes("Nhân sự"),
-    finance: isLeader || roles.includes("Kế toán"),
-    config: isLeader,
-    private: isLeader,
-    personalFinance: person.loginId?.toLowerCase() === "hoangdinh"
+    accessLevel,
+    accessScope: ACCOUNT_ACCESS_LEVELS[accessLevel].scope,
+    permissions: permissionsForAccessLevel(accessLevel)
   };
+}
+
+function defaultAccountPermissions(person) {
+  return permissionsForAccessLevel(inferAccessLevel(person));
 }
 
 function defaultAccounts() {
@@ -314,7 +413,7 @@ function defaultAccounts() {
       password: "1",
       active: true
     };
-    account.permissions = defaultAccountPermissions(account);
+    Object.assign(account, normalizeAccountAccess(account));
     return account;
   });
 }
@@ -328,7 +427,15 @@ function readAccounts() {
   const accounts = Array.isArray(source) && source.length ? source : defaultAccounts();
   let migrated = false;
   const secure = accounts.map((account) => {
-    const next = { ...account, permissions: expandPermissions(account.permissions || defaultAccountPermissions(account), account.loginId) };
+    const normalized = normalizeAccountAccess(account);
+    const next = { ...account, ...normalized };
+    if (
+      account.accessLevel !== next.accessLevel ||
+      account.accessScope !== next.accessScope ||
+      JSON.stringify(account.permissions || {}) !== JSON.stringify(next.permissions)
+    ) {
+      migrated = true;
+    }
     if (!next.passwordHash || !next.passwordSalt) {
       Object.assign(next, hashPassword(next.password || "1"));
       delete next.password;
@@ -381,13 +488,14 @@ function requireAccount(req, res, permission) {
   return account;
 }
 
-function permissionForRequest(pathname) {
+function permissionForRequest(pathname, method = "GET") {
   if (pathname.includes("/attendance/records/") && pathname.endsWith("/approve")) return "hrm.approve";
+  if (method === "DELETE" && /^\/api\/v1\/projects\/[^/]+$/.test(pathname)) return "projects.delete";
   if (pathname.includes("/upload") || pathname.includes("-files") || pathname.includes("/dossiers/")) {
     if (pathname.endsWith("/download")) return "projects.download";
     return "projects.upload";
   }
-  if (pathname.includes("/projects/") || pathname === "/api/v1/projects") return "projects.edit";
+  if (pathname.includes("/projects/") || pathname === "/api/v1/projects") return method === "GET" ? "projects.view" : "projects.edit";
   return null;
 }
 
@@ -442,6 +550,21 @@ function persistRuntimeProjectUpdates(updates) {
   writeJsonAtomic(runtimeProjectUpdatesFile, updates);
 }
 
+function loadRuntimeDeletedProjects() {
+  if (process.env.NODE_ENV === "test" || !fs.existsSync(runtimeDeletedProjectsFile)) return [];
+  try {
+    const value = JSON.parse(fs.readFileSync(runtimeDeletedProjectsFile, "utf8"));
+    return Array.isArray(value) ? value.map(String) : [];
+  } catch {
+    return [];
+  }
+}
+
+function persistRuntimeDeletedProjects(ids) {
+  if (process.env.NODE_ENV === "test") return;
+  writeJsonAtomic(runtimeDeletedProjectsFile, [...new Set(ids.map(String))]);
+}
+
 function updateProject(id, input) {
   const detail = projectDetail[id] || dashboardProjects.find((item) => item.id === id);
   if (!detail) return null;
@@ -457,6 +580,45 @@ function updateProject(id, input) {
   const dashboardProject = dashboardProjects.find((item) => item.id === id);
   if (dashboardProject && dashboardProject !== detail) Object.assign(dashboardProject, changes);
   return changes;
+}
+
+function removeProjectFromMemory(id) {
+  const projectId = String(id || "");
+  let removed = false;
+  const removeFrom = (list) => {
+    let index = list.findIndex((item) => item.id === projectId);
+    while (index >= 0) {
+      list.splice(index, 1);
+      removed = true;
+      index = list.findIndex((item) => item.id === projectId);
+    }
+  };
+  removeFrom(projects);
+  removeFrom(dashboardProjects);
+  if (projectDetail[projectId]) {
+    delete projectDetail[projectId];
+    removed = true;
+  }
+  return removed;
+}
+
+function deleteProject(id) {
+  const projectId = String(id || "");
+  const existing = projectDetail[projectId] || projects.find((item) => item.id === projectId) || dashboardProjects.find((item) => item.id === projectId);
+  if (!existing) return null;
+  removeProjectFromMemory(projectId);
+  const runtimeIndex = runtimeProjects.findIndex((item) => item.id === projectId);
+  if (runtimeIndex >= 0) {
+    runtimeProjects.splice(runtimeIndex, 1);
+    persistRuntimeProjects(runtimeProjects);
+  }
+  if (runtimeProjectUpdates[projectId]) {
+    delete runtimeProjectUpdates[projectId];
+    persistRuntimeProjectUpdates(runtimeProjectUpdates);
+  }
+  runtimeDeletedProjects.add(projectId);
+  persistRuntimeDeletedProjects([...runtimeDeletedProjects]);
+  return existing;
 }
 
 function activeProjectList(list) {
@@ -651,6 +813,7 @@ function fileCategory(filename) {
 }
 
 function listDriveStoredFiles() {
+  purgeExpiredDriveFiles();
   if (!fs.existsSync(driveFilesDir)) return [];
   return fs.readdirSync(driveFilesDir, { withFileTypes: true }).filter((entry) => entry.isFile()).map((entry) => {
     const filename = entry.name;
@@ -661,9 +824,178 @@ function listDriveStoredFiles() {
       name,
       category: fileCategory(name),
       size: stats.size,
-      updatedAt: stats.mtime.toISOString()
+      updatedAt: stats.mtime.toISOString(),
+      expiresAt: new Date(stats.mtime.getTime() + driveRetentionMs).toISOString()
     };
   }).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+}
+
+function purgeExpiredDriveFiles() {
+  if (!fs.existsSync(driveFilesDir)) return;
+  const cutoff = Date.now() - driveRetentionMs;
+  for (const entry of fs.readdirSync(driveFilesDir, { withFileTypes: true })) {
+    if (!entry.isFile()) continue;
+    const target = path.join(driveFilesDir, entry.name);
+    try {
+      if (fs.statSync(target).mtimeMs < cutoff) fs.unlinkSync(target);
+    } catch {
+      // Another request may have removed the file already.
+    }
+  }
+}
+
+function pruneExpiredDriveRows(rows) {
+  purgeExpiredDriveFiles();
+  if (!Array.isArray(rows)) return [];
+  const stored = new Set(listDriveStoredFiles().map((file) => file.storedName));
+  const now = Date.now();
+  return rows.filter((row) => {
+    const storedName = row && row[10];
+    if (!storedName) return true;
+    const expiresAt = Date.parse(row[12] || "");
+    if (Number.isFinite(expiresAt) && expiresAt <= now) return false;
+    return stored.has(storedName);
+  });
+}
+
+function driveStoredTarget(storedName) {
+  const clean = safeFileName(storedName);
+  if (!clean) return null;
+  const target = path.join(driveFilesDir, clean);
+  if (!fs.existsSync(target)) return null;
+  return { storedName: clean, target, displayName: driveFileDisplayName(clean) };
+}
+
+function sendDriveStoredFile(res, info, disposition = "attachment") {
+  res.writeHead(200, {
+    "content-type": mime[path.extname(info.displayName).toLowerCase()] || "application/octet-stream",
+    "content-disposition": `${disposition}; filename*=UTF-8''${encodeURIComponent(info.displayName)}`,
+    "cache-control": "no-store",
+    "x-content-type-options": "nosniff"
+  });
+  return fs.createReadStream(info.target).pipe(res);
+}
+
+function xmlDecode(value) {
+  return String(value || "")
+    .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1")
+    .replace(/&#x([0-9a-f]+);/gi, (_, code) => String.fromCodePoint(Number.parseInt(code, 16)))
+    .replace(/&#(\d+);/g, (_, code) => String.fromCodePoint(Number(code)))
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&amp;/g, "&");
+}
+
+function xmlTexts(xml, tag) {
+  const text = [];
+  const re = new RegExp(`<${tag}\\b[^>]*>([\\s\\S]*?)<\\/${tag}>`, "g");
+  for (const match of String(xml || "").matchAll(re)) text.push(xmlDecode(match[1]));
+  return text;
+}
+
+function readZipEntries(buffer) {
+  const entries = new Map();
+  let eocd = -1;
+  for (let offset = buffer.length - 22; offset >= Math.max(0, buffer.length - 66000); offset -= 1) {
+    if (buffer.readUInt32LE(offset) === 0x06054b50) {
+      eocd = offset;
+      break;
+    }
+  }
+  if (eocd < 0) return entries;
+  const total = buffer.readUInt16LE(eocd + 10);
+  let offset = buffer.readUInt32LE(eocd + 16);
+  for (let index = 0; index < total && offset + 46 <= buffer.length; index += 1) {
+    if (buffer.readUInt32LE(offset) !== 0x02014b50) break;
+    const method = buffer.readUInt16LE(offset + 10);
+    const compressedSize = buffer.readUInt32LE(offset + 20);
+    const nameLength = buffer.readUInt16LE(offset + 28);
+    const extraLength = buffer.readUInt16LE(offset + 30);
+    const commentLength = buffer.readUInt16LE(offset + 32);
+    const localOffset = buffer.readUInt32LE(offset + 42);
+    const name = buffer.toString("utf8", offset + 46, offset + 46 + nameLength).replace(/\\/g, "/");
+    if (localOffset + 30 <= buffer.length && buffer.readUInt32LE(localOffset) === 0x04034b50) {
+      const localNameLength = buffer.readUInt16LE(localOffset + 26);
+      const localExtraLength = buffer.readUInt16LE(localOffset + 28);
+      const dataStart = localOffset + 30 + localNameLength + localExtraLength;
+      const dataEnd = dataStart + compressedSize;
+      if (dataEnd <= buffer.length) entries.set(name, { method, data: buffer.subarray(dataStart, dataEnd) });
+    }
+    offset += 46 + nameLength + extraLength + commentLength;
+  }
+  return entries;
+}
+
+function zipText(entries, name) {
+  const entry = entries.get(name);
+  if (!entry) return "";
+  if (entry.method === 0) return entry.data.toString("utf8");
+  if (entry.method === 8) return zlib.inflateRawSync(entry.data).toString("utf8");
+  return "";
+}
+
+function sortNumberedXmlName(a, b) {
+  const left = Number((a.match(/(\d+)\.xml$/) || [])[1] || 0);
+  const right = Number((b.match(/(\d+)\.xml$/) || [])[1] || 0);
+  return left - right || a.localeCompare(b);
+}
+
+function previewDocx(entries) {
+  const xml = zipText(entries, "word/document.xml");
+  const paragraphs = String(xml || "").split(/<\/w:p>/).map((part) => xmlTexts(part, "w:t").join("").replace(/\s+/g, " ").trim()).filter(Boolean).slice(0, 120);
+  return { kind: "word", title: "Word", sections: [{ title: "Nội dung", lines: paragraphs }] };
+}
+
+function previewXlsx(entries) {
+  const shared = [];
+  const sharedXml = zipText(entries, "xl/sharedStrings.xml");
+  for (const match of String(sharedXml || "").matchAll(/<si\b[\s\S]*?<\/si>/g)) shared.push(xmlTexts(match[0], "t").join(""));
+  const names = [];
+  for (const match of String(zipText(entries, "xl/workbook.xml") || "").matchAll(/<sheet\b[^>]*name="([^"]+)"/g)) names.push(xmlDecode(match[1]));
+  const sheetNames = [...entries.keys()].filter((name) => /^xl\/worksheets\/sheet\d+\.xml$/.test(name)).sort(sortNumberedXmlName);
+  const sheets = sheetNames.slice(0, 8).map((name, sheetIndex) => {
+    const xml = zipText(entries, name);
+    const rows = [];
+    for (const rowMatch of String(xml || "").matchAll(/<row\b[\s\S]*?<\/row>/g)) {
+      const row = [];
+      for (const cellMatch of rowMatch[0].matchAll(/<c\b([^>]*)>([\s\S]*?)<\/c>/g)) {
+        const attrs = cellMatch[1];
+        const body = cellMatch[2];
+        const raw = (body.match(/<v\b[^>]*>([\s\S]*?)<\/v>/) || [])[1] || "";
+        const inline = xmlTexts(body, "t").join("");
+        row.push(/\bt="s"/.test(attrs) ? (shared[Number(raw)] || "") : inline || xmlDecode(raw));
+      }
+      if (row.some((cell) => String(cell).trim())) rows.push(row.slice(0, 16));
+      if (rows.length >= 80) break;
+    }
+    return { title: names[sheetIndex] || `Sheet ${sheetIndex + 1}`, rows };
+  });
+  return { kind: "excel", title: "Excel", sheets };
+}
+
+function previewPptx(entries) {
+  const slides = [...entries.keys()].filter((name) => /^ppt\/slides\/slide\d+\.xml$/.test(name)).sort(sortNumberedXmlName).slice(0, 80).map((name, index) => ({
+    title: `Slide ${index + 1}`,
+    lines: xmlTexts(zipText(entries, name), "a:t").map((line) => line.trim()).filter(Boolean)
+  }));
+  return { kind: "powerpoint", title: "PowerPoint", sections: slides };
+}
+
+function previewOfficeFile(info) {
+  const ext = path.extname(info.displayName).toLowerCase();
+  if ([".txt", ".md", ".note", ".csv"].includes(ext)) {
+    const content = fs.readFileSync(info.target, "utf8").slice(0, 200000);
+    return { kind: ext === ".csv" ? "csv" : "text", title: info.displayName, text: content };
+  }
+  if (![".docx", ".xlsx", ".pptx"].includes(ext)) {
+    return { kind: "office", title: info.displayName, message: "Trình đọc nhanh hỗ trợ nội dung trực tiếp cho DOCX, XLSX và PPTX. File DOC/XLS/PPT cũ vẫn có thể tải hoặc mở bản gốc." };
+  }
+  const entries = readZipEntries(fs.readFileSync(info.target));
+  if (ext === ".docx") return previewDocx(entries);
+  if (ext === ".xlsx") return previewXlsx(entries);
+  return previewPptx(entries);
 }
 
 function listExistingFiles(projectId) {
@@ -877,6 +1209,12 @@ const catalogSeed = {
     "CHĂN GA ĐỆM",
     "ĐỒ THỦ CÔNG",
     "KHÁC"
+  ],
+  contractTypes: [
+    "Hợp đồng thiết kế",
+    "Hợp đồng thi công",
+    "Hợp đồng thiết kế thi công",
+    "Hợp đồng phát sinh"
   ]
 };
 
@@ -888,7 +1226,8 @@ function catalogList(input, fallback) {
 function normalizeCatalog(input = {}) {
   return {
     constructionCategories: catalogList(input.constructionCategories, catalogSeed.constructionCategories),
-    materialCategories: catalogList(input.materialCategories, catalogSeed.materialCategories)
+    materialCategories: catalogList(input.materialCategories, catalogSeed.materialCategories),
+    contractTypes: catalogList(input.contractTypes, catalogSeed.contractTypes)
   };
 }
 
@@ -916,6 +1255,13 @@ const driveSeed = [
   ["DRV002","Mẫu hợp đồng thiết kế.docx","Word","Mẫu biểu","Hợp đồng","Trần Văn Đức","2026-06-02",820,"Toàn công ty","Mẫu cập nhật 2026"],
   ["DRV003","Báo giá vật liệu hoàn thiện.xlsx","Excel","Dự án","Vật liệu","Hoàng Thu Mai","2026-06-01",1260,"Thi công, Kế toán","Bảng tham khảo NCC"]
 ];
+const driveSeedById = new Map(driveSeed.map((row) => [row[0], row]));
+function repairDriveSeedRow(row) {
+  const seed = driveSeedById.get(row?.[0]);
+  if (!seed || row?.[10]) return row;
+  const text = [row[1], row[3], row[4], row[5], row[8], row[9]].join(" ");
+  return /�|\?/.test(text) ? [...seed] : row;
+}
 
 const financeSeed = {
   transactions: [
@@ -946,8 +1292,12 @@ function readFinance() { return readJsonFile(financeFile, financeSeed); }
 function writeFinance(data) { writeJsonAtomic(financeFile, data); }
 function readPersonalFinance() { return readJsonFile(personalFinanceFile, personalFinanceSeed); }
 function writePersonalFinance(data) { writeJsonAtomic(personalFinanceFile, data); }
-function readDrive() { return readJsonFile(driveFile, driveSeed); }
-function writeDrive(data) { writeJsonAtomic(driveFile, data); }
+function readDrive() {
+  const rows = pruneExpiredDriveRows(readJsonFile(driveFile, driveSeed).map(repairDriveSeedRow));
+  if (process.env.NODE_ENV !== "test") writeJsonAtomic(driveFile, rows);
+  return rows;
+}
+function writeDrive(data) { writeJsonAtomic(driveFile, pruneExpiredDriveRows(data)); }
 function readOrgStaff() { return readJsonFile(orgStaffFile, orgStaffSeed); }
 function writeOrgStaff(data) { writeJsonAtomic(orgStaffFile, data); }
 function readDiaryReports() { return readJsonFile(diaryReportsFile, {}); }
@@ -955,11 +1305,15 @@ function writeDiaryReports(data) { writeJsonAtomic(diaryReportsFile, data); }
 
 const runtimeProjects = loadRuntimeProjects();
 const runtimeProjectUpdates = loadRuntimeProjectUpdates();
+const runtimeDeletedProjects = new Set(loadRuntimeDeletedProjects());
 const attendanceRecords = loadAttendanceRecords();
+runtimeDeletedProjects.forEach((id) => removeProjectFromMemory(id));
 runtimeProjects.slice().reverse().forEach((project) => {
-  if (!projects.some((item) => item.id === project.id)) addProject(project);
+  if (!runtimeDeletedProjects.has(project.id) && !projects.some((item) => item.id === project.id)) addProject(project);
 });
-Object.entries(runtimeProjectUpdates).forEach(([id, changes]) => updateProject(id, changes));
+Object.entries(runtimeProjectUpdates).forEach(([id, changes]) => {
+  if (!runtimeDeletedProjects.has(id)) updateProject(id, changes);
+});
 
 function api(req, res, pathname) {
   if (pathname === "/api/v1/health") return json(res, 200, { ok: true, service: "ledome-mgmt-api" });
@@ -998,13 +1352,13 @@ function api(req, res, pathname) {
       const currentByStaff = new Map(readAccounts().map((account) => [account.staffCode, account]));
       const accounts = Array.isArray(input.accounts) ? input.accounts.map((account) => {
         const current = currentByStaff.get(account.staffCode) || {};
-        const next = {
+        const raw = {
           ...current,
           ...account,
           loginId: String(account.loginId || "").trim(),
-          active: Boolean(account.active),
-          permissions: expandPermissions(account.permissions && typeof account.permissions === "object" ? account.permissions : {}, account.loginId)
+          active: Boolean(account.active)
         };
+        const next = { ...raw, ...normalizeAccountAccess(raw) };
         if (String(account.newPassword || "").trim()) Object.assign(next, hashPassword(account.newPassword));
         delete next.password;
         delete next.newPassword;
@@ -1018,7 +1372,7 @@ function api(req, res, pathname) {
   if (pathname === "/api/v1/accounts/reset" && req.method === "POST") {
     if (!requireAccount(req, res, "config.accounts")) return;
     const accounts = defaultAccounts().map((account) => {
-      const next = { ...account, permissions: expandPermissions(account.permissions, account.loginId) };
+      const next = { ...account, ...normalizeAccountAccess(account) };
       Object.assign(next, hashPassword(next.password || "1"));
       delete next.password;
       return next;
@@ -1138,19 +1492,30 @@ function api(req, res, pathname) {
       return json(res, 200, { ok: true });
     }
   }
+  if (pathname === "/api/v1/drive-files/view" && req.method === "GET") {
+    if (!requireAccount(req, res, "projects.download")) return;
+    const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
+    const info = driveStoredTarget(url.searchParams.get("storedName"));
+    if (!info) return json(res, 404, { error: "File not found" });
+    return sendDriveStoredFile(res, info, "inline");
+  }
+  if (pathname === "/api/v1/drive-files/preview" && req.method === "GET") {
+    if (!requireAccount(req, res, "projects.download")) return;
+    const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
+    const info = driveStoredTarget(url.searchParams.get("storedName"));
+    if (!info) return json(res, 404, { error: "File not found" });
+    try {
+      return json(res, 200, { data: previewOfficeFile(info) });
+    } catch {
+      return json(res, 422, { error: "Unable to preview this file" });
+    }
+  }
   if (pathname === "/api/v1/drive-files/download" && req.method === "GET") {
     if (!requireAccount(req, res, "projects.download")) return;
     const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
-    const storedName = safeFileName(url.searchParams.get("storedName"));
-    const target = path.join(driveFilesDir, storedName);
-    if (!storedName || !fs.existsSync(target)) return json(res, 404, { error: "File not found" });
-    const displayName = driveFileDisplayName(storedName);
-    res.writeHead(200, {
-      "content-type": mime[path.extname(displayName)] || "application/octet-stream",
-      "content-disposition": `attachment; filename*=UTF-8''${encodeURIComponent(displayName)}`,
-      "cache-control": "no-store"
-    });
-    return fs.createReadStream(target).pipe(res);
+    const info = driveStoredTarget(url.searchParams.get("storedName"));
+    if (!info) return json(res, 404, { error: "File not found" });
+    return sendDriveStoredFile(res, info, "attachment");
   }
   if (pathname === "/api/v1/hrm/staff") {
     if (req.method === "GET") {
@@ -1187,7 +1552,7 @@ function api(req, res, pathname) {
     }
   }
   const mutatingRequest = !["GET", "HEAD", "OPTIONS"].includes(req.method);
-  const requiredPermission = permissionForRequest(pathname);
+  const requiredPermission = permissionForRequest(pathname, req.method);
   if (mutatingRequest && requiredPermission && !requireAccount(req, res, requiredPermission)) return;
   if (/\/download$/.test(pathname) && requiredPermission && !requireAccount(req, res, requiredPermission)) return;
   if (pathname === "/api/v1/navigation") return json(res, 200, navigation);
@@ -1839,6 +2204,10 @@ function api(req, res, pathname) {
 
   const projectMatch = pathname.match(/^\/api\/v1\/projects\/([^/]+)$/);
   if (projectMatch) {
+    if (req.method === "DELETE") {
+      const deleted = deleteProject(projectMatch[1]);
+      return deleted ? json(res, 200, { ok: true, data: deleted }) : json(res, 404, { error: "Project not found" });
+    }
     if (req.method === "PATCH") {
       return readJson(req, (error, input) => {
         if (error) return json(res, 400, { error: error.message });
@@ -1876,7 +2245,7 @@ function staticFile(req, res, pathname) {
       .pipe(res);
   }
   if (requested === "/constructions/detail/index.html") {
-    const html = fs.readFileSync(filename, "utf8").replace(/\/construction\.js(?:\?v=\d+)?/g, "/construction.js?v=149");
+    const html = fs.readFileSync(filename, "utf8").replace(/\/construction\.js(?:\?v=\d+)?/g, "/construction.js?v=165");
     res.writeHead(200, { "content-type": mime[".html"], "cache-control": "no-cache" });
     return res.end(html);
   }

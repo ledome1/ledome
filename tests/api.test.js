@@ -1,5 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
+const zlib = require("node:zlib");
 
 process.env.NODE_ENV = "test";
 const { createServer } = require("../server");
@@ -21,6 +22,61 @@ async function login(loginId = "HoangDinh", password = "1") {
 
 function authed(url, options = {}) {
   return fetch(url, { ...options, headers: { ...(options.headers || {}), cookie: authCookie } });
+}
+
+function zipBuffer(entries) {
+  const locals = [];
+  const centrals = [];
+  let offset = 0;
+  for (const [name, content] of Object.entries(entries)) {
+    const nameBuffer = Buffer.from(name);
+    const raw = Buffer.from(content);
+    const deflated = zlib.deflateRawSync(raw);
+    const local = Buffer.alloc(30);
+    local.writeUInt32LE(0x04034b50, 0);
+    local.writeUInt16LE(20, 4);
+    local.writeUInt16LE(0, 6);
+    local.writeUInt16LE(8, 8);
+    local.writeUInt32LE(0, 10);
+    local.writeUInt32LE(0, 14);
+    local.writeUInt32LE(deflated.length, 18);
+    local.writeUInt32LE(raw.length, 22);
+    local.writeUInt16LE(nameBuffer.length, 26);
+    local.writeUInt16LE(0, 28);
+    locals.push(local, nameBuffer, deflated);
+
+    const central = Buffer.alloc(46);
+    central.writeUInt32LE(0x02014b50, 0);
+    central.writeUInt16LE(20, 4);
+    central.writeUInt16LE(20, 6);
+    central.writeUInt16LE(0, 8);
+    central.writeUInt16LE(8, 10);
+    central.writeUInt32LE(0, 12);
+    central.writeUInt32LE(0, 16);
+    central.writeUInt32LE(deflated.length, 20);
+    central.writeUInt32LE(raw.length, 24);
+    central.writeUInt16LE(nameBuffer.length, 28);
+    central.writeUInt16LE(0, 30);
+    central.writeUInt16LE(0, 32);
+    central.writeUInt16LE(0, 34);
+    central.writeUInt16LE(0, 36);
+    central.writeUInt32LE(0, 38);
+    central.writeUInt32LE(offset, 42);
+    centrals.push(central, nameBuffer);
+    offset += local.length + nameBuffer.length + deflated.length;
+  }
+  const centralStart = offset;
+  const centralBuffer = Buffer.concat(centrals);
+  const end = Buffer.alloc(22);
+  end.writeUInt32LE(0x06054b50, 0);
+  end.writeUInt16LE(0, 4);
+  end.writeUInt16LE(0, 6);
+  end.writeUInt16LE(Object.keys(entries).length, 8);
+  end.writeUInt16LE(Object.keys(entries).length, 10);
+  end.writeUInt32LE(centralBuffer.length, 12);
+  end.writeUInt32LE(centralStart, 16);
+  end.writeUInt16LE(0, 20);
+  return Buffer.concat([...locals, centralBuffer, end]);
 }
 
 test.before(async () => {
@@ -110,6 +166,23 @@ test("accounts API hides password material and supports password reset", async (
   await login();
 });
 
+test("account access levels apply the config boundary", async () => {
+  const accounts = await authed(`${origin}/api/v1/accounts`).then((res) => res.json());
+  const admin = accounts.data.find((account) => account.loginId.toLowerCase() === "hoangdinh");
+  const leader = accounts.data.find((account) => account.loginId.toLowerCase() === "dungbui");
+  assert.equal(admin.accessLevel, "admin");
+  assert.equal(admin.permissions["config.accounts"], true);
+  assert.equal(leader.accessLevel, "leadership");
+  assert.equal(leader.permissions["projects.delete"], true);
+  assert.equal(leader.permissions["config.accounts"], false);
+
+  const { response } = await login(leader.loginId, "1");
+  assert.equal(response.status, 200);
+  const denied = await authed(`${origin}/api/v1/accounts`);
+  assert.equal(denied.status, 403);
+  await login();
+});
+
 test("server-side business stores persist through API", async () => {
   const partners = await authed(`${origin}/api/v1/partners/customers`).then((res) => res.json());
   const marker = `KH${Date.now()}`;
@@ -156,6 +229,27 @@ test("file uploads reject unsupported extensions", async () => {
     body: Buffer.from("bad")
   });
   assert.equal(response.status, 400);
+});
+
+test("drive files support inline view and quick Office preview", async () => {
+  const docx = zipBuffer({
+    "word/document.xml": `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>Drive quick preview works</w:t></w:r></w:p></w:body></w:document>`
+  });
+  const upload = await authed(`${origin}/api/v1/drive-files?name=quick-preview.docx`, {
+    method: "POST",
+    body: docx
+  });
+  assert.equal(upload.status, 201);
+  const stored = await upload.json();
+  assert.ok(stored.storedName);
+
+  const view = await authed(`${origin}/api/v1/drive-files/view?storedName=${encodeURIComponent(stored.storedName)}`);
+  assert.equal(view.status, 200);
+  assert.match(view.headers.get("content-disposition"), /^inline/);
+
+  const preview = await authed(`${origin}/api/v1/drive-files/preview?storedName=${encodeURIComponent(stored.storedName)}`).then((res) => res.json());
+  assert.equal(preview.data.kind, "word");
+  assert.equal(preview.data.sections[0].lines[0], "Drive quick preview works");
 });
 
 test("backup endpoint creates a backup record", async () => {
@@ -221,7 +315,7 @@ test("unknown project returns 404", async () => {
   assert.equal(response.status, 404);
 });
 
-test("created and updated projects appear in lists and detail endpoint", async () => {
+test("created, updated and deleted projects stay in sync across project APIs", async () => {
   const name = `Dự án mới ${Date.now()}`;
   const response = await authed(`${origin}/api/v1/projects`, {
     method: "POST",
@@ -246,6 +340,18 @@ test("created and updated projects appear in lists and detail endpoint", async (
 
   const detail = await authed(`${origin}/api/v1/projects/${project.id}`).then((res) => res.json());
   assert.equal(detail.name, "Updated project name");
+
+  const deleted = await authed(`${origin}/api/v1/projects/${project.id}`, { method: "DELETE" });
+  assert.equal(deleted.status, 200);
+
+  const afterDeleteInventory = await authed(`${origin}/api/v1/projects`).then((res) => res.json());
+  assert.equal(afterDeleteInventory.data.some((item) => item.id === project.id), false);
+
+  const afterDeleteDashboard = await authed(`${origin}/api/v1/dashboard/projects`).then((res) => res.json());
+  assert.equal(afterDeleteDashboard.data.some((item) => item.id === project.id), false);
+
+  const afterDeleteDetail = await authed(`${origin}/api/v1/projects/${project.id}`);
+  assert.equal(afterDeleteDetail.status, 404);
 });
 
 test("3D design files support proposal, concept and final marker", async () => {
@@ -281,6 +387,7 @@ test("landing page and project detail clients expose expected workflows", async 
   assert.match(html, /project-app/);
 
   const script = await fetch(`${origin}/construction.js`).then((res) => res.text());
+  assert.match(script, /data-project-info-delete/);
   assert.match(script, /Dòng tiền dự án/);
   assert.match(script, /Truy cập nhanh/);
   assert.match(script, /Theo dõi chi phí dự án/);

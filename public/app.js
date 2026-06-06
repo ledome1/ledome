@@ -2,7 +2,7 @@
 const money = (value) => new Intl.NumberFormat("vi-VN").format(value);
 const moneyInput = (value) => Number(value || 0).toLocaleString("vi-VN");
 const parseMoneyInput = (value) => Number(String(value || "").replace(/[^\d]/g, "")) || 0;
-const state = { page: location.hash.slice(1) || "projects", nav: [], account: null, customerId: "", customerQuery: "", customerFilter: "Tất cả", crmQuery: "", crmStatus: "Tất cả", crmSupplierCategory: "Tất cả", catalogType: "constructionCategories", catalogQuery: "", driveQuery: "", driveScope: "Tất cả", financeQuery: "", financeKind: "Tất cả", personalQuery: "", personalKind: "Tất cả", navCollapsed: {} };
+const state = { page: location.hash.slice(1) || "projects", nav: [], account: null, customerId: "", customerQuery: "", customerFilter: "Tất cả", crmQuery: "", crmStatus: "Tất cả", crmSupplierCategory: "Tất cả", catalogType: "constructionCategories", catalogQuery: "", driveQuery: "", driveUploadMessage: "", financeQuery: "", financeKind: "Tất cả", financeFilterOpen: "", financeFilters: { type: [], group: [], topic: [], category: [], partner: [] }, personalQuery: "", personalKind: "Tất cả", navCollapsed: {} };
 const AUTH_STORAGE = "ledome.auth.v1";
 const LOGIN_REMEMBER_STORAGE = "ledome.login.remember.v1";
 const NAV_COLLAPSE_STORAGE = "ledome.navCollapsed.v1";
@@ -16,7 +16,7 @@ const MODULE_PERMISSION = {
   "personal-finance-overview": "personalFinance", "personal-finance-transactions": "personalFinance", "personal-finance-budget": "personalFinance", "personal-finance-report": "personalFinance",
   catalog: "config", materials: "config", processes: "config", standards: "config", accounts: "config"
 };
-const pageTitles = { home: "DASHBOARD", insight: "INSIGHT", projects: "❖ Danh sách dự án", "projects-overview": "▣ Tổng quan dự án", drive: "▰ LE DOME DRIVE", "partners-overview": "▣ Tổng quan đối tác", customers: "♟ Khách hàng", contractors: "▣ Nhà thầu", suppliers: "▤ Nhà cung cấp", "hrm-overview": "▣ Tổng quan nhân sự", "hrm-staff": "♟ Nhân sự", "hrm-attendance": "▣ Chấm công", "hrm-payroll": "$ Lương", "finance-overview": "▣ Tổng quan", "finance-ledome": "▣ Le Dome", "finance-projects": "▤ Dự án", "personal-finance-overview": "◈ Tài chính cá nhân", "personal-finance-transactions": "▤ Giao dịch cá nhân", "personal-finance-budget": "▣ Ngân sách tháng", "personal-finance-report": "◉ Báo cáo tháng", catalog: "▰ Danh mục", materials: "▰ Vật liệu", processes: "▰ Quy trình", standards: "▰ Quy chuẩn", accounts: "▣ Tài khoản" };
+const pageTitles = { home: "DASHBOARD", insight: "INSIGHT", projects: "❖ Danh sách dự án", "projects-overview": "▣ Tổng quan dự án", drive: "▰ LE DOME DRIVE", "partners-overview": "▣ Tổng quan đối tác", customers: "♟ Khách hàng", contractors: "▣ Nhà thầu", suppliers: "▤ Nhà cung cấp", "hrm-overview": "▣ Tổng quan nhân sự", "hrm-staff": "♟ Nhân sự", "hrm-attendance": "▣ Chấm công", "hrm-payroll": "$ Lương", "finance-overview": "▣ Tổng quan", "finance-ledome": "▣ Vận hành", "finance-projects": "▤ Dự án", "personal-finance-overview": "◈ Tài chính cá nhân", "personal-finance-transactions": "▤ Giao dịch cá nhân", "personal-finance-budget": "▣ Ngân sách tháng", "personal-finance-report": "◉ Báo cáo tháng", catalog: "▰ Cơ sở dữ liệu", materials: "▰ Kho", processes: "▰ Quy trình", standards: "▰ Quy chuẩn", accounts: "▣ Tài khoản" };
 const api = (url, options = {}) => fetch(`/api/v1${url}`, { credentials: "same-origin", ...options }).then(async (res) => {
   const body = await res.json();
   if (!res.ok) throw new Error(body.error || `API ${res.status}`);
@@ -51,7 +51,7 @@ function permissionForPage(page) {
 }
 
 function canAccessPersonalFinance() {
-  return String(state.account?.loginId || "").trim().toLowerCase() === "hoangdinh";
+  return Boolean(state.account?.permissions?.personalFinance || state.account?.permissions?.["personalFinance.view"]);
 }
 
 function canAccess(page) {
@@ -98,8 +98,8 @@ function renderNav() {
     ["DỰ ÁN", [["▣  Tổng quan", "projects-overview"], ...activeProjects]],
     ["ĐỐI TÁC", [["▣  Tổng quan", "partners-overview"], ["♟  Khách hàng", "customers"], ["▣  Nhà thầu", "contractors"], ["▤  Nhà cung cấp", "suppliers"]]],
     ["NHÂN SỰ", [["▣  Tổng quan", "hrm-overview"], ["♟  Nhân sự", "hrm-staff"], ["▣  Chấm công", "hrm-attendance"], ["$  Lương", "hrm-payroll"]]],
-    ["TÀI CHÍNH", [["▣  Tổng quan", "finance-overview"], ["▣  Le Dome", "finance-ledome"], ["▤  Dự án", "finance-projects"]]],
-    ["CẤU HÌNH", [["▰  Danh mục", "catalog"], ["▰  Vật liệu", "materials"], ["▰  Quy trình", "processes"], ["▰  Quy chuẩn", "standards"], ["▣  Tài khoản", "accounts"]]],
+    ["TÀI CHÍNH", [["▣  Tổng quan", "finance-overview"], ["▣  Vận hành", "finance-ledome"], ["▤  Dự án", "finance-projects"]]],
+    ["CẤU HÌNH", [["▰  Cơ sở dữ liệu", "catalog"], ["▰  Kho", "materials"], ["▰  Quy trình", "processes"], ["▰  Quy chuẩn", "standards"], ["▣  Tài khoản", "accounts"]]],
     ["", [["✣  DỰ ÁN MẪU", "projects"], ["⊘  DỰ ÁN ĐÓNG", "projects"]]],
     ["TÀI CHÍNH CÁ NHÂN", [["◈  Tổng quan", "personal-finance-overview"], ["▤  Giao dịch", "personal-finance-transactions"], ["▣  Ngân sách tháng", "personal-finance-budget"], ["◉  Báo cáo tháng", "personal-finance-report"]]]
   ].map(([group, items]) => [group, items.filter(([, id]) => canAccess(id))]).filter(([, items]) => items.length);
@@ -396,9 +396,10 @@ const crmStatusClass = (status) => status === "Đang hợp tác" ? "active" : st
 const crmProjects = (projects = []) => `<div class="directory-projects">${projects.map((project) => `<i>${escapeHtml(project)}</i>`).join("")}</div>`;
 const CATALOG_FALLBACK = {
   constructionCategories: ["KHẢO SÁT - ĐO ĐẠC", "CHE PHỦ", "PHÁ DỠ", "VẬN CHUYỂN", "XÂY TRÁT", "CHỐNG THẤM", "ĐIỆN NƯỚC", "PCCC / AN TOÀN KỸ THUẬT", "ĐIỀU HÒA", "THIẾT BỊ THÔNG MINH - MẠNG - CAMERA", "THẠCH CAO", "ỐP LÁT", "ĐÁ", "SƠN BẢ", "SÀN GỖ - SÀN NHỰA", "CỬA", "NHÔM KÍNH", "SẮT", "GỖ NỘI THẤT", "RÈM", "CÂY - TIỂU CẢNH", "BIỂN BẢNG LOGO", "DEFECT CHẤM VÁ", "VỆ SINH CN", "KHÁC"],
-  materialCategories: ["VẬT LIỆU HOÀN THIỆN", "PHỤ KIỆN ĐỒ NỘI THẤT", "THIẾT BỊ CHIẾU SÁNG", "THIẾT BỊ BẾP", "THIẾT BỊ VỆ SINH", "ĐÈN DECOR", "ĐỒ DECOR", "ĐỒ DECOR BẾP", "CHĂN GA ĐỆM", "ĐỒ THỦ CÔNG", "KHÁC"]
+  materialCategories: ["VẬT LIỆU HOÀN THIỆN", "PHỤ KIỆN ĐỒ NỘI THẤT", "THIẾT BỊ CHIẾU SÁNG", "THIẾT BỊ BẾP", "THIẾT BỊ VỆ SINH", "ĐÈN DECOR", "ĐỒ DECOR", "ĐỒ DECOR BẾP", "CHĂN GA ĐỆM", "ĐỒ THỦ CÔNG", "KHÁC"],
+  contractTypes: ["Hợp đồng thiết kế", "Hợp đồng thi công", "Hợp đồng thiết kế thi công", "Hợp đồng phát sinh"]
 };
-let catalogData = { constructionCategories: [...CATALOG_FALLBACK.constructionCategories], materialCategories: [...CATALOG_FALLBACK.materialCategories] };
+let catalogData = { constructionCategories: [...CATALOG_FALLBACK.constructionCategories], materialCategories: [...CATALOG_FALLBACK.materialCategories], contractTypes: [...CATALOG_FALLBACK.contractTypes] };
 function catalogList(input, fallback) {
   const source = Array.isArray(input) ? input : fallback;
   return [...new Set(source.map((item) => String(item || "").trim()).filter(Boolean))];
@@ -406,11 +407,60 @@ function catalogList(input, fallback) {
 function normalizeCatalogData(input = {}) {
   return {
     constructionCategories: catalogList(input.constructionCategories, CATALOG_FALLBACK.constructionCategories),
-    materialCategories: catalogList(input.materialCategories, CATALOG_FALLBACK.materialCategories)
+    materialCategories: catalogList(input.materialCategories, CATALOG_FALLBACK.materialCategories),
+    contractTypes: catalogList(input.contractTypes, CATALOG_FALLBACK.contractTypes)
   };
 }
 const materialCategoryOptions = () => catalogList(catalogData.materialCategories, CATALOG_FALLBACK.materialCategories);
 const constructionCategoryOptions = () => catalogList(catalogData.constructionCategories, CATALOG_FALLBACK.constructionCategories);
+const contractTypeOptions = () => catalogList(catalogData.contractTypes, CATALOG_FALLBACK.contractTypes);
+const CATALOG_LIST_CONFIG = {
+  constructionCategories: {
+    title: "Danh sách Hạng mục thi công",
+    note: "Dùng cho Nhà thầu, Hợp đồng nhận thầu/giao thầu và các màn thi công.",
+    placeholder: "VD: ỐP LÁT"
+  },
+  materialCategories: {
+    title: "Danh sách hạng mục Thiết bị Vật tư",
+    note: "Dùng cho Nhà cung cấp, kế hoạch vật tư, hóa đơn và kho.",
+    placeholder: "VD: THIẾT BỊ BẾP"
+  },
+  contractTypes: {
+    title: "Danh sách hợp đồng",
+    note: "Dùng để phân loại hợp đồng trong dự án và giao dịch tài chính.",
+    placeholder: "VD: Hợp đồng bảo trì",
+    preserveCase: true
+  }
+};
+const TRANSACTION_FLOW_LIST_CONFIG = {
+  financeFlowTypes: {
+    field: "types",
+    title: "Loại",
+    placeholder: "",
+    readOnly: true,
+    preserveCase: true
+  },
+  financeFlowTopics: {
+    field: "topics",
+    title: "Chủ đề",
+    placeholder: "VD: VẬN HÀNH"
+  },
+  financeFlowCategories: {
+    field: "categories",
+    title: "Hạng mục",
+    placeholder: "VD: ĐIỆN"
+  },
+  financeFlowPartners: {
+    field: "partners",
+    title: "Đối tượng",
+    placeholder: "VD: NCC HOMEKIT",
+    preserveCase: true
+  }
+};
+const TRANSACTION_FLOW_LIST_TYPES = Object.keys(TRANSACTION_FLOW_LIST_CONFIG);
+const FINANCE_TRANSACTION_TYPES = ["Thu", "Chi"];
+let catalogFinanceData = null;
+let catalogTransactionFlow = { types: [...FINANCE_TRANSACTION_TYPES], topics: [], categories: [], partners: [] };
 async function loadCatalogData() {
   try {
     const body = await api("/catalog");
@@ -467,11 +517,14 @@ const materialCategoryOrder = (category) => {
   const index = options.indexOf(category);
   return index >= 0 ? index : options.length;
 };
+function knownMaterialCategory(value) {
+  return materialCategoryOptions().find((option) => plainVietnamese(option) === plainVietnamese(value));
+}
 function normalizeMaterialCategory(value) {
   const cleaned = String(value || "").replace(/\s*\+\d+\s*$/u, "").trim();
   if (!cleaned) return "";
   const aliased = MATERIAL_CATEGORY_ALIASES.get(plainVietnamese(cleaned)) || cleaned;
-  return materialCategoryOptions().find((option) => plainVietnamese(option) === plainVietnamese(aliased)) || aliased;
+  return knownMaterialCategory(aliased) || "KHÁC";
 }
 function sortMaterialCategories(categories) {
   return [...new Set(categories.map(normalizeMaterialCategory).filter(Boolean))]
@@ -524,9 +577,27 @@ function directoryAutoFitColumns(type) {
   const total = widths.reduce((sum, width) => sum + width, 0);
   table.style.width = `${Math.max(total, table.parentElement?.clientWidth || 0)}px`;
   table.style.minWidth = `${total}px`;
+  bindOverflowTooltips(table);
 }
 function directoryHeaderMarkup(headers) {
   return headers.map((header, index) => `<th data-directory-col="${index}"><span>${escapeHtml(header)}</span>${index < headers.length - 1 ? `<button type="button" class="directory-col-resizer" data-directory-resize="${index}" aria-label="Đổi chiều rộng cột ${escapeHtml(header)}"></button>` : ""}</th>`).join("");
+}
+function bindOverflowTooltips(scope = document) {
+  requestAnimationFrame(() => {
+    scope.querySelectorAll(".directory-resizable-table th, .directory-resizable-table td").forEach((cell) => {
+      if (cell.classList.contains("directory-actions")) return;
+      const text = cell.textContent.replace(/\s+/g, " ").trim();
+      if (!text) return;
+      const clipped = cell.scrollWidth > cell.clientWidth + 1 || [...cell.children].some((child) => child.scrollWidth > child.clientWidth + 1);
+      if (clipped) {
+        if (!cell.title) cell.dataset.autoTitle = "1";
+        cell.title = text;
+      } else if (cell.dataset.autoTitle) {
+        cell.removeAttribute("title");
+        delete cell.dataset.autoTitle;
+      }
+    });
+  });
 }
 function bindDirectoryColumnResize(type) {
   const table = document.querySelector("[data-directory-table]");
@@ -560,6 +631,7 @@ function bindDirectoryColumnResize(type) {
       table.classList.remove("column-resizing");
       localStorage.setItem(directoryColumnKey(type), JSON.stringify(cols.map((col) => Math.round(Number.parseFloat(col.style.width || 0)))));
       drag = null;
+      bindOverflowTooltips(table);
     };
   });
 }
@@ -591,8 +663,7 @@ function supplierPrimaryCategory(row) {
 }
 
 function supplierCategoryOptions(rows) {
-  const categories = sortMaterialCategories([...materialCategoryOptions(), ...rows.flatMap(supplierCategories)]);
-  return ["Tất cả", ...categories];
+  return ["Tất cả", ...sortMaterialCategories(materialCategoryOptions())];
 }
 
 function supplierCategoryFieldMarkup() {
@@ -674,6 +745,7 @@ async function crmDirectory(type) {
   $("#directory-filter").value = isSupplier ? state.crmSupplierCategory : state.crmStatus;
   bindCrmDirectory(type);
   bindDirectoryColumnResize(type);
+  bindOverflowTooltips($("#app"));
 }
 
 function crmDirectoryModal(config, groupLabel = "Nhóm", type = "") {
@@ -784,7 +856,7 @@ async function saveDriveFiles(files) {
 }
 
 function driveIcon(type) {
-  return type === "PDF" ? "PDF" : type === "Excel" ? "XLS" : type === "Word" ? "DOC" : type === "ZIP" ? "ZIP" : "FILE";
+  return type === "PDF" ? "PDF" : type === "Excel" ? "XLS" : type === "Word" ? "DOC" : type === "PowerPoint" ? "PPT" : type === "Ảnh" ? "IMG" : type === "ZIP" ? "ZIP" : "FILE";
 }
 
 function driveBadge(scope) {
@@ -792,33 +864,211 @@ function driveBadge(scope) {
   return `<i class="finance-badge ${cls}">${escapeHtml(scope)}</i>`;
 }
 
+function driveTypeFromName(name) {
+  const ext = String(name || "").split(".").pop().toLowerCase();
+  if (ext === "pdf") return "PDF";
+  if (["png", "jpg", "jpeg", "webp"].includes(ext)) return "Ảnh";
+  if (["xls", "xlsx", "csv"].includes(ext)) return "Excel";
+  if (["doc", "docx"].includes(ext)) return "Word";
+  if (["ppt", "pptx"].includes(ext)) return "PowerPoint";
+  if (ext === "zip") return "ZIP";
+  return "File";
+}
+
+const DRIVE_ACCEPT = ".pdf,.png,.jpg,.jpeg,.webp,.doc,.docx,.xls,.xlsx,.csv,.ppt,.pptx,.txt,.md,.note,.zip";
+const DRIVE_ALLOWED_EXTENSIONS = new Set(DRIVE_ACCEPT.split(","));
+const DRIVE_PREVIEW_EXTENSIONS = new Set([".pdf", ".png", ".jpg", ".jpeg", ".webp", ".doc", ".docx", ".xls", ".xlsx", ".csv", ".ppt", ".pptx", ".txt", ".md", ".note"]);
+const driveExt = (name) => {
+  const match = String(name || "").toLowerCase().match(/\.[^.\\/]+$/);
+  return match ? match[0] : "";
+};
+const driveRelativeName = (file) => String(file?.driveRelativePath || file?.relativePath || file?.webkitRelativePath || file?.name || "").replace(/\\/g, "/").replace(/^\/+/, "");
+const driveFolderTopic = (name) => name.includes("/") ? name.split("/").slice(0, -1).join("/") : "Chia sẻ nhanh";
+const driveDownloadUrl = (file) => `/api/v1/drive-files/download?storedName=${encodeURIComponent(file[10])}`;
+const driveViewUrl = (file) => `/api/v1/drive-files/view?storedName=${encodeURIComponent(file[10])}`;
+const drivePreviewUrl = (file) => `/api/v1/drive-files/preview?storedName=${encodeURIComponent(file[10])}`;
+const driveIsAllowedFile = (file) => DRIVE_ALLOWED_EXTENSIONS.has(driveExt(driveRelativeName(file) || file?.name));
+const drivePreviewKind = (name) => {
+  const ext = driveExt(name);
+  if (ext === ".pdf") return "pdf";
+  if ([".png", ".jpg", ".jpeg", ".webp"].includes(ext)) return "image";
+  if ([".doc", ".docx", ".xls", ".xlsx", ".csv", ".ppt", ".pptx", ".txt", ".md", ".note"].includes(ext)) return "office";
+  return "file";
+};
+const driveCanPreview = (file) => DRIVE_PREVIEW_EXTENSIONS.has(driveExt(file?.[1]));
+
+function driveExpiryLabel(value) {
+  const expiresAt = Date.parse(value || "");
+  if (!Number.isFinite(expiresAt)) return "Tự xóa sau 7 ngày";
+  const days = Math.max(0, Math.ceil((expiresAt - Date.now()) / 86400000));
+  return days > 0 ? `Còn ${days} ngày` : "Sắp tự xóa";
+}
+
+async function uploadDriveFile(file, displayName = file.name) {
+  const response = await fetch(`/api/v1/drive-files?name=${encodeURIComponent(displayName)}`, {
+    method: "POST",
+    credentials: "same-origin",
+    body: file
+  });
+  const body = await response.json();
+  if (!response.ok) throw new Error(body.error || `Upload ${response.status}`);
+  return body;
+}
+
+function driveRowsMarkup(rows) {
+  return rows.map(({ file, originalIndex }) => {
+    const canPreview = driveCanPreview(file);
+    const fileOpen = canPreview ? `<button type="button" class="drive-file drive-file-button" data-drive="preview" data-index="${originalIndex}" title="Click để đọc nhanh">` : `<div class="drive-file">`;
+    const fileClose = canPreview ? "</button>" : "</div>";
+    const actions = `<button data-drive="download" data-index="${originalIndex}">Tải</button><button data-drive="delete" data-index="${originalIndex}">×</button>`;
+    return `<tr><td>${fileOpen}<b>${driveIcon(file[2])}</b><span>${escapeHtml(file[1])}<small>${escapeHtml(file[0])} · ${escapeHtml(file[2])} · ${escapeHtml(driveExpiryLabel(file[12]))}</small></span>${fileClose}</td><td>${escapeHtml(file[5])}</td><td>${financeDate(file[6])}</td><td>${money(file[7])} KB</td><td>${driveBadge(file[8])}</td><td>${escapeHtml(file[9])}</td><td class="drive-actions">${actions}</td></tr>`;
+  }).join("");
+}
+
+function drivePreviewContent(data) {
+  if (data.text) return `<pre>${escapeHtml(data.text)}</pre>`;
+  if (data.message) return `<div class="drive-preview-empty">${escapeHtml(data.message)}</div>`;
+  if (Array.isArray(data.sheets)) {
+    return data.sheets.map((sheet) => `<section><h4>${escapeHtml(sheet.title)}</h4><div class="drive-preview-table-wrap"><table>${(sheet.rows || []).map((row) => `<tr>${row.map((cell) => `<td>${escapeHtml(cell)}</td>`).join("")}</tr>`).join("") || `<tr><td>Không có dữ liệu xem nhanh.</td></tr>`}</table></div></section>`).join("");
+  }
+  if (Array.isArray(data.sections)) {
+    return data.sections.map((section) => `<section><h4>${escapeHtml(section.title)}</h4>${(section.lines || []).map((line) => `<p>${escapeHtml(line)}</p>`).join("") || `<p>Không có nội dung text để xem nhanh.</p>`}</section>`).join("");
+  }
+  return `<div class="drive-preview-empty">Không có nội dung xem nhanh.</div>`;
+}
+
+async function openDrivePreview(file) {
+  if (!file?.[10]) return alert("File mẫu chưa có bản lưu trữ thật để đọc nhanh.");
+  const title = escapeHtml(file[1]);
+  const kind = drivePreviewKind(file[1]);
+  const viewUrl = driveViewUrl(file);
+  const shell = (body, cls = "") => `<div class="drive-preview-modal ${cls}"><section><header><h3>${title}</h3><div><a href="${driveDownloadUrl(file)}" download>Tải file</a><button type="button" data-drive-preview-close>×</button></div></header><main class="drive-preview-body">${body}</main></section></div>`;
+  const body = kind === "image"
+    ? `<img src="${viewUrl}" alt="${title}">`
+    : kind === "pdf"
+      ? `<iframe src="${viewUrl}" title="${title}"></iframe>`
+      : `<div class="drive-preview-empty">Đang đọc nhanh nội dung...</div>`;
+  document.body.insertAdjacentHTML("beforeend", shell(body, kind));
+  const modal = document.querySelector(".drive-preview-modal");
+  const close = () => {
+    modal?.remove();
+    document.removeEventListener("keydown", onKey);
+  };
+  const onKey = (event) => { if (event.key === "Escape") close(); };
+  modal.querySelector("[data-drive-preview-close]").onclick = close;
+  document.addEventListener("keydown", onKey);
+  if (kind === "office") {
+    try {
+      const response = await fetch(drivePreviewUrl(file), { credentials: "same-origin" });
+      const bodyJson = await response.json();
+      if (!response.ok) throw new Error(bodyJson.error || "Không đọc được file.");
+      modal.querySelector(".drive-preview-body").innerHTML = drivePreviewContent(bodyJson.data || {});
+    } catch (error) {
+      modal.querySelector(".drive-preview-body").innerHTML = `<div class="drive-preview-empty">${escapeHtml(error.message || "Không đọc được file.")}</div>`;
+    }
+  }
+}
+
+function driveFileWithPath(file, relativePath) {
+  try {
+    Object.defineProperty(file, "driveRelativePath", { value: relativePath, configurable: true });
+  } catch {
+    file.driveRelativePath = relativePath;
+  }
+  return file;
+}
+
+function driveEntryFiles(entry, prefix = "") {
+  return new Promise((resolve) => {
+    if (!entry) return resolve([]);
+    if (entry.isFile) {
+      return entry.file((file) => resolve([driveFileWithPath(file, `${prefix}${file.name}`)]), () => resolve([]));
+    }
+    if (!entry.isDirectory) return resolve([]);
+    const reader = entry.createReader();
+    const all = [];
+    const readBatch = () => reader.readEntries(async (entries) => {
+      if (!entries.length) return resolve(all.flat());
+      all.push(...await Promise.all(entries.map((child) => driveEntryFiles(child, `${prefix}${entry.name}/`))));
+      readBatch();
+    }, () => resolve(all.flat()));
+    readBatch();
+  });
+}
+
+async function driveDroppedFiles(dataTransfer) {
+  const items = Array.from(dataTransfer?.items || []);
+  const entries = items.map((item) => item.webkitGetAsEntry?.()).filter(Boolean);
+  if (entries.length) return (await Promise.all(entries.map((entry) => driveEntryFiles(entry)))).flat();
+  return Array.from(dataTransfer?.files || []);
+}
+
 async function renderDrive() {
   const files = await loadDriveFiles();
   const query = state.driveQuery.toLocaleLowerCase("vi");
-  const scopes = ["Tất cả", ...new Set(files.map((file) => file[3]))];
-  const filtered = files.filter((file) => (!query || file.join(" ").toLocaleLowerCase("vi").includes(query)) && (state.driveScope === "Tất cả" || file[3] === state.driveScope));
+  const filtered = files.map((file, originalIndex) => ({ file, originalIndex })).filter(({ file }) => !query || file.join(" ").toLocaleLowerCase("vi").includes(query));
   const totalSize = files.reduce((sum,file) => sum + Number(file[7] || 0), 0);
   setTitle("drive", "");
   $("#app").innerHTML = `<section class="drive-page">
-    <header class="drive-head"><div><h2>▰ LE DOME DRIVE</h2><p>Nơi mọi người chia sẻ file, mẫu biểu, hồ sơ dự án và tài liệu nội bộ.</p></div><button class="btn" data-drive="open-upload">＋ Chia sẻ file</button></header>
-    <div class="finance-kpis drive-kpis"><article><small>Tổng file</small><b>${files.length}</b><span>Đang chia sẻ nội bộ</span></article><article><small>Dung lượng</small><b>${money(totalSize)} KB</b><span>Tổng dung lượng mẫu</span></article><article><small>Dự án</small><b>${files.filter((file) => file[3] === "Dự án").length}</b><span>Hồ sơ theo dự án</span></article><article><small>Toàn công ty</small><b>${files.filter((file) => file[8] === "Toàn công ty").length}</b><span>Ai cũng xem được</span></article></div>
+    <header class="drive-head"><div><h2>▰ LE DOME DRIVE</h2><p>Nơi các thành viên gửi nhanh file. File lưu tại đây sẽ tự động xóa sau 1 tuần.</p></div><button class="btn" data-drive="open-upload">＋ Chia sẻ file</button></header>
+    <div class="finance-kpis drive-kpis"><article><small>Tổng file</small><b>${files.length}</b><span>Đang chia sẻ nội bộ</span></article><article><small>Dung lượng</small><b>${money(totalSize)} KB</b><span>Tổng dung lượng hiện có</span></article><article><small>Thời hạn lưu</small><b>7 ngày</b><span>Tự xóa file tải lên</span></article><article><small>Toàn công ty</small><b>${files.filter((file) => file[8] === "Toàn công ty").length}</b><span>Ai cũng xem được</span></article></div>
     <div class="drive-layout">
-      <aside class="drive-side"><h3>Danh mục</h3>${scopes.map((scope) => `<button class="${state.driveScope === scope ? "active" : ""}" data-drive-scope="${escapeHtml(scope)}">${escapeHtml(scope)}<span>${scope === "Tất cả" ? files.length : files.filter((file) => file[3] === scope).length}</span></button>`).join("")}<h3>Quy tắc chia sẻ</h3><p>File được gắn nhóm xem để sau này nối vào hệ thống phân quyền và lịch sử tải xuống.</p></aside>
-      <main class="drive-main"><div class="drive-tools"><input id="drive-search" value="${escapeHtml(state.driveQuery)}" placeholder="Tìm tên file, dự án, người chia sẻ, ghi chú"><button data-drive="reset">Khôi phục mẫu</button></div><div class="drive-table-wrap"><table class="drive-table"><thead><tr><th>File</th><th>Danh mục</th><th>Thuộc mục</th><th>Người chia sẻ</th><th>Cập nhật</th><th>Dung lượng</th><th>Quyền xem</th><th>Ghi chú</th><th></th></tr></thead><tbody>${filtered.map((file,index) => `<tr><td><div class="drive-file"><b>${driveIcon(file[2])}</b><span>${escapeHtml(file[1])}<small>${escapeHtml(file[0])} · ${escapeHtml(file[2])}</small></span></div></td><td>${escapeHtml(file[3])}</td><td>${escapeHtml(file[4])}</td><td>${escapeHtml(file[5])}</td><td>${financeDate(file[6])}</td><td>${money(file[7])} KB</td><td>${driveBadge(file[8])}</td><td>${escapeHtml(file[9])}</td><td class="drive-actions"><button data-drive="download" data-index="${index}">Tải</button><button data-drive="delete" data-index="${index}">×</button></td></tr>`).join("") || `<tr><td colspan="9">Chưa có file phù hợp.</td></tr>`}</tbody></table></div></main>
+      <main class="drive-main"><p class="drive-rule">Le DOME Drive dùng để gửi nhanh file cho đội nội bộ. File tải lên được lưu tạm và tự động xóa sau 7 ngày.</p><label class="drive-drop" id="drive-drop"><input id="drive-upload-input" type="file" multiple accept="${DRIVE_ACCEPT}"><strong>Kéo thả file hoặc folder vào đây</strong><span>Hỗ trợ đọc nhanh PDF, JPEG, PNG, Word, Excel, PowerPoint. Có thể thả cả folder.</span><em>${escapeHtml(state.driveUploadMessage || "Hoặc bấm để chọn file từ máy. File mới sẽ được thêm thẳng vào Drive và tự xóa sau 7 ngày.")}</em></label><div class="drive-tools"><input id="drive-search" value="${escapeHtml(state.driveQuery)}" placeholder="Tìm tên file, folder, người chia sẻ, ghi chú"><button data-drive="reset">Khôi phục mẫu</button></div><div class="drive-table-wrap"><table class="drive-table"><thead><tr><th>File</th><th>Người chia sẻ</th><th>Cập nhật</th><th>Dung lượng</th><th>Quyền xem</th><th>Ghi chú</th><th></th></tr></thead><tbody>${driveRowsMarkup(filtered) || `<tr><td colspan="7">Chưa có file phù hợp.</td></tr>`}</tbody></table></div></main>
     </div>
-    <div class="finance-modal" id="drive-modal"><form id="drive-form"><header><h3>Chia sẻ file</h3><button type="button" data-drive="close-upload">×</button></header><label class="wide">Tên file<input name="name" required placeholder="VD: Hợp đồng mẫu.docx"></label><label>Loại<select name="type"><option>PDF</option><option>Word</option><option>Excel</option><option>ZIP</option><option>File</option></select></label><label>Danh mục<select name="category"><option>Công ty</option><option>Dự án</option><option>Mẫu biểu</option><option>Đối tác</option><option>Nhân sự</option></select></label><label>Thuộc mục<input name="topic" placeholder="VD: HDT 17T5"></label><label>Quyền xem<input name="scope" value="Toàn công ty"></label><label class="wide">Ghi chú<textarea name="note" placeholder="Mô tả ngắn về file"></textarea></label><footer><button type="button" class="btn secondary" data-drive="close-upload">Đóng</button><button class="btn">Lưu chia sẻ</button></footer></form></div>
+    <div class="finance-modal" id="drive-modal"><form id="drive-form"><header><h3>Chia sẻ file</h3><button type="button" data-drive="close-upload">×</button></header><label class="wide">Tên file<input name="name" required placeholder="VD: Hợp đồng mẫu.docx"></label><label>Loại<select name="type"><option>PDF</option><option>Word</option><option>Excel</option><option>ZIP</option><option>File</option></select></label><label>Thuộc mục<input name="topic" placeholder="VD: HDT 17T5"></label><label>Quyền xem<input name="scope" value="Toàn công ty"></label><label class="wide">Ghi chú<textarea name="note" placeholder="Mô tả ngắn về file"></textarea></label><footer><button type="button" class="btn secondary" data-drive="close-upload">Đóng</button><button class="btn">Lưu chia sẻ</button></footer></form></div>
   </section>`;
   bindDrive();
 }
 
 function bindDrive() {
   $("#drive-search").oninput = (event) => { state.driveQuery = event.target.value; renderDrive(); };
-  $("#app").onclick = async (event) => {
-    const scope = event.target.closest("[data-drive-scope]")?.dataset.driveScope;
-    if (scope) {
-      state.driveScope = scope;
-      return renderDrive();
+  const uploadInput = $("#drive-upload-input");
+  const dropZone = $("#drive-drop");
+  const handleFiles = async (items) => {
+    const incoming = Array.from(items || []).filter((file) => file && file.name);
+    const picked = incoming.filter(driveIsAllowedFile);
+    const skipped = incoming.length - picked.length;
+    if (!picked.length) {
+      if (skipped) {
+        state.driveUploadMessage = `Đã bỏ qua ${skipped} file chưa hỗ trợ.`;
+        renderDrive();
+      }
+      return;
     }
+    state.driveUploadMessage = `Đang tải lên ${picked.length} file${skipped ? `, bỏ qua ${skipped} file chưa hỗ trợ` : ""}...`;
+    renderDrive();
+    try {
+      const files = await loadDriveFiles();
+      for (const file of picked) {
+        const displayName = driveRelativeName(file) || file.name;
+        const stored = await uploadDriveFile(file, displayName);
+        const updatedAt = stored.updatedAt || new Date().toISOString();
+        const expiresAt = stored.expiresAt || new Date(Date.now() + 7 * 86400000).toISOString();
+        files.unshift([`DRV${String(files.length + 1).padStart(3, "0")}`, displayName, driveTypeFromName(displayName), "Chia sẻ", driveFolderTopic(displayName), state.account?.staffName || "LE DOME", updatedAt.slice(0, 10), Math.max(1, Math.ceil(file.size / 1024)), "Toàn công ty", "File gửi nhanh, tự xóa sau 7 ngày", stored.storedName, updatedAt, expiresAt]);
+      }
+      await saveDriveFiles(files);
+      state.driveUploadMessage = `Đã tải lên ${picked.length} file${skipped ? `, bỏ qua ${skipped} file chưa hỗ trợ.` : "."}`;
+      renderDrive();
+    } catch (error) {
+      state.driveUploadMessage = error.message || "Không tải file lên được.";
+      renderDrive();
+    }
+  };
+  uploadInput.onchange = (event) => handleFiles(event.target.files);
+  ["dragenter", "dragover"].forEach((type) => {
+    dropZone.addEventListener(type, (event) => {
+      event.preventDefault();
+      dropZone.classList.add("dragging");
+    });
+  });
+  ["dragleave", "drop"].forEach((type) => {
+    dropZone.addEventListener(type, (event) => {
+      event.preventDefault();
+      dropZone.classList.remove("dragging");
+    });
+  });
+  dropZone.ondrop = async (event) => handleFiles(await driveDroppedFiles(event.dataTransfer));
+  $("#app").onclick = async (event) => {
     const action = event.target.closest("[data-drive]")?.dataset.drive;
     if (!action) return;
     const modal = $("#drive-modal");
@@ -830,8 +1080,19 @@ function bindDrive() {
       return renderDrive();
     }
     const index = Number(event.target.closest("[data-index]")?.dataset.index);
-    if (action === "download") return alert("File demo chưa nối lưu trữ thật. Sau này nút này sẽ tải file được chia sẻ.");
+    if (action === "preview" && Number.isInteger(index)) {
+      await openDrivePreview(files[index]);
+      return;
+    }
+    if (action === "download") {
+      if (!files[index]?.[10]) return alert("File mẫu chưa có bản lưu trữ thật để tải.");
+      location.href = `/api/v1/drive-files/download?storedName=${encodeURIComponent(files[index][10])}`;
+      return;
+    }
     if (action === "delete" && Number.isInteger(index) && confirm("Xóa file chia sẻ này?")) {
+      if (files[index]?.[10]) {
+        try { await api(`/drive-files?storedName=${encodeURIComponent(files[index][10])}`, { method: "DELETE" }); } catch {}
+      }
       files.splice(index, 1);
       await saveDriveFiles(files);
       return renderDrive();
@@ -841,7 +1102,7 @@ function bindDrive() {
     event.preventDefault();
     const data = Object.fromEntries(new FormData(event.currentTarget));
     const files = await loadDriveFiles();
-    files.unshift([`DRV${String(files.length + 1).padStart(3, "0")}`, data.name, data.type, data.category, data.topic, state.account?.staffName || "LE DOME", new Date().toISOString().slice(0, 10), 0, data.scope, data.note]);
+    files.unshift([`DRV${String(files.length + 1).padStart(3, "0")}`, data.name, data.type, "Chia sẻ", data.topic, state.account?.staffName || "LE DOME", new Date().toISOString().slice(0, 10), 0, data.scope, data.note]);
     await saveDriveFiles(files);
     renderDrive();
   };
@@ -889,12 +1150,49 @@ const FINANCE_SEED = {
   ]
 };
 
+const FINANCE_PROJECT_GROUP = "DỰ ÁN";
+const FINANCE_OPERATION_GROUP = "VẬN HÀNH LE DOME";
+const FINANCE_CAPITAL_GROUP = "TÀI CHÍNH";
+const FINANCE_GROUPS = [FINANCE_PROJECT_GROUP, FINANCE_OPERATION_GROUP, FINANCE_CAPITAL_GROUP];
+const FINANCE_FILTER_FIELDS = [
+  { key: "type", label: "Loại", rowIndex: 1 },
+  { key: "group", label: "Nhóm", rowIndex: 2 },
+  { key: "topic", label: "Chủ đề", rowIndex: 3 },
+  { key: "category", label: "Hạng mục", rowIndex: 4 },
+  { key: "partner", label: "Đối tượng", rowIndex: 5 }
+];
+
+function normalizeFinanceGroup(value) {
+  const text = String(value || "").trim().toLocaleUpperCase("vi");
+  if (text === "LE DOME" || text === "VẬN HÀNH LE DOME") return FINANCE_OPERATION_GROUP;
+  if (text === "DỰ ÁN") return FINANCE_PROJECT_GROUP;
+  if (text === "TÀI CHÍNH") return FINANCE_CAPITAL_GROUP;
+  return FINANCE_OPERATION_GROUP;
+}
+
+function normalizeFinanceData(input = {}) {
+  const data = input && typeof input === "object" ? input : {};
+  const transactions = Array.isArray(data.transactions) ? data.transactions.map((row) => {
+    const next = Array.isArray(row) ? [...row] : [];
+    next[2] = normalizeFinanceGroup(next[2]);
+    return next;
+  }) : [];
+  return {
+    ...data,
+    transactions,
+    projects: Array.isArray(data.projects) ? data.projects : [],
+    budgets: Array.isArray(data.budgets) ? data.budgets : [],
+    debts: Array.isArray(data.debts) ? data.debts : [],
+    options: data.options && typeof data.options === "object" ? data.options : {}
+  };
+}
+
 async function loadFinanceData() {
   try {
     const body = await api("/finance/overview");
-    return body.data?.transactions ? body.data : structuredClone(FINANCE_SEED);
+    return body.data?.transactions ? normalizeFinanceData(body.data) : normalizeFinanceData(structuredClone(FINANCE_SEED));
   } catch {
-    return structuredClone(FINANCE_SEED);
+    return normalizeFinanceData(structuredClone(FINANCE_SEED));
   }
 }
 
@@ -902,8 +1200,13 @@ async function saveFinanceData(data) {
   await api("/finance/overview", {
     method: "PATCH",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ data })
+    body: JSON.stringify({ data: normalizeFinanceData(data) })
   });
+}
+
+async function loadFinanceReferenceData() {
+  await loadCatalogData();
+  await Promise.all(["customers", "contractors", "suppliers"].map(loadPartnerRows));
 }
 
 function financeAmountClass(value) {
@@ -931,8 +1234,272 @@ function financeStats(items) {
   return `<div class="finance-kpis">${items.map(([label,value,hint,cls=""]) => `<article class="${cls}"><small>${label}</small><b>${value}</b><span>${hint}</span></article>`).join("")}</div>`;
 }
 
-function financeTools(kind) {
-  return `<div class="finance-tools"><input id="finance-search" value="${state.financeQuery}" placeholder="Tìm theo dự án, nhóm, đối tượng, mô tả"><select id="finance-kind"><option>Tất cả</option><option>Thu</option><option>Chi</option></select><button class="btn" data-finance="add-transaction">＋ Thêm giao dịch</button><button data-finance="reset">Khôi phục mẫu Excel</button></div>`;
+function financeUnique(values) {
+  const seen = new Set();
+  return values.map((value) => String(value || "").trim()).filter(Boolean).filter((value) => {
+    const key = value.toLocaleLowerCase("vi");
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function financeArray(values) {
+  return Array.isArray(values) ? values : [];
+}
+
+function financeGroupOptionsForType(type = "Chi") {
+  return type === "Thu"
+    ? [FINANCE_CAPITAL_GROUP, FINANCE_PROJECT_GROUP]
+    : [FINANCE_CAPITAL_GROUP, FINANCE_OPERATION_GROUP, FINANCE_PROJECT_GROUP];
+}
+
+function financePartnerNames(type) {
+  return financeUnique((CRM_DIRECTORY[type]?.rows || []).map((row) => row[1]));
+}
+
+function financeProjectCodeOptions(data = {}) {
+  const options = data.options || {};
+  const projectRows = Array.isArray(data.projects) ? data.projects : [];
+  const transactions = Array.isArray(data.transactions) ? data.transactions : [];
+  return financeUnique([
+    ...financeArray(options.projectCodes),
+    ...projectRows.map((row) => row[0]),
+    ...transactions.filter((row) => row[2] === FINANCE_PROJECT_GROUP).map((row) => row[3])
+  ]);
+}
+
+function financeProjectCategoryOptions(data = {}) {
+  const options = data.options || {};
+  const transactions = Array.isArray(data.transactions) ? data.transactions : [];
+  return financeUnique([
+    ...contractTypeOptions(),
+    ...constructionCategoryOptions(),
+    ...materialCategoryOptions(),
+    ...financeArray(options.projectCategories),
+    ...transactions.filter((row) => row[2] === FINANCE_PROJECT_GROUP).map((row) => row[4])
+  ]);
+}
+
+function financeProjectPartnerOptions(data = {}, type = "Chi") {
+  const options = data.options || {};
+  const projectRows = Array.isArray(data.projects) ? data.projects : [];
+  const transactions = Array.isArray(data.transactions) ? data.transactions : [];
+  if (type === "Thu") {
+    return financeUnique([
+      ...financePartnerNames("customers"),
+      ...projectRows.map((row) => row[2]),
+      ...financeArray(options.projectIncomePartners),
+      ...transactions.filter((row) => row[2] === FINANCE_PROJECT_GROUP && row[1] === "Thu").map((row) => row[5])
+    ]);
+  }
+  return financeUnique([
+    ...financePartnerNames("contractors"),
+    ...financePartnerNames("suppliers"),
+    ...financeArray(options.projectExpensePartners),
+    ...transactions.filter((row) => row[2] === FINANCE_PROJECT_GROUP && row[1] === "Chi").map((row) => row[5])
+  ]);
+}
+
+function financeContextOptionList(data = {}, group = FINANCE_OPERATION_GROUP, type = "Chi", field = "topics") {
+  const options = data.options || {};
+  const managed = options.transactionFlow && typeof options.transactionFlow === "object" ? options.transactionFlow : {};
+  const transactions = Array.isArray(data.transactions) ? data.transactions : [];
+  const rows = transactions.filter((row) => row[2] === group);
+  if (group === FINANCE_PROJECT_GROUP) {
+    if (field === "topics") return financeProjectCodeOptions(data);
+    if (field === "categories") return financeProjectCategoryOptions(data);
+    return financeProjectPartnerOptions(data, type);
+  }
+  if (group === FINANCE_CAPITAL_GROUP) {
+    if (field === "topics") return financeUnique([...financeArray(managed.topics), ...financeArray(options.financeTopics), ...rows.map((row) => row[3])]);
+    if (field === "categories") return financeUnique([...financeArray(managed.categories), ...financeArray(options.financeCategories), ...rows.map((row) => row[4])]);
+    return financeUnique([...financeArray(managed.partners), ...financeArray(options.financePartners), ...rows.map((row) => row[5])]);
+  }
+  if (field === "topics") return financeUnique([...financeArray(managed.topics), ...financeArray(options.operationTopics), ...rows.map((row) => row[3])]);
+  if (field === "categories") return financeUnique([...financeArray(managed.categories), ...financeArray(options.operationCategories), ...rows.map((row) => row[4])]);
+  return financeUnique([...financeArray(managed.partners), ...financeArray(options.operationPartners), ...rows.map((row) => row[5])]);
+}
+
+function emptyFinanceTransactionFlow() {
+  return {
+    types: [...FINANCE_TRANSACTION_TYPES],
+    topics: [],
+    categories: [...contractTypeOptions()],
+    partners: []
+  };
+}
+
+function financeTransactionFlowOptions(data = {}) {
+  const options = data.options && typeof data.options === "object" ? data.options : {};
+  const managed = options.transactionFlow && typeof options.transactionFlow === "object" ? options.transactionFlow : null;
+  const transactions = Array.isArray(data.transactions) ? data.transactions : [];
+  const operationRows = transactions.filter((row) => row[2] === FINANCE_OPERATION_GROUP);
+  const capitalRows = transactions.filter((row) => row[2] === FINANCE_CAPITAL_GROUP);
+  const legacyTopics = managed ? [] : [
+    ...financeArray(options.operationTopics),
+    ...financeArray(options.financeTopics),
+    ...operationRows.map((row) => row[3]),
+    ...capitalRows.map((row) => row[3])
+  ];
+  const legacyCategories = managed ? [] : [
+    ...financeArray(options.operationCategories),
+    ...financeArray(options.financeCategories),
+    ...operationRows.map((row) => row[4]),
+    ...capitalRows.map((row) => row[4])
+  ];
+  const legacyPartners = managed ? [] : [
+    ...financeArray(options.operationPartners),
+    ...financeArray(options.financePartners),
+    ...operationRows.map((row) => row[5]),
+    ...capitalRows.map((row) => row[5])
+  ];
+  return {
+    types: [...FINANCE_TRANSACTION_TYPES],
+    topics: financeUnique([...financeArray(managed?.topics), ...legacyTopics]),
+    categories: financeUnique([...financeArray(managed?.categories), ...legacyCategories]),
+    partners: financeUnique([...financeArray(managed?.partners), ...legacyPartners])
+  };
+}
+
+function financeOptionLists(data = {}) {
+  return {
+    projectCodes: financeContextOptionList(data, FINANCE_PROJECT_GROUP, "Chi", "topics"),
+    projectCategories: financeContextOptionList(data, FINANCE_PROJECT_GROUP, "Chi", "categories"),
+    projectIncomePartners: financeContextOptionList(data, FINANCE_PROJECT_GROUP, "Thu", "partners"),
+    projectExpensePartners: financeContextOptionList(data, FINANCE_PROJECT_GROUP, "Chi", "partners"),
+    operationTopics: financeContextOptionList(data, FINANCE_OPERATION_GROUP, "Chi", "topics"),
+    operationCategories: financeContextOptionList(data, FINANCE_OPERATION_GROUP, "Chi", "categories"),
+    operationPartners: financeContextOptionList(data, FINANCE_OPERATION_GROUP, "Chi", "partners"),
+    capitalTopics: financeContextOptionList(data, FINANCE_CAPITAL_GROUP, "Chi", "topics"),
+    capitalCategories: financeContextOptionList(data, FINANCE_CAPITAL_GROUP, "Chi", "categories"),
+    capitalPartners: financeContextOptionList(data, FINANCE_CAPITAL_GROUP, "Chi", "partners")
+  };
+}
+
+function financeDatalist(id, values) {
+  return `<datalist id="${id}">${values.map((value) => `<option value="${escapeHtml(value)}"></option>`).join("")}</datalist>`;
+}
+
+function financeSelectOptions(values, selected = "", placeholder = "Chọn") {
+  const list = financeUnique([selected, ...values]);
+  return `<option value="">${placeholder}</option>${list.map((value) => `<option value="${escapeHtml(value)}" ${value === selected ? "selected" : ""}>${escapeHtml(value)}</option>`).join("")}`;
+}
+
+function financeSelect(name, values, selected = "", attrs = "") {
+  return `<select name="${name}" ${attrs}>${financeSelectOptions(values, selected)}</select>`;
+}
+
+function financeFlowOptions(data, row = []) {
+  const type = row[1] || "Chi";
+  const groups = financeGroupOptionsForType(type);
+  const requestedGroup = normalizeFinanceGroup(row[2]);
+  const group = groups.includes(requestedGroup) ? requestedGroup : groups[0];
+  return {
+    groups,
+    group,
+    topics: financeContextOptionList(data, group, type, "topics"),
+    categories: financeContextOptionList(data, group, type, "categories"),
+    partners: financeContextOptionList(data, group, type, "partners")
+  };
+}
+
+function financeDraftFromRow(row = []) {
+  return {
+    date: row[0] || "",
+    type: row[1] || "Chi",
+    group: normalizeFinanceGroup(row[2]),
+    topic: row[3] || "",
+    category: row[4] || "",
+    partner: row[5] || "",
+    desc: row[6] || "",
+    amount: moneyInput(row[7]),
+    note: row[10] || ""
+  };
+}
+
+function financeDraftFromElement(rowElement) {
+  const get = (name) => rowElement.querySelector(`[name="${name}"]`)?.value || "";
+  return {
+    date: get("date"),
+    type: get("type") || "Chi",
+    group: normalizeFinanceGroup(get("group")),
+    topic: get("topic"),
+    category: get("category"),
+    partner: get("partner"),
+    desc: get("desc"),
+    amount: get("amount"),
+    note: get("note")
+  };
+}
+
+function financeDraftToRow(draft, previous = []) {
+  return [draft.date, draft.type, normalizeFinanceGroup(draft.group), draft.topic, draft.category, draft.partner, draft.desc, parseMoneyInput(draft.amount), previous[8] || "", previous[9] || "", draft.note ?? previous[10] ?? ""];
+}
+
+function financeFilterState() {
+  if (!state.financeFilters || typeof state.financeFilters !== "object") state.financeFilters = {};
+  FINANCE_FILTER_FIELDS.forEach(({ key }) => {
+    if (!Array.isArray(state.financeFilters[key])) state.financeFilters[key] = [];
+  });
+  return state.financeFilters;
+}
+
+function financeFilterContextRows(data, group = "") {
+  return (data.transactions || []).filter((row) => !group || row[2] === group);
+}
+
+function financeConfiguredFilterOptions(data, groupContext = "") {
+  const filters = financeFilterState();
+  const selectedTypes = (filters.type.length ? filters.type : FINANCE_TRANSACTION_TYPES).filter((type) => FINANCE_TRANSACTION_TYPES.includes(type));
+  const groupOptions = groupContext ? [groupContext] : financeUnique(selectedTypes.flatMap(financeGroupOptionsForType));
+  const selectedGroups = (filters.group.length ? filters.group : groupOptions).map(normalizeFinanceGroup).filter((group) => groupOptions.includes(group));
+  const activeGroups = selectedGroups.length ? selectedGroups : groupOptions;
+  const pairs = selectedTypes.flatMap((type) => activeGroups.filter((group) => financeGroupOptionsForType(type).includes(group)).map((group) => ({ type, group })));
+  return {
+    type: FINANCE_TRANSACTION_TYPES,
+    group: groupOptions,
+    topic: financeUnique(pairs.flatMap(({ type, group }) => financeContextOptionList(data, group, type, "topics"))),
+    category: financeUnique(pairs.flatMap(({ type, group }) => financeContextOptionList(data, group, type, "categories"))),
+    partner: financeUnique(pairs.flatMap(({ type, group }) => financeContextOptionList(data, group, type, "partners")))
+  };
+}
+
+function financeFilterOptions(data, rows, group = "") {
+  const configured = financeConfiguredFilterOptions(data, group);
+  return Object.fromEntries(FINANCE_FILTER_FIELDS.map(({ key }) => [key, configured[key] || []]));
+}
+
+function pruneFinanceFilters(options) {
+  const filters = financeFilterState();
+  FINANCE_FILTER_FIELDS.forEach(({ key }) => {
+    const allowed = new Set(options[key] || []);
+    filters[key] = (filters[key] || []).filter((value) => allowed.has(value));
+  });
+}
+
+function financeSelectedFilterCount() {
+  const filters = financeFilterState();
+  return FINANCE_FILTER_FIELDS.reduce((count, { key }) => count + filters[key].length, 0);
+}
+
+function financeFilterControl(field, values) {
+  const selected = new Set(financeFilterState()[field.key]);
+  const open = state.financeFilterOpen === field.key;
+  return `<div class="finance-filter ${open ? "open" : ""}" data-finance-filter="${field.key}">
+    <button type="button" class="${selected.size ? "active" : ""}" data-finance-filter-toggle="${field.key}"><span>${field.label}</span>${selected.size ? `<b>${selected.size}</b>` : ""}<i>▾</i></button>
+    <div class="finance-filter-panel">
+      <header><strong>${field.label}</strong><button type="button" data-finance-filter-clear="${field.key}">Bỏ chọn</button></header>
+      <div class="finance-filter-list">${values.map((value) => `<label class="finance-filter-option"><input type="checkbox" data-finance-filter-option="${field.key}" value="${escapeHtml(value)}" ${selected.has(value) ? "checked" : ""}><span>${escapeHtml(value)}</span></label>`).join("") || `<em>Không có option.</em>`}</div>
+    </div>
+  </div>`;
+}
+
+function financeTools(data, group = "") {
+  const options = financeFilterOptions(data, financeFilterContextRows(data, group), group);
+  pruneFinanceFilters(options);
+  const selectedCount = financeSelectedFilterCount();
+  return `<div class="finance-tools"><input id="finance-search" value="${escapeHtml(state.financeQuery)}" placeholder="Tìm theo dự án, nhóm, đối tượng, mô tả"><div class="finance-filter-bar">${FINANCE_FILTER_FIELDS.map((field) => financeFilterControl(field, options[field.key] || [])).join("")}${selectedCount ? `<button type="button" class="finance-clear-filters" data-finance-filter-clear-all>Xóa lọc ${selectedCount}</button>` : ""}</div><button class="btn" data-finance="add-transaction">＋ Thêm giao dịch</button></div>`;
 }
 
 function renderFinancePage(page) {
@@ -941,25 +1508,51 @@ function renderFinancePage(page) {
   return renderFinanceOverview();
 }
 
-function financeShell(page, title, desc, content) {
+function financeShell(page, title, desc, content, data = {}) {
   setTitle(page, "");
   $("#app").innerHTML = `<section class="finance-page">
-    <header class="finance-head"><div><h2>${title}</h2><p>${desc}</p></div><div><button class="${page === "finance-overview" ? "active" : ""}" data-page-link="finance-overview">Tổng quan</button><button class="${page === "finance-ledome" ? "active" : ""}" data-page-link="finance-ledome">Le Dome</button><button class="${page === "finance-projects" ? "active" : ""}" data-page-link="finance-projects">Dự án</button></div></header>
+    <header class="finance-head"><div><h2>${title}</h2><p>${desc}</p></div><div><button class="${page === "finance-overview" ? "active" : ""}" data-page-link="finance-overview">Tổng quan</button><button class="${page === "finance-ledome" ? "active" : ""}" data-page-link="finance-ledome">Vận hành Le Dome</button><button class="${page === "finance-projects" ? "active" : ""}" data-page-link="finance-projects">Dự án</button></div></header>
     ${content}
-    ${financeModal()}
+    ${financeModal(data)}
   </section>`;
   bindFinance(page);
 }
 
-function financeTransactionLedger(data, rows, title = "Sổ giao dịch thu chi", subtitle = "Sheet Giao dịch") {
-  return `<section class="finance-section"><header><h3>${title}</h3><span>${subtitle}</span></header>${financeTools("ledger")}<div class="finance-table-wrap"><table class="finance-table"><thead><tr><th>Ngày</th><th>Loại</th><th>Nhóm</th><th>Chủ đề</th><th>Hạng mục</th><th>Đối tượng</th><th>Mô tả</th><th>Số tiền</th><th>Tháng</th><th></th></tr></thead><tbody>${rows.map(({row,index}) => `<tr><td>${financeDate(row[0])}</td><td>${financeBadge(row[1])}</td><td><b>${row[2]}</b></td><td>${row[3]}</td><td>${row[4] || ""}</td><td>${row[5] || ""}</td><td>${row[6] || ""}</td><td class="finance-money ${row[1] === "Chi" ? "negative" : "positive"}">${row[1] === "Chi" ? "-" : "+"}${money(row[7])}</td><td>${financeMonth(row[0])}</td><td class="finance-actions"><button data-finance="edit-transaction" data-index="${index}">Sửa</button><button data-finance="delete-transaction" data-index="${index}">×</button></td></tr>`).join("") || `<tr><td colspan="10">Không có giao dịch phù hợp.</td></tr>`}</tbody></table></div></section>`;
+function financeTransactionLedger(data, rows, title = "Sổ giao dịch thu chi", subtitle = "Sheet Giao dịch", group = "") {
+  return `<section class="finance-section"><header><h3>${title}</h3><span>${subtitle}</span></header>${financeTools(data, group)}<div class="finance-table-wrap"><table class="finance-table finance-transaction-table"><thead><tr><th>Ngày</th><th>Loại</th><th>Nhóm</th><th>Chủ đề</th><th>Hạng mục</th><th>Đối tượng</th><th>Mô tả</th><th>Số tiền</th><th>Tháng</th><th></th></tr></thead><tbody>${rows.map(({row,index}) => financeTransactionRow(data, row, index)).join("") || `<tr><td colspan="10">Không có giao dịch phù hợp.</td></tr>`}</tbody></table></div></section>`;
+}
+
+function financeTransactionRow(data, row, index) {
+  if (state.financeEditingIndex === index) {
+    const draft = state.financeEditDraft || financeDraftFromRow(row);
+    const flow = financeFlowOptions(data, [draft.date, draft.type, draft.group, draft.topic, draft.category, draft.partner, draft.desc, parseMoneyInput(draft.amount), "", "", draft.note]);
+    return `<tr class="finance-edit-row" data-finance-row="${index}">
+      <td><input name="date" type="date" value="${escapeHtml(draft.date)}"></td>
+      <td>${financeSelect("type", FINANCE_TRANSACTION_TYPES, draft.type, 'data-finance-inline="type"')}</td>
+      <td>${financeSelect("group", flow.groups, flow.group, 'data-finance-inline="group"')}</td>
+      <td>${financeSelect("topic", flow.topics, draft.topic)}</td>
+      <td>${financeSelect("category", flow.categories, draft.category)}</td>
+      <td>${financeSelect("partner", flow.partners, draft.partner)}</td>
+      <td><input name="desc" value="${escapeHtml(draft.desc)}" placeholder="Mô tả"></td>
+      <td><input name="amount" value="${escapeHtml(draft.amount)}" inputmode="numeric" data-money-input></td>
+      <td>${financeMonth(draft.date)}<input type="hidden" name="note" value="${escapeHtml(draft.note)}"></td>
+      <td class="finance-actions inline"><button data-finance="save-transaction" data-index="${index}">Lưu</button><button data-finance="cancel-edit" data-index="${index}">Hủy</button></td>
+    </tr>`;
+  }
+  return `<tr><td>${financeDate(row[0])}</td><td>${financeBadge(row[1])}</td><td><b>${row[2]}</b></td><td>${row[3]}</td><td>${row[4] || ""}</td><td>${row[5] || ""}</td><td>${row[6] || ""}</td><td class="finance-money ${row[1] === "Chi" ? "negative" : "positive"}">${row[1] === "Chi" ? "-" : "+"}${money(row[7])}</td><td>${financeMonth(row[0])}</td><td class="finance-actions"><button data-finance="edit-transaction" data-index="${index}">Sửa</button><button data-finance="delete-transaction" data-index="${index}">×</button></td></tr>`;
 }
 
 function financeFilteredTransactions(data, group = "") {
+  pruneFinanceFilters(financeFilterOptions(data, [], group));
   const q = state.financeQuery.toLocaleLowerCase("vi");
+  const filters = financeFilterState();
   return data.transactions
     .map((row,index) => ({ row, index }))
-    .filter((item) => (!group || item.row[2] === group) && (!q || item.row.join(" ").toLocaleLowerCase("vi").includes(q)) && (state.financeKind === "Tất cả" || item.row[1] === state.financeKind));
+    .filter((item) => (!group || item.row[2] === group) && (!q || item.row.join(" ").toLocaleLowerCase("vi").includes(q)) && FINANCE_FILTER_FIELDS.every(({ key, rowIndex }) => {
+      const selected = filters[key] || [];
+      if (!selected.length) return true;
+      return selected.includes(String(item.row[rowIndex] || "").trim());
+    }));
 }
 
 function financeTotals(transactions) {
@@ -969,6 +1562,7 @@ function financeTotals(transactions) {
 }
 
 async function renderFinanceOverview() {
+  await loadFinanceReferenceData();
   const data = await loadFinanceData();
   const rows = financeFilteredTransactions(data);
   const { totalIn, totalOut, cash } = financeTotals(data.transactions);
@@ -978,7 +1572,7 @@ async function renderFinanceOverview() {
     const expense = monthRows.filter((row) => row[1] === "Chi").reduce((sum,row) => sum + Number(row[7] || 0), 0);
     return [i + 1, 2026, income, expense, income - expense, monthRows.length];
   });
-  const byGroup = ["LE DOME","DỰ ÁN","TÀI CHÍNH"].map((group) => {
+  const byGroup = FINANCE_GROUPS.map((group) => {
     const groupRows = data.transactions.filter((row) => row[2] === group);
     const income = groupRows.filter((row) => row[1] === "Thu").reduce((sum,row) => sum + Number(row[7] || 0), 0);
     const expense = groupRows.filter((row) => row[1] === "Chi").reduce((sum,row) => sum + Number(row[7] || 0), 0);
@@ -991,14 +1585,14 @@ async function renderFinanceOverview() {
       <article class="finance-panel-card"><header><h3>Báo cáo tháng</h3><span>12 tháng năm 2026</span></header><div class="finance-bars">${months.map((row) => `<i title="Tháng ${row[0]}: ${money(row[4])}" style="height:${Math.max(8, Math.min(100, Math.abs(row[4]) / 3000000))}px" class="${row[4] < 0 ? "expense" : "income"}"><em>${row[0]}</em></i>`).join("")}</div></article>
     </section>
     ${financeTransactionLedger(data, rows, "Tất cả thu chi công ty", "Ghi chép chung toàn công ty")}
-  `);
-  $("#finance-kind").value = state.financeKind;
+  `, data);
 }
 
 async function renderFinanceLedome() {
+  await loadFinanceReferenceData();
   const data = await loadFinanceData();
-  const source = data.transactions.filter((row) => row[2] === "LE DOME");
-  const rows = financeFilteredTransactions(data, "LE DOME");
+  const source = data.transactions.filter((row) => row[2] === FINANCE_OPERATION_GROUP);
+  const rows = financeFilteredTransactions(data, FINANCE_OPERATION_GROUP);
   const { totalIn, totalOut, cash } = financeTotals(source);
   const byTopic = Array.from(new Set(source.map((row) => row[3]).filter(Boolean))).map((topic) => {
     const topicRows = source.filter((row) => row[3] === topic);
@@ -1006,37 +1600,31 @@ async function renderFinanceLedome() {
     return [topic, totalIn, totalOut, cash];
   });
   financeShell("finance-ledome", "Thu chi vận hành Le Dome", "Ghi chép riêng các khoản thu chi phục vụ vận hành Le Dome.", `
-    ${financeStats([["Thu vận hành",`${money(totalIn)} đ`,"Nhóm LE DOME","income"],["Chi vận hành",`${money(totalOut)} đ`,"Văn phòng, lương, đầu tư","expense"],["Dòng tiền vận hành",`${money(cash)} đ`,"Thu - chi",financeAmountClass(cash)],["Số giao dịch",source.length,"Giao dịch nhóm LE DOME"]])}
-    <section class="finance-grid-view single"><article class="finance-panel-card"><header><h3>Theo chủ đề vận hành</h3><span>LE DOME</span></header><div class="finance-mini-table">${byTopic.map(([topic,income,expense,cash]) => `<p><b>${topic}</b><span>${money(income)}</span><span>${money(expense)}</span><strong class="${financeAmountClass(cash)}">${money(cash)}</strong></p>`).join("") || "<p><b>Chưa có dữ liệu</b><span></span><span></span><strong></strong></p>"}</div></article></section>
-    ${financeTransactionLedger(data, rows, "Sổ thu chi vận hành Le Dome", "Lọc nhóm LE DOME")}
-  `);
-  $("#finance-kind").value = state.financeKind;
+    ${financeStats([["Thu vận hành",`${money(totalIn)} đ`,"Nhóm VẬN HÀNH LE DOME","income"],["Chi vận hành",`${money(totalOut)} đ`,"Văn phòng, lương, đầu tư","expense"],["Dòng tiền vận hành",`${money(cash)} đ`,"Thu - chi",financeAmountClass(cash)],["Số giao dịch",source.length,"Giao dịch nhóm vận hành"]])}
+    <section class="finance-grid-view single"><article class="finance-panel-card"><header><h3>Theo chủ đề vận hành</h3><span>Vận hành Le Dome</span></header><div class="finance-mini-table">${byTopic.map(([topic,income,expense,cash]) => `<p><b>${topic}</b><span>${money(income)}</span><span>${money(expense)}</span><strong class="${financeAmountClass(cash)}">${money(cash)}</strong></p>`).join("") || "<p><b>Chưa có dữ liệu</b><span></span><span></span><strong></strong></p>"}</div></article></section>
+    ${financeTransactionLedger(data, rows, "Sổ thu chi vận hành Le Dome", "Lọc nhóm VẬN HÀNH LE DOME", FINANCE_OPERATION_GROUP)}
+  `, data);
 }
 
 async function renderFinanceProjects() {
+  await loadFinanceReferenceData();
   const data = await loadFinanceData();
   const q = state.financeQuery.toLocaleLowerCase("vi");
   const projects = data.projects.filter((row) => !q || row.join(" ").toLocaleLowerCase("vi").includes(q));
-  const projectTransactions = financeFilteredTransactions(data, "DỰ ÁN");
-  const projectSource = data.transactions.filter((row) => row[2] === "DỰ ÁN");
+  const projectTransactions = financeFilteredTransactions(data, FINANCE_PROJECT_GROUP);
+  const projectSource = data.transactions.filter((row) => row[2] === FINANCE_PROJECT_GROUP);
   const projectCash = financeTotals(projectSource);
-  const totalRevenue = data.projects.reduce((sum,row) => sum + Number(row[8] || 0), 0);
-  const totalCost = data.projects.reduce((sum,row) => sum + Number(row[9] || 0), 0);
-  const totalReceivable = data.debts.filter((row) => row[1] === "Phải thu").reduce((sum,row) => sum + Number(row[8] || 0), 0);
-  const totalPayable = data.debts.filter((row) => row[1] === "Phải trả").reduce((sum,row) => sum + Number(row[8] || 0), 0);
-  financeShell("finance-projects", "Thu chi dự án", "Ghi chép thu chi cho toàn bộ các dự án của Le Dome, kèm lợi nhuận, ngân sách và công nợ.", `
-    ${financeStats([["Thu từ dự án",`${money(projectCash.totalIn)} đ`,"Giao dịch nhóm DỰ ÁN","income"],["Chi cho dự án",`${money(projectCash.totalOut)} đ`,"Nhà thầu, NCC, phát sinh","expense"],["Dòng tiền dự án",`${money(projectCash.cash)} đ`,"Thu - chi",financeAmountClass(projectCash.cash)],["Công nợ còn lại",`${money(totalReceivable-totalPayable)} đ`,"Phải thu - phải trả",financeAmountClass(totalReceivable-totalPayable)]])}
-    ${financeTransactionLedger(data, projectTransactions, "Sổ thu chi toàn bộ dự án", "Lọc nhóm DỰ ÁN")}
+  const totalProfit = data.projects.reduce((sum,row) => sum + Number(row[10] || 0), 0);
+  financeShell("finance-projects", "Thu chi dự án", "Ghi chép thu chi cho toàn bộ các dự án của Le Dome, kèm lợi nhuận và ngân sách.", `
+    ${financeStats([["Thu từ dự án",`${money(projectCash.totalIn)} đ`,"Giao dịch nhóm DỰ ÁN","income"],["Chi cho dự án",`${money(projectCash.totalOut)} đ`,"Nhà thầu, NCC, phát sinh","expense"],["Dòng tiền dự án",`${money(projectCash.cash)} đ`,"Thu - chi",financeAmountClass(projectCash.cash)],["Lợi nhuận dự án",`${money(totalProfit)} đ`,"Theo sheet Dự án",financeAmountClass(totalProfit)]])}
+    ${financeTransactionLedger(data, projectTransactions, "Sổ thu chi toàn bộ dự án", "Lọc nhóm DỰ ÁN", FINANCE_PROJECT_GROUP)}
     <section class="finance-section"><header><h3>Báo cáo lợi nhuận dự án</h3><span>Sheet Dự án</span></header><div class="finance-table-wrap"><table class="finance-table project-finance-table"><thead><tr><th>Mã dự án</th><th>Tên dự án</th><th>Khách hàng</th><th>Loại dự án</th><th>Trạng thái</th><th>Quản lý</th><th>Thu</th><th>Chi</th><th>Lợi nhuận</th><th>Biên LN</th><th>Phải thu</th><th>Phải trả</th><th>Cảnh báo</th></tr></thead><tbody>${projects.map((row) => { const margin = row[8] ? row[10] / row[8] : 0; return `<tr><td><b>${row[0]}</b></td><td>${row[1]}</td><td>${row[2] || ""}</td><td>${row[3]}</td><td>${row[4]}</td><td>${row[5]}</td><td class="finance-money positive">${money(row[8])}</td><td class="finance-money negative">${money(row[9])}</td><td class="finance-money ${financeAmountClass(row[10])}">${money(row[10])}</td><td>${Math.round(margin * 100)}%</td><td>${money(row[11])}</td><td>${money(row[12])}</td><td>${financeBadge(row[13])}</td></tr>`; }).join("")}</tbody></table></div></section>
-    <section class="finance-grid-view">
-      <article class="finance-section"><header><h3>Ngân sách dự án</h3><span>Sheet Ngân sách dự án</span></header><div class="finance-table-wrap compact"><table class="finance-table"><thead><tr><th>Dự án</th><th>Hạng mục</th><th>Nhà thầu/NCC</th><th>Dự toán</th><th>Thực chi</th><th>Còn lại</th><th>% dùng</th><th>Cảnh báo</th></tr></thead><tbody>${data.budgets.map((row) => `<tr><td><b>${row[0]}</b><small>${row[1]}</small></td><td>${row[2]}</td><td>${row[3]}</td><td>${money(row[4])}</td><td>${money(row[7])}</td><td>${money(row[8])}</td><td>${row[9]}%</td><td>${financeBadge(row[10])}</td></tr>`).join("")}</tbody></table></div></article>
-      <article class="finance-section"><header><h3>Công nợ phải thu / phải trả</h3><span>Sheet Công nợ</span></header><div class="finance-table-wrap compact"><table class="finance-table"><thead><tr><th>Ngày</th><th>Loại</th><th>Dự án</th><th>Đối tượng</th><th>Nội dung</th><th>Còn lại</th><th>Hạn TT</th><th>Trạng thái</th></tr></thead><tbody>${data.debts.map((row) => `<tr><td>${financeDate(row[0])}</td><td>${financeBadge(row[1])}</td><td><b>${row[2]}</b></td><td>${row[3]}</td><td>${row[5]}</td><td class="finance-money ${row[1] === "Phải trả" ? "negative" : "positive"}">${money(row[8])}</td><td>${financeDate(row[9])}</td><td>${financeBadge(row[10])}</td></tr>`).join("")}</tbody></table></div></article>
-    </section>
-  `);
+    <section class="finance-section"><header><h3>Ngân sách dự án</h3><span>Breakdown theo hạng mục và đối tượng chi</span></header><div class="finance-table-wrap compact"><table class="finance-table"><thead><tr><th>Dự án</th><th>Hạng mục</th><th>Nhà thầu/NCC</th><th>Dự toán</th><th>Thực chi</th><th>Còn lại</th><th>% dùng</th><th>Cảnh báo</th></tr></thead><tbody>${data.budgets.map((row) => `<tr><td><b>${row[0]}</b><small>${row[1]}</small></td><td>${row[2]}</td><td>${row[3]}</td><td>${money(row[4])}</td><td>${money(row[7])}</td><td>${money(row[8])}</td><td>${row[9]}%</td><td>${financeBadge(row[10])}</td></tr>`).join("") || `<tr><td colspan="8">Chưa có dữ liệu ngân sách dự án.</td></tr>`}</tbody></table></div></section>
+  `, data);
 }
 
-function financeModal() {
-  return `<div class="finance-modal" id="finance-modal"><form id="finance-form"><header><h3 id="finance-modal-title">Thêm giao dịch</h3><button type="button" data-finance="close-modal">×</button></header><input type="hidden" name="index"><label>Ngày<input name="date" type="date" required></label><label>Loại<select name="type"><option>Thu</option><option>Chi</option></select></label><label>Nhóm<select name="group"><option>LE DOME</option><option>DỰ ÁN</option><option>TÀI CHÍNH</option></select></label><label>Chủ đề<input name="topic" placeholder="VD: VẬN HÀNH, 6ATS, HỢP ĐỒNG"></label><label>Hạng mục<input name="category" placeholder="VD: ĐIỆN, GỖ NỘI THẤT"></label><label>Đối tượng<input name="partner" placeholder="Khách hàng / Nhà thầu / NCC"></label><label class="wide">Mô tả<textarea name="desc" placeholder="Nội dung thu chi"></textarea></label><label>Số tiền<input name="amount" inputmode="numeric" data-money-input required></label><label>Ghi chú<input name="note"></label><footer><button type="button" class="btn secondary" data-finance="close-modal">Đóng</button><button class="btn">Lưu</button></footer></form></div>`;
+function financeModal(data = {}) {
+  return `<div class="finance-modal" id="finance-modal"><form id="finance-form"><header><h3 id="finance-modal-title">Thêm giao dịch</h3><button type="button" data-finance="close-modal">×</button></header><input type="hidden" name="index"><label>Ngày<input name="date" type="date" required></label><label>Loại<select name="type">${FINANCE_TRANSACTION_TYPES.map((type) => `<option>${escapeHtml(type)}</option>`).join("")}</select></label><label>Nhóm<select name="group">${FINANCE_GROUPS.map((group) => `<option>${escapeHtml(group)}</option>`).join("")}</select></label><label>Chủ đề<select name="topic" data-finance-topic></select></label><label>Hạng mục<select name="category" data-finance-category></select></label><label>Đối tượng<select name="partner" data-finance-partner></select></label><label class="wide">Mô tả<textarea name="desc" placeholder="Nội dung thu chi"></textarea></label><label>Số tiền<input name="amount" inputmode="numeric" data-money-input required></label><label>Ghi chú<input name="note"></label><footer><button type="button" class="btn secondary" data-finance="close-modal">Đóng</button><button class="btn">Lưu</button></footer></form></div>`;
 }
 
 async function bindFinance(page) {
@@ -1047,61 +1635,165 @@ async function bindFinance(page) {
     state.financeQuery = event.target.value;
     renderFinancePage(page);
   });
-  $("#finance-kind")?.addEventListener("change", (event) => {
-    state.financeKind = event.target.value;
+  $("#app").onchange = (event) => {
+    const inlineField = event.target.closest("[data-finance-inline]");
+    if (inlineField) {
+      const rowElement = event.target.closest("[data-finance-row]");
+      const index = Number(rowElement?.dataset.financeRow);
+      if (Number.isInteger(index)) {
+        const draft = financeDraftFromElement(rowElement);
+        if (inlineField.dataset.financeInline === "group") {
+          draft.topic = "";
+          draft.category = "";
+          draft.partner = "";
+        }
+        if (inlineField.dataset.financeInline === "type") {
+          const groups = financeGroupOptionsForType(draft.type);
+          if (!groups.includes(draft.group)) draft.group = groups[0];
+          draft.topic = "";
+          draft.category = "";
+          draft.partner = "";
+        }
+        state.financeEditingIndex = index;
+        state.financeEditDraft = draft;
+        renderFinancePage(page);
+      }
+      return;
+    }
+    const option = event.target.closest("[data-finance-filter-option]");
+    if (!option) return;
+    const key = option.dataset.financeFilterOption;
+    const filters = financeFilterState();
+    const selected = new Set(filters[key] || []);
+    if (option.checked) selected.add(option.value);
+    else selected.delete(option.value);
+    filters[key] = [...selected];
+    state.financeFilterOpen = key;
     renderFinancePage(page);
-  });
-  form?.querySelectorAll("[data-money-input]").forEach((input) => {
+  };
+  $("#app").querySelectorAll("[data-money-input]").forEach((input) => {
     input.oninput = () => { input.value = input.value.replace(/[^\d]/g, "").replace(/\B(?=(\d{3})+(?!\d))/g, "."); };
   });
+  const setFinanceSelectOptions = (select, values, selected) => {
+    const hasSelected = selected && values.includes(selected);
+    const nextSelected = hasSelected ? selected : "";
+    select.innerHTML = financeSelectOptions(values, nextSelected);
+    select.value = nextSelected;
+    return nextSelected;
+  };
+  const updateFinanceFieldOptions = () => {
+    if (!form) return;
+    const type = form.elements.type.value;
+    const groupSelect = form.elements.group;
+    const groupOptions = financeGroupOptionsForType(type);
+    const previousGroup = normalizeFinanceGroup(groupSelect.value);
+    let group = setFinanceSelectOptions(groupSelect, groupOptions, previousGroup);
+    if (!group) {
+      group = groupOptions[0];
+      setFinanceSelectOptions(groupSelect, groupOptions, group);
+      form.elements.topic.value = "";
+      form.elements.category.value = "";
+      form.elements.partner.value = "";
+    }
+    const topic = form.elements.topic;
+    const category = form.elements.category;
+    const partner = form.elements.partner;
+    const current = [form.elements.date.value, type, group, topic.value, category.value, partner.value, form.elements.desc.value, parseMoneyInput(form.elements.amount.value), "", "", form.elements.note.value];
+    const flow = financeFlowOptions(data, current);
+    setFinanceSelectOptions(topic, flow.topics, topic.value);
+    setFinanceSelectOptions(category, flow.categories, category.value);
+    setFinanceSelectOptions(partner, flow.partners, partner.value);
+  };
+  form?.elements.group?.addEventListener("change", () => {
+    form.elements.topic.value = "";
+    form.elements.category.value = "";
+    form.elements.partner.value = "";
+    updateFinanceFieldOptions();
+  });
+  form?.elements.type?.addEventListener("change", () => {
+    if (!financeGroupOptionsForType(form.elements.type.value).includes(normalizeFinanceGroup(form.elements.group.value))) form.elements.group.value = "";
+    form.elements.topic.value = "";
+    form.elements.category.value = "";
+    form.elements.partner.value = "";
+    updateFinanceFieldOptions();
+  });
+  form?.elements.category?.addEventListener("change", updateFinanceFieldOptions);
+  updateFinanceFieldOptions();
   $("#app").onclick = async (event) => {
     const pageLink = event.target.closest("[data-page-link]")?.dataset.pageLink;
     if (pageLink) return void (location.hash = pageLink);
+    const filterToggle = event.target.closest("[data-finance-filter-toggle]");
+    if (filterToggle) {
+      const key = filterToggle.dataset.financeFilterToggle;
+      state.financeFilterOpen = state.financeFilterOpen === key ? "" : key;
+      return renderFinancePage(page);
+    }
+    const filterClear = event.target.closest("[data-finance-filter-clear]");
+    if (filterClear) {
+      financeFilterState()[filterClear.dataset.financeFilterClear] = [];
+      state.financeFilterOpen = filterClear.dataset.financeFilterClear;
+      return renderFinancePage(page);
+    }
+    if (event.target.closest("[data-finance-filter-clear-all]")) {
+      FINANCE_FILTER_FIELDS.forEach(({ key }) => { financeFilterState()[key] = []; });
+      state.financeFilterOpen = "";
+      return renderFinancePage(page);
+    }
     const action = event.target.closest("[data-finance]")?.dataset.finance;
     if (!action) return;
     if (action === "close-modal") return modal.classList.remove("open");
-    if (action === "reset" && confirm("Khôi phục dữ liệu tài chính mẫu theo file Excel?")) {
-      await saveFinanceData(structuredClone(FINANCE_SEED));
-      return renderFinancePage(page);
-    }
     if (action === "add-transaction") {
+      state.financeFilterOpen = "";
+      state.financeEditingIndex = null;
+      state.financeEditDraft = null;
       form.reset();
+      form.elements.type.value = "Chi";
       form.elements.date.value = new Date().toISOString().slice(0, 10);
-      form.elements.group.value = page === "finance-projects" ? "DỰ ÁN" : page === "finance-ledome" ? "LE DOME" : "LE DOME";
+      form.elements.group.value = page === "finance-projects" ? FINANCE_PROJECT_GROUP : page === "finance-ledome" ? FINANCE_OPERATION_GROUP : FINANCE_OPERATION_GROUP;
       form.elements.index.value = "";
       $("#finance-modal-title").textContent = "Thêm giao dịch";
+      updateFinanceFieldOptions();
       return modal.classList.add("open");
     }
     const index = Number(event.target.closest("[data-index]")?.dataset.index);
     if (action === "delete-transaction" && Number.isInteger(index)) {
       if (confirm("Xóa giao dịch này?")) {
         data.transactions.splice(index, 1);
+        state.financeEditingIndex = null;
+        state.financeEditDraft = null;
         await saveFinanceData(data);
         renderFinancePage(page);
       }
       return;
     }
     if (action === "edit-transaction" && Number.isInteger(index)) {
-      const row = data.transactions[index];
-      form.elements.index.value = index;
-      form.elements.date.value = row[0];
-      form.elements.type.value = row[1];
-      form.elements.group.value = row[2];
-      form.elements.topic.value = row[3];
-      form.elements.category.value = row[4];
-      form.elements.partner.value = row[5];
-      form.elements.desc.value = row[6];
-      form.elements.amount.value = moneyInput(row[7]);
-      form.elements.note.value = row[10] || "";
-      $("#finance-modal-title").textContent = "Chỉnh sửa giao dịch";
-      return modal.classList.add("open");
+      state.financeFilterOpen = "";
+      state.financeEditingIndex = index;
+      state.financeEditDraft = financeDraftFromRow(data.transactions[index]);
+      return renderFinancePage(page);
+    }
+    if (action === "cancel-edit") {
+      state.financeEditingIndex = null;
+      state.financeEditDraft = null;
+      return renderFinancePage(page);
+    }
+    if (action === "save-transaction" && Number.isInteger(index)) {
+      const rowElement = event.target.closest("[data-finance-row]");
+      if (!rowElement) return;
+      data.transactions[index] = financeDraftToRow(financeDraftFromElement(rowElement), data.transactions[index]);
+      state.financeEditingIndex = null;
+      state.financeEditDraft = null;
+      await saveFinanceData(data);
+      return renderFinancePage(page);
     }
   };
   form.onsubmit = async (event) => {
     event.preventDefault();
     const formData = Object.fromEntries(new FormData(form));
-    const row = [formData.date, formData.type, formData.group, formData.topic, formData.category, formData.partner, formData.desc, parseMoneyInput(formData.amount), "", "", formData.note];
+    const row = [formData.date, formData.type, normalizeFinanceGroup(formData.group), formData.topic, formData.category, formData.partner, formData.desc, parseMoneyInput(formData.amount), "", "", formData.note];
     const index = formData.index === "" ? -1 : Number(formData.index);
+    state.financeEditingIndex = null;
+    state.financeEditDraft = null;
     if (index >= 0) data.transactions[index] = row;
     else data.transactions.unshift(row);
     await saveFinanceData(data);
@@ -1389,6 +2081,50 @@ const ACCOUNT_MODULES = [
   ["personalFinance.view","Tài chính cá nhân: xem"],
   ["personalFinance.edit","Tài chính cá nhân: sửa"]
 ];
+const ACCOUNT_PERMISSION_KEYS = ACCOUNT_MODULES.map(([key]) => key);
+const ACCOUNT_ACCESS_LEVELS = [
+  {
+    key: "admin",
+    rank: 1,
+    label: "Admin",
+    scope: "Toàn hệ thống",
+    description: "Xem và chỉnh sửa toàn bộ hệ thống, bao gồm Cấu hình.",
+    permissions: ACCOUNT_PERMISSION_KEYS
+  },
+  {
+    key: "leadership",
+    rank: 2,
+    label: "Lãnh đạo",
+    scope: "Toàn hệ thống trừ Cấu hình",
+    description: "Xem, sửa và xóa dữ liệu vận hành; không được vào mục Cấu hình.",
+    permissions: ACCOUNT_PERMISSION_KEYS.filter((key) => !key.startsWith("config.") && !key.startsWith("personalFinance."))
+  },
+  {
+    key: "manager",
+    rank: 3,
+    label: "Trưởng phòng",
+    scope: "Theo phòng ban / dự án phụ trách",
+    description: "Quản lý một phần hệ thống theo phạm vi được giao, không có quyền xóa dữ liệu hệ thống.",
+    permissions: ["projects.view","projects.edit","projects.upload","projects.download","partners.view","partners.edit","hrm.view"]
+  },
+  {
+    key: "staff",
+    rank: 4,
+    label: "Nhân viên",
+    scope: "Theo công việc được giao",
+    description: "Xem và cập nhật nội dung giới hạn trong công việc hằng ngày.",
+    permissions: ["projects.view","projects.edit","projects.upload","projects.download","partners.view"]
+  },
+  {
+    key: "guest",
+    rank: 5,
+    label: "Guest",
+    scope: "Xem giới hạn",
+    description: "Không có quyền chỉnh sửa, chỉ xem một phần thông tin được mở.",
+    permissions: ["projects.view","partners.view"]
+  }
+];
+const ACCOUNT_ACCESS_BY_KEY = Object.fromEntries(ACCOUNT_ACCESS_LEVELS.map((level) => [level.key, level]));
 let LEDOME_ACCOUNTS = [];
 function accountLoginId(name, used = new Set()) {
   const parts = String(name || "").trim().split(/\s+/).filter(Boolean);
@@ -1403,6 +2139,65 @@ function accountLoginId(name, used = new Set()) {
 const LEADERSHIP_TITLES = ["Giám đốc", "Phó giám đốc"];
 const personKey = (name) => String(name || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/đ/g, "d").replace(/Đ/g, "D").replace(/[^\w]/g, "").toLowerCase();
 const uniqueValues = (items) => [...new Set(items.filter(Boolean))];
+const accountSearchText = (account = {}) => [
+  account.staffName,
+  account.role,
+  account.department,
+  account.title,
+  ...(account.roles || []),
+  ...(account.departments || []),
+  ...(account.positions || [])
+].join(" ").normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/đ/g, "d").replace(/Đ/g, "D").toLowerCase();
+function knownAccountAccessLevel(level) {
+  return Boolean(ACCOUNT_ACCESS_BY_KEY[String(level || "")]);
+}
+function inferAccountAccessLevel(account = {}) {
+  const loginId = String(account.loginId || "").trim().toLowerCase();
+  const text = accountSearchText(account);
+  if (loginId === "hoangdinh" || account.staffCode === "NS001" || account.permissions?.personalFinance) return "admin";
+  if (loginId === "dungbui" || text.includes("ban lanh dao") || text.includes("pho giam doc")) return "leadership";
+  if (text.includes("truong phong")) return "manager";
+  return "staff";
+}
+function expandAccountPermissions(permissions = {}) {
+  const source = permissions && typeof permissions === "object" ? permissions : {};
+  const next = {};
+  ACCOUNT_PERMISSION_KEYS.forEach((key) => { next[key] = Boolean(source[key]); });
+  if (source.projects) ["view","edit","upload","download"].forEach((action) => { next[`projects.${action}`] = true; });
+  if (source.partners) ["view","edit"].forEach((action) => { next[`partners.${action}`] = true; });
+  if (source.hrm) ["view","edit","approve"].forEach((action) => { next[`hrm.${action}`] = true; });
+  if (source.finance) ["view","edit","delete"].forEach((action) => { next[`finance.${action}`] = true; });
+  if (source.personalFinance) ["view","edit"].forEach((action) => { next[`personalFinance.${action}`] = true; });
+  if (source.config) {
+    next["config.accounts"] = true;
+    next["projects.delete"] = true;
+    next["partners.delete"] = true;
+  }
+  next.projects = ["view","edit","upload","download","delete"].some((action) => next[`projects.${action}`]);
+  next.partners = ["view","edit","delete"].some((action) => next[`partners.${action}`]);
+  next.hrm = ["view","edit","approve"].some((action) => next[`hrm.${action}`]);
+  next.finance = ["view","edit","delete"].some((action) => next[`finance.${action}`]);
+  next.config = Boolean(next["config.accounts"]);
+  next.private = Boolean(next.private || source.private);
+  next.personalFinance = ["view","edit"].some((action) => next[`personalFinance.${action}`]);
+  return next;
+}
+function permissionsForAccountLevel(accessLevel) {
+  const level = ACCOUNT_ACCESS_BY_KEY[knownAccountAccessLevel(accessLevel) ? accessLevel : "staff"];
+  const allowed = new Set(level.permissions);
+  const permissions = {};
+  ACCOUNT_PERMISSION_KEYS.forEach((key) => { permissions[key] = allowed.has(key); });
+  return expandAccountPermissions(permissions);
+}
+function normalizeAccountAccess(account = {}) {
+  const accessLevel = knownAccountAccessLevel(account.accessLevel) ? account.accessLevel : inferAccountAccessLevel(account);
+  return {
+    ...account,
+    accessLevel,
+    accessScope: ACCOUNT_ACCESS_BY_KEY[accessLevel].scope,
+    permissions: permissionsForAccountLevel(accessLevel)
+  };
+}
 function staffPeople() {
   const people = new Map();
   ORG_STAFF.forEach((staff) => {
@@ -1435,37 +2230,29 @@ function staffPeople() {
   }));
 }
 function defaultAccountPermissions(staff) {
-  const roles = staff.roles || [staff[2]];
-  const departments = staff.departments || [staff[3]];
-  const isLeader = departments.includes("Ban lãnh đạo");
-  return {
-    projects: isLeader || departments.some((department) => department.includes("thi công") || department.includes("thiết kế")),
-    partners: isLeader || roles.some((role) => role.includes("Marketing") || role.includes("Kế toán")),
-    hrm: isLeader || roles.some((role) => role === "Nhân sự" || role === "Hành chính"),
-    finance: isLeader || roles.some((role) => role === "Kế toán"),
-    config: isLeader,
-    private: isLeader
-  };
+  return permissionsForAccountLevel(inferAccountAccessLevel(staff));
 }
 function defaultAccounts() {
   const used = new Set();
-  return staffPeople().map((person) => ({
-    staffCode: person.staffCode,
-    staffName: person.staffName,
-    role: person.titles[0] || person.roles[0] || "",
-    department: person.departments.join(", "),
-    title: person.titles.join(", ") || "Không có chức danh lãnh đạo",
-    positions: person.positions.length ? person.positions : person.roles.map((role, index) => `${role} - ${person.departments[index] || person.departments[0] || ""}`),
-    loginId: accountLoginId(person.staffName, used),
-    password: "1",
-    active: true,
-    permissions: defaultAccountPermissions(person)
-  }));
+  return staffPeople().map((person) => {
+    const account = {
+      staffCode: person.staffCode,
+      staffName: person.staffName,
+      role: person.titles[0] || person.roles[0] || "",
+      department: person.departments.join(", "),
+      title: person.titles.join(", ") || "Không có chức danh lãnh đạo",
+      positions: person.positions.length ? person.positions : person.roles.map((role, index) => `${role} - ${person.departments[index] || person.departments[0] || ""}`),
+      loginId: accountLoginId(person.staffName, used),
+      password: "1",
+      active: true
+    };
+    return normalizeAccountAccess(account);
+  });
 }
 async function loadAccounts() {
   try {
     const body = await api("/accounts");
-    LEDOME_ACCOUNTS = body.data || [];
+    LEDOME_ACCOUNTS = (body.data || []).map(normalizeAccountAccess);
   } catch (error) {
     console.warn("Cannot load server accounts", error);
     LEDOME_ACCOUNTS = defaultAccounts();
@@ -1473,7 +2260,7 @@ async function loadAccounts() {
 }
 async function resetDefaultAccounts() {
   const body = await api("/accounts/reset", { method: "POST" });
-  LEDOME_ACCOUNTS = body.data || [];
+  LEDOME_ACCOUNTS = (body.data || []).map(normalizeAccountAccess);
   localStorage.removeItem(AUTH_STORAGE);
   return LEDOME_ACCOUNTS;
 }
@@ -1483,7 +2270,7 @@ async function saveAccounts() {
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ accounts: LEDOME_ACCOUNTS })
   });
-  LEDOME_ACCOUNTS = body.data || LEDOME_ACCOUNTS;
+  LEDOME_ACCOUNTS = (body.data || LEDOME_ACCOUNTS).map(normalizeAccountAccess);
 }
 const STAFF_PRIVATE_INFO = {
   NS001: ["001084000111","0101112233","BHXH-010-111","VCB 0011 2233 4455"],
@@ -1653,7 +2440,33 @@ function bindHrm(type, attendanceRows = HRM_ATTENDANCE) {
 }
 
 function accountPermissionBadges(permissions) {
-  return ACCOUNT_MODULES.filter(([key]) => permissions[key]).map(([, label]) => `<i>${label}</i>`).join("");
+  const active = ACCOUNT_MODULES.filter(([key]) => permissions?.[key]);
+  return active.length ? active.map(([, label]) => `<i>${label}</i>`).join("") : `<em>Không có quyền</em>`;
+}
+
+function accountAccessOptions(current) {
+  return ACCOUNT_ACCESS_LEVELS.map((level) => `<option value="${level.key}" ${current === level.key ? "selected" : ""}>${level.rank}. ${level.label}</option>`).join("");
+}
+
+function accountAccessCards() {
+  return `<div class="account-role-grid">${ACCOUNT_ACCESS_LEVELS.map((level) => `<article data-access-card="${level.key}"><b>${level.rank}. ${level.label}</b><span>${escapeHtml(level.scope)}</span><p>${escapeHtml(level.description)}</p></article>`).join("")}</div>`;
+}
+
+function accountRow(account) {
+  const safe = normalizeAccountAccess(account);
+  const level = ACCOUNT_ACCESS_BY_KEY[safe.accessLevel];
+  const positions = safe.positions || [`${safe.role} - ${safe.department}`];
+  return `<tr data-staff="${safe.staffCode}"><td><div class="account-person"><b>${escapeHtml(safe.staffName)}</b><span><em>Chức danh:</em> ${escapeHtml(safe.title || safe.role || "Chưa cập nhật")}<br><em>Vị trí:</em> ${positions.map(escapeHtml).join("<br>")}</span></div></td><td><input name="loginId" value="${escapeHtml(safe.loginId)}"></td><td><input name="newPassword" type="password" placeholder="Để trống nếu không đổi"></td><td><label class="account-active"><input type="checkbox" name="active" ${safe.active ? "checked" : ""}> Hoạt động</label></td><td><div class="account-level-picker"><select name="accessLevel" data-account-level>${accountAccessOptions(safe.accessLevel)}</select><small data-account-level-desc>${escapeHtml(level.description)}</small></div></td><td><div class="account-scope"><b data-account-scope>${escapeHtml(level.scope)}</b><span>Cấp ${level.rank}: ${escapeHtml(level.label)}</span></div><div class="account-badges" data-account-badges>${accountPermissionBadges(safe.permissions || {})}</div></td></tr>`;
+}
+
+function updateAccountRowAccess(row) {
+  const accessLevel = row.querySelector("[data-account-level]").value;
+  const level = ACCOUNT_ACCESS_BY_KEY[accessLevel];
+  const permissions = permissionsForAccountLevel(accessLevel);
+  row.querySelector("[data-account-level-desc]").textContent = level.description;
+  row.querySelector("[data-account-scope]").textContent = level.scope;
+  row.querySelector(".account-scope span").textContent = `Cấp ${level.rank}: ${level.label}`;
+  row.querySelector("[data-account-badges]").innerHTML = accountPermissionBadges(permissions);
 }
 
 async function configAccounts() {
@@ -1662,27 +2475,32 @@ async function configAccounts() {
   const activeCount = LEDOME_ACCOUNTS.filter((account) => account.active).length;
   $("#app").innerHTML = `<section class="account-page">
     <header class="account-head"><div><h2>▣ Tài khoản</h2><p>Quản lý tài khoản đăng nhập và phân quyền cho nhân sự Le Dome</p></div><button class="btn" data-account="save">Lưu thay đổi</button></header>
-    <div class="account-summary"><article><small>Tổng tài khoản</small><b>${LEDOME_ACCOUNTS.length}</b><span>Theo nhân sự thật, không theo số vị trí kiêm nhiệm</span></article><article><small>Đang hoạt động</small><b>${activeCount}</b><span>Có thể đăng nhập</span></article><article><small>Mật khẩu mặc định</small><b>1</b><span>Áp dụng khi khởi tạo</span></article></div>
-    <div class="account-tools"><span>Mỗi người thật chỉ có 1 tài khoản. Chức danh là cấp bậc pháp lý/quản trị; vị trí là vai trò đang đảm nhiệm.</span><button data-account="reset">Tạo lại mặc định</button></div>
-    <div class="account-table-wrap"><table class="account-table"><thead><tr><th>Nhân sự thật</th><th>ID đăng nhập</th><th>Đặt mật khẩu mới</th><th>Trạng thái</th><th>Phân quyền</th><th>Quyền đang bật</th></tr></thead><tbody>${LEDOME_ACCOUNTS.map((account) => `<tr data-staff="${account.staffCode}"><td><div class="account-person"><b>${escapeHtml(account.staffName)}</b><span><em>Chức danh:</em> ${escapeHtml(account.title || account.role || "Chưa cập nhật")}<br><em>Vị trí:</em> ${(account.positions || [`${account.role} - ${account.department}`]).map(escapeHtml).join("<br>")}</span></div></td><td><input name="loginId" value="${escapeHtml(account.loginId)}"></td><td><input name="newPassword" type="password" placeholder="Để trống nếu không đổi"></td><td><label class="account-active"><input type="checkbox" name="active" ${account.active ? "checked" : ""}> Hoạt động</label></td><td><div class="account-permissions">${ACCOUNT_MODULES.map(([key,label]) => `<label><input type="checkbox" data-permission="${key}" ${account.permissions?.[key] ? "checked" : ""}> ${label}</label>`).join("")}</div></td><td><div class="account-badges">${accountPermissionBadges(account.permissions || {})}</div></td></tr>`).join("")}</tbody></table></div>
+    <div class="account-summary"><article><small>Tổng tài khoản</small><b>${LEDOME_ACCOUNTS.length}</b><span>Theo nhân sự thật, không theo số vị trí kiêm nhiệm</span></article><article><small>Đang hoạt động</small><b>${activeCount}</b><span>Có thể đăng nhập</span></article><article><small>Cấp quyền</small><b>5</b><span>Admin, Lãnh đạo, Trưởng phòng, Nhân viên, Guest</span></article></div>
+    ${accountAccessCards()}
+    <div class="account-tools"><span>RBAC theo cấp: quyền chi tiết và phạm vi dữ liệu được chuẩn hóa theo chính sách quản trị.</span><button data-account="reset">Tạo lại mặc định</button></div>
+    <div class="account-table-wrap"><table class="account-table"><thead><tr><th>Nhân sự thật</th><th>ID đăng nhập</th><th>Đặt mật khẩu mới</th><th>Trạng thái</th><th>Cấp quyền</th><th>Phạm vi & quyền đang bật</th></tr></thead><tbody>${LEDOME_ACCOUNTS.map(accountRow).join("")}</tbody></table></div>
   </section>`;
   bindAccounts();
 }
 
 function bindAccounts() {
+  $("#app").onchange = (event) => {
+    if (event.target.matches("[data-account-level]")) updateAccountRowAccess(event.target.closest("tr"));
+  };
   $("#app").onclick = async (event) => {
     const action = event.target.closest("[data-account]")?.dataset.account;
     if (action === "save") {
       LEDOME_ACCOUNTS = [...document.querySelectorAll(".account-table tbody tr")].map((row) => {
         const previous = LEDOME_ACCOUNTS.find((account) => account.staffCode === row.dataset.staff);
-        const permissions = {};
-        row.querySelectorAll("[data-permission]").forEach((input) => { permissions[input.dataset.permission] = input.checked; });
+        const accessLevel = row.querySelector('[name="accessLevel"]').value;
         return {
           ...previous,
           loginId: row.querySelector('[name="loginId"]').value.trim(),
           newPassword: row.querySelector('[name="newPassword"]').value,
           active: row.querySelector('[name="active"]').checked,
-          permissions
+          accessLevel,
+          accessScope: ACCOUNT_ACCESS_BY_KEY[accessLevel].scope,
+          permissions: permissionsForAccountLevel(accessLevel)
         };
       });
       await saveAccounts();
@@ -1694,6 +2512,194 @@ function bindAccounts() {
     if (action === "reset" && confirm("Tạo lại toàn bộ tài khoản về ID mặc định và pass = 1?")) {
       await resetDefaultAccounts();
       return configAccounts();
+    }
+  };
+}
+
+function catalogConfigForType(type) {
+  return CATALOG_LIST_CONFIG[type] || TRANSACTION_FLOW_LIST_CONFIG[type];
+}
+
+function catalogValuesForType(type) {
+  const flowConfig = TRANSACTION_FLOW_LIST_CONFIG[type];
+  if (flowConfig) return catalogTransactionFlow[flowConfig.field] || [];
+  return catalogData[type] || [];
+}
+
+function setCatalogValuesForType(type, values) {
+  const flowConfig = TRANSACTION_FLOW_LIST_CONFIG[type];
+  if (flowConfig) catalogTransactionFlow[flowConfig.field] = values;
+  else catalogData[type] = values;
+}
+
+function catalogInputValueForType(type, value) {
+  const text = String(value || "").replace(/\s+/g, " ").trim();
+  return catalogConfigForType(type)?.preserveCase ? text : text.toLocaleUpperCase("vi");
+}
+
+function catalogEditorRows(type) {
+  const query = state.catalogQuery.toLocaleLowerCase("vi");
+  return catalogValuesForType(type).map((item, index) => ({ item, index }))
+    .filter(({ item }) => !query || item.toLocaleLowerCase("vi").includes(query));
+}
+
+function catalogChipMarkup(type, item, index) {
+  const config = catalogConfigForType(type);
+  const readOnly = config?.readOnly;
+  return `<label class="catalog-chip ${readOnly ? "readonly" : ""}" data-catalog-row="${index}"><span>${index + 1}</span><input value="${escapeHtml(item)}" data-catalog-input="${type}" data-index="${index}" ${readOnly ? "readonly" : ""}>${readOnly ? "" : `<button type="button" aria-label="Xóa ${escapeHtml(item)}" data-catalog-delete="${type}" data-index="${index}">×</button>`}</label>`;
+}
+
+function catalogEditorList(type) {
+  const config = CATALOG_LIST_CONFIG[type];
+  const rows = catalogEditorRows(type);
+  return `<section class="catalog-panel ${config.preserveCase ? "preserve-case" : ""}" data-catalog-panel="${type}">
+    <header><div><h3>${escapeHtml(config.title)}</h3><span>${catalogValuesForType(type).length} mục đang lưu</span></div></header>
+    <p>${escapeHtml(config.note)}</p>
+    <div class="catalog-add-row"><input data-catalog-new="${type}" placeholder="${escapeHtml(config.placeholder)}"><button data-catalog-add="${type}">Thêm</button></div>
+    <div class="catalog-list">${rows.map(({ item, index }) => catalogChipMarkup(type, item, index)).join("") || `<em>Không có hạng mục phù hợp.</em>`}</div>
+  </section>`;
+}
+
+function catalogFlowList(type) {
+  const config = TRANSACTION_FLOW_LIST_CONFIG[type];
+  const rows = catalogEditorRows(type);
+  const readOnly = config.readOnly;
+  return `<div class="catalog-flow-list ${config.preserveCase ? "preserve-case" : ""}" data-catalog-panel="${type}">
+    <header><strong>${escapeHtml(config.title)}</strong><span>${catalogValuesForType(type).length} mục</span></header>
+    ${readOnly ? "" : `<div class="catalog-add-row"><input data-catalog-new="${type}" placeholder="${escapeHtml(config.placeholder)}"><button data-catalog-add="${type}">Thêm</button></div>`}
+    <div class="catalog-list">${rows.map(({ item, index }) => catalogChipMarkup(type, item, index)).join("") || `<em>Không có mục phù hợp.</em>`}</div>
+  </div>`;
+}
+
+function catalogDependencyCard(title, items) {
+  return `<article class="catalog-dependency-card"><h4>${escapeHtml(title)}</h4>${items.map(([label, value]) => `<p><span>${escapeHtml(label)}</span><b>${escapeHtml(value)}</b></p>`).join("")}</article>`;
+}
+
+function catalogDependencyGrid() {
+  const data = catalogFinanceData || {};
+  const projectCount = financeProjectCodeOptions(data).length;
+  const contractorCount = financePartnerNames("contractors").length;
+  const supplierCount = financePartnerNames("suppliers").length;
+  const customerCount = financePartnerNames("customers").length;
+  return `<div class="catalog-dependency-grid">
+    ${catalogDependencyCard("Loại -> Nhóm", [
+      ["Chi", financeGroupOptionsForType("Chi").join(", ")],
+      ["Thu", financeGroupOptionsForType("Thu").join(", ")]
+    ])}
+    ${catalogDependencyCard("Nhóm Dự án", [
+      ["Chủ đề", `Danh sách dự án (${projectCount})`],
+      ["Hạng mục", "Danh sách hợp đồng + hạng mục thi công + thiết bị vật tư"],
+      ["Đối tượng Thu", `Danh sách CĐT (${customerCount})`],
+      ["Đối tượng Chi", `Nhà thầu (${contractorCount}) + Nhà cung cấp (${supplierCount})`]
+    ])}
+    ${catalogDependencyCard("Nhóm Vận hành Le Dome", [
+      ["Loại hợp lệ", "Chi"],
+      ["Chủ đề/Hạng mục/Đối tượng", "Danh sách vận hành tùy chỉnh"]
+    ])}
+    ${catalogDependencyCard("Nhóm Tài chính", [
+      ["Loại hợp lệ", "Thu, Chi"],
+      ["Chủ đề/Hạng mục/Đối tượng", "Danh sách tài chính tùy chỉnh"]
+    ])}
+  </div>`;
+}
+
+function catalogFlowPanel() {
+  const total = TRANSACTION_FLOW_LIST_TYPES.reduce((sum, type) => sum + catalogValuesForType(type).length, 0);
+  return `<section class="catalog-panel catalog-flow-panel">
+    <header><div><h3>Phân luồng giao dịch</h3><span>${total} mục đang lưu</span></div></header>
+    <p>Dùng cho bộ lọc và form giao dịch tài chính theo cấu trúc phụ thuộc Loại -> Nhóm -> Chủ đề -> Hạng mục -> Đối tượng.</p>
+    ${catalogDependencyGrid()}
+    <div class="catalog-flow-grid">${TRANSACTION_FLOW_LIST_TYPES.map(catalogFlowList).join("")}</div>
+  </section>`;
+}
+
+async function configCatalog(reload = true) {
+  if (reload) {
+    await loadCatalogData();
+    await Promise.all(["customers", "contractors", "suppliers"].map(loadPartnerRows));
+    catalogFinanceData = await loadFinanceData();
+    catalogTransactionFlow = financeTransactionFlowOptions(catalogFinanceData);
+  }
+  setTitle("catalog", "Quản lý danh sách dùng chung cho các module");
+  $("#app").innerHTML = `<section class="catalog-page">
+    <header class="catalog-head"><div><h2>▰ Cơ sở dữ liệu</h2><p>Nguồn dữ liệu chuẩn cho Hợp đồng, Nhà thầu, Nhà cung cấp và các màn dự án.</p></div><button class="btn" data-catalog-save>Lưu cơ sở dữ liệu</button></header>
+    <div class="catalog-tools"><input data-catalog-search value="${escapeHtml(state.catalogQuery)}" placeholder="⌕ Tìm danh mục"><button data-catalog-reset>Khôi phục mặc định</button></div>
+    <div class="catalog-grid">${catalogEditorList("constructionCategories")}${catalogEditorList("materialCategories")}${catalogEditorList("contractTypes")}</div>
+    ${catalogFlowPanel()}
+  </section>`;
+  bindCatalog();
+}
+
+function collectCatalogPanel(type) {
+  const config = catalogConfigForType(type);
+  if (config?.readOnly) return catalogValuesForType(type);
+  const fallback = CATALOG_FALLBACK[type] || [];
+  const values = [...catalogValuesForType(type)];
+  document.querySelectorAll(`[data-catalog-input="${type}"]`).forEach((input) => {
+    values[Number(input.dataset.index)] = input.value;
+  });
+  return catalogList(values.map((value) => catalogInputValueForType(type, value)), fallback);
+}
+
+function refreshCatalogFromDom() {
+  [...Object.keys(CATALOG_LIST_CONFIG), ...TRANSACTION_FLOW_LIST_TYPES].forEach((type) => {
+    setCatalogValuesForType(type, collectCatalogPanel(type));
+  });
+}
+
+function bindCatalog() {
+  $("#app").onclick = async (event) => {
+    const addType = event.target.closest("[data-catalog-add]")?.dataset.catalogAdd;
+    if (addType) {
+      refreshCatalogFromDom();
+      const input = event.target.closest("[data-catalog-panel]")?.querySelector(`[data-catalog-new="${addType}"]`);
+      const value = catalogInputValueForType(addType, input?.value || "");
+      if (!value) {
+        input?.focus();
+        return;
+      }
+      setCatalogValuesForType(addType, [...catalogValuesForType(addType), value]);
+      return configCatalog(false);
+    }
+    const deleteButton = event.target.closest("[data-catalog-delete]");
+    if (deleteButton) {
+      refreshCatalogFromDom();
+      const type = deleteButton.dataset.catalogDelete;
+      const index = Number(deleteButton.dataset.index);
+      const values = [...catalogValuesForType(type)];
+      values.splice(index, 1);
+      setCatalogValuesForType(type, values);
+      return configCatalog(false);
+    }
+    if (event.target.closest("[data-catalog-reset]") && confirm("Khôi phục cơ sở dữ liệu mặc định?")) {
+      catalogData = normalizeCatalogData(CATALOG_FALLBACK);
+      catalogTransactionFlow = emptyFinanceTransactionFlow();
+      catalogFinanceData = catalogFinanceData || await loadFinanceData();
+      catalogFinanceData.options = { ...(catalogFinanceData.options || {}), transactionFlow: catalogTransactionFlow };
+      await saveCatalogData(catalogData);
+      await saveFinanceData(catalogFinanceData);
+      return configCatalog();
+    }
+    if (event.target.closest("[data-catalog-save]")) {
+      refreshCatalogFromDom();
+      catalogFinanceData = catalogFinanceData || await loadFinanceData();
+      catalogFinanceData.options = { ...(catalogFinanceData.options || {}), transactionFlow: catalogTransactionFlow };
+      await saveCatalogData(catalogData);
+      await saveFinanceData(catalogFinanceData);
+      return configCatalog();
+    }
+  };
+  $("#app").oninput = (event) => {
+    if (event.target.matches("[data-catalog-search]")) {
+      state.catalogQuery = event.target.value;
+      return configCatalog(false);
+    }
+    if (event.target.matches("[data-catalog-input]")) {
+      const type = event.target.dataset.catalogInput;
+      const index = Number(event.target.dataset.index);
+      const values = [...catalogValuesForType(type)];
+      values[index] = event.target.value;
+      setCatalogValuesForType(type, values);
     }
   };
 }
@@ -1879,7 +2885,6 @@ async function refreshProjectNav() {
   try {
     const { data } = await api("/projects");
     projectNavItems = activeProjectsOnly(data)
-      .filter((project) => project.status === "Đang thực hiện")
       .map((project) => ["▰  " + project.name, `project/${project.id}`]);
   } catch (error) {
     projectNavItems = PROJECT_NAV_FALLBACK;
@@ -1925,6 +2930,7 @@ async function route() {
     if (state.page === "hrm-staff") return hrmStaff();
     if (state.page === "hrm-attendance") return hrmAttendance();
     if (state.page === "hrm-payroll") return hrmPayroll();
+    if (state.page === "catalog") return configCatalog();
     if (state.page === "accounts") return configAccounts();
     return placeholder(state.page);
   } catch (error) {
