@@ -32,6 +32,7 @@ const accountsFile = dataPath("runtime-accounts.json");
 const diaryReportsFile = dataPath("runtime-diary-reports.json");
 const partnersFile = dataPath("runtime-partners.json");
 const catalogFile = dataPath("runtime-catalog.json");
+const materialsFile = dataPath("runtime-materials.json");
 const financeFile = dataPath("runtime-finance.json");
 const personalFinanceFile = dataPath("runtime-personal-finance.json");
 const driveFile = dataPath("runtime-drive.json");
@@ -71,20 +72,10 @@ const dossierConfigs = {
   }
 };
 
-const attendanceSites = [
-  { id: "green-city", name: "Green City - Cổng A", latitude: 21.028511, longitude: 105.804817, radiusMeters: 250 },
-  { id: "ledome-office", name: "Văn phòng Le Dome", latitude: 21.022739, longitude: 105.819454, radiusMeters: 180 },
-  { id: "riverside-me", name: "Riverside - Khu M&E", latitude: 21.037376, longitude: 105.788135, radiusMeters: 220 }
+const attendanceFixedSites = [
+  { id: "ledome", name: "VP Le Dome", latitude: 21.022739, longitude: 105.819454, radiusMeters: 180, fixed: true },
+  { id: "other", name: "Khác", radiusMeters: 0, fixed: true, requiresReview: true }
 ];
-const attendanceEmployees = [
-  { id: "NV001", name: "Nguyễn Minh Anh" },
-  { id: "NV002", name: "Trần Thanh Hà" },
-  { id: "NV003", name: "Lê Hoàng Nam" },
-  { id: "NV004", name: "Phạm Thu Trang" },
-  { id: "NV005", name: "Vũ Quốc Bảo" },
-  { id: "NV006", name: "Đỗ Mạnh Hùng" }
-];
-
 const mime = {
   ".css": "text/css; charset=utf-8",
   ".html": "text/html; charset=utf-8",
@@ -227,9 +218,9 @@ const orgStaffSeed = [
   ["NS005","Bùi Vũ Kiên","Kiến trúc sư","Phòng thiết kế"],
   ["NS006","DINH Công Hoàng","Trưởng phòng thi công","Phòng thi công"],
   ["NS007","Hồ Quang Chiến","Giám sát thi công","Phòng thi công"],
-  ["NS008","Hoàng Thu Mai","Hành chính","Khối văn phòng"],
-  ["NS009","Trần Văn Đức","Kế toán","Khối văn phòng"],
-  ["NS010","Nguyễn Tuấn Anh","Nhân sự","Khối văn phòng"],
+  ["NS008","X","Hành chính","Khối văn phòng"],
+  ["NS009","Y","Kế toán","Khối văn phòng"],
+  ["NS010","Z","Nhân sự","Khối văn phòng"],
   ["NS011","Nguyễn Hà Vân","Marketing & Sale","Khối kinh doanh"]
 ];
 
@@ -259,6 +250,9 @@ const ACCOUNT_PERMISSION_KEYS = [
   "partners.view",
   "partners.edit",
   "partners.delete",
+  "materials.view",
+  "materials.edit",
+  "materials.delete",
   "hrm.view",
   "hrm.edit",
   "hrm.approve",
@@ -288,13 +282,13 @@ const ACCOUNT_ACCESS_LEVELS = {
     rank: 3,
     label: "Trưởng phòng",
     scope: "Theo phòng ban / dự án phụ trách",
-    permissions: ["projects.view", "projects.edit", "projects.upload", "projects.download", "partners.view", "partners.edit", "hrm.view"]
+    permissions: ["projects.view", "projects.edit", "projects.upload", "projects.download", "partners.view", "partners.edit", "materials.view", "materials.edit", "hrm.view"]
   },
   staff: {
     rank: 4,
     label: "Nhân viên",
     scope: "Theo công việc được giao",
-    permissions: ["projects.view", "projects.edit", "projects.upload", "projects.download", "partners.view"]
+    permissions: ["projects.view", "projects.edit", "projects.upload", "projects.download", "partners.view", "materials.view", "materials.edit"]
   },
   guest: {
     rank: 5,
@@ -307,10 +301,12 @@ const ACCOUNT_ACCESS_LEVELS = {
 const LEGACY_MODULE_ACTIONS = {
   projects: ["view", "edit", "upload", "download"],
   partners: ["view", "edit"],
+  materials: ["view", "edit", "delete"],
   hrm: ["view", "edit", "approve"],
   finance: ["view", "edit", "delete"],
   personalFinance: ["view", "edit"]
 };
+const LEGACY_PERMISSION_KEYS = [...Object.keys(LEGACY_MODULE_ACTIONS), "config", "private"];
 
 function knownAccessLevel(level) {
   return Object.hasOwn(ACCOUNT_ACCESS_LEVELS, String(level || ""));
@@ -341,7 +337,7 @@ function inferAccessLevel(account = {}) {
 function hasPermission(account, permission) {
   if (!permission) return true;
   const permissions = account?.permissions || {};
-  if (permissions[permission]) return true;
+  if (Object.hasOwn(permissions, permission)) return Boolean(permissions[permission]);
   const [module] = permission.split(".");
   return Boolean(permissions[module]);
 }
@@ -360,6 +356,7 @@ function expandPermissions(permissions = {}) {
   }
   next.projects = ["view", "edit", "upload", "download", "delete"].some((action) => next[`projects.${action}`]);
   next.partners = ["view", "edit", "delete"].some((action) => next[`partners.${action}`]);
+  next.materials = ["view", "edit", "delete"].some((action) => next[`materials.${action}`]);
   next.hrm = ["view", "edit", "approve"].some((action) => next[`hrm.${action}`]);
   next.finance = ["view", "edit", "delete"].some((action) => next[`finance.${action}`]);
   next.config = Boolean(next["config.accounts"]);
@@ -376,12 +373,24 @@ function permissionsForAccessLevel(accessLevel) {
   return expandPermissions(permissions);
 }
 
+function hasExplicitPermissions(permissions = {}) {
+  const source = permissions && typeof permissions === "object" ? permissions : {};
+  return ACCOUNT_PERMISSION_KEYS.some((key) => Object.hasOwn(source, key)) ||
+    LEGACY_PERMISSION_KEYS.some((key) => Object.hasOwn(source, key));
+}
+
+function permissionsForAccount(account, accessLevel) {
+  return hasExplicitPermissions(account.permissions)
+    ? expandPermissions(account.permissions)
+    : permissionsForAccessLevel(accessLevel);
+}
+
 function normalizeAccountAccess(account = {}) {
   const accessLevel = knownAccessLevel(account.accessLevel) ? account.accessLevel : inferAccessLevel(account);
   return {
     accessLevel,
     accessScope: ACCOUNT_ACCESS_LEVELS[accessLevel].scope,
-    permissions: permissionsForAccessLevel(accessLevel)
+    permissions: permissionsForAccount(account, accessLevel)
   };
 }
 
@@ -623,6 +632,34 @@ function deleteProject(id) {
 
 function activeProjectList(list) {
   return list.filter((project) => String(project.projectStage || "").trim() !== "final-settlement");
+}
+
+function attendanceSiteId(project) {
+  const raw = String(project.id || project.code || project.name || "").trim();
+  const normalized = raw.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/đ/g, "d").replace(/Đ/g, "D").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+  return `project-${normalized || crypto.createHash("sha1").update(raw || project.name || "project").digest("hex").slice(0, 8)}`;
+}
+
+function attendanceProjectSite(project) {
+  const latitude = Number(project.latitude ?? project.lat ?? project.gpsLatitude);
+  const longitude = Number(project.longitude ?? project.lng ?? project.gpsLongitude);
+  const radiusMeters = positiveNumber(project.radiusMeters ?? project.attendanceRadiusMeters, 250);
+  return {
+    id: attendanceSiteId(project),
+    projectId: project.id,
+    name: String(project.name || project.code || "Dự án").trim(),
+    radiusMeters,
+    ...(Number.isFinite(latitude) && Number.isFinite(longitude) ? { latitude, longitude } : {})
+  };
+}
+
+function attendanceSiteOptions() {
+  const projectSites = activeProjectList(projects).map(attendanceProjectSite);
+  return [...projectSites, attendanceFixedSites[0], attendanceFixedSites[1]];
+}
+
+function attendanceSiteHasGeofence(site) {
+  return Boolean(site && Number.isFinite(Number(site.latitude)) && Number.isFinite(Number(site.longitude)) && Number(site.radiusMeters) > 0);
 }
 
 function loadAttendanceRecords() {
@@ -1170,6 +1207,7 @@ function saveDebtData(type, projectId, data) {
 }
 
 const catalogSeed = {
+  projectList: [],
   constructionCategories: [
     "KHẢO SÁT - ĐO ĐẠC",
     "CHE PHỦ",
@@ -1223,8 +1261,21 @@ function catalogList(input, fallback) {
   return [...new Set(source.map((item) => String(item || "").trim()).filter(Boolean))];
 }
 
+function financeProjectCodeDefaults() {
+  const finance = readJsonFile(financeFile, financeSeed);
+  const projectRows = Array.isArray(finance.projects) ? finance.projects : [];
+  const projectTransactions = (Array.isArray(finance.transactions) ? finance.transactions : [])
+    .filter((row) => row?.[2] === "DỰ ÁN")
+    .map((row) => row?.[3]);
+  const financeCodes = catalogList([...projectRows.map((row) => row?.[0]), ...projectTransactions], catalogSeed.projectList);
+  if (financeCodes.length) return financeCodes;
+  return catalogList(activeProjectList(projects).map((project) => project.code || project.name), catalogSeed.projectList);
+}
+
 function normalizeCatalog(input = {}) {
+  const projectDefaults = financeProjectCodeDefaults();
   return {
+    projectList: catalogList(Array.isArray(input.projectList) && input.projectList.length ? input.projectList : null, projectDefaults),
     constructionCategories: catalogList(input.constructionCategories, catalogSeed.constructionCategories),
     materialCategories: catalogList(input.materialCategories, catalogSeed.materialCategories),
     contractTypes: catalogList(input.contractTypes, catalogSeed.contractTypes)
@@ -1288,6 +1339,41 @@ const personalFinanceSeed = {
 
 function readPartners() { return readJsonFile(partnersFile, partnersSeed); }
 function writePartners(data) { writeJsonAtomic(partnersFile, data); }
+const materialsSeed = [
+  { id: "VT001", date: "2026-05-14", item: "Khóa từ", category: "THIẾT BỊ", supplier: "NCC HOMEKIT", quantity: 1, unit: "bộ", locationType: "Kho dự án", location: "6ATS", project: "6ATS", status: "Đã nhận", note: "Nhận từ NCC, chờ lắp đặt" },
+  { id: "VT002", date: "2026-05-15", item: "Ổ cắm 3 mặt", category: "THIẾT BỊ Ổ CẮM CÔNG TẮC", supplier: "NCC QUANG PANA", quantity: 7, unit: "cái", locationType: "Kho dự án", location: "6ATS", project: "6ATS", status: "Đã nhận", note: "Phát sinh theo công trường" },
+  { id: "VT003", date: "2026-05-18", item: "Bơm tăng áp vệ sinh", category: "THIẾT BỊ ĐIỆN", supplier: "KHÁC", quantity: 1, unit: "cái", locationType: "Kho VP", location: "Văn phòng Le Dome", project: "", status: "Lưu kho", note: "Chờ điều chuyển" },
+  { id: "VT004", date: "2026-05-25", item: "Khay inox", category: "KIM LOẠI", supplier: "KHÁC", quantity: 1, unit: "bộ", locationType: "Kho dự án", location: "6ATS", project: "6ATS", status: "Đã xuất dùng", note: "Mua vật tư bổ sung" }
+];
+
+function normalizeMaterialRow(row = {}, index = 0) {
+  const source = Array.isArray(row)
+    ? { id: row[0], date: row[1], item: row[2], category: row[3], supplier: row[4], quantity: row[5], unit: row[6], locationType: row[7], location: row[8], project: row[9], status: row[10], note: row[11] }
+    : row;
+  return {
+    id: String(source.id || `VT${String(index + 1).padStart(3, "0")}`).trim(),
+    date: String(source.date || "").trim(),
+    item: String(source.item || "").trim(),
+    category: String(source.category || "").trim(),
+    supplier: String(source.supplier || "").trim(),
+    quantity: Number(source.quantity || 0),
+    unit: String(source.unit || "").trim(),
+    locationType: source.locationType === "Kho dự án" ? "Kho dự án" : "Kho VP",
+    location: String(source.location || "").trim(),
+    project: String(source.project || "").trim(),
+    status: ["Đã nhận", "Lưu kho", "Đã xuất dùng", "Cần kiểm tra"].includes(source.status) ? source.status : "Đã nhận",
+    note: String(source.note || "").trim()
+  };
+}
+
+function readMaterials() {
+  return readJsonFile(materialsFile, materialsSeed).map(normalizeMaterialRow).filter((row) => row.item);
+}
+
+function writeMaterials(rows) {
+  writeJsonAtomic(materialsFile, (Array.isArray(rows) ? rows : []).map(normalizeMaterialRow).filter((row) => row.item));
+}
+
 function readFinance() { return readJsonFile(financeFile, financeSeed); }
 function writeFinance(data) { writeJsonAtomic(financeFile, data); }
 function readPersonalFinance() { return readJsonFile(personalFinanceFile, personalFinanceSeed); }
@@ -1300,6 +1386,17 @@ function readDrive() {
 function writeDrive(data) { writeJsonAtomic(driveFile, pruneExpiredDriveRows(data)); }
 function readOrgStaff() { return readJsonFile(orgStaffFile, orgStaffSeed); }
 function writeOrgStaff(data) { writeJsonAtomic(orgStaffFile, data); }
+function attendanceEmployeeOptions() {
+  const people = new Map();
+  readOrgStaff().forEach((staff) => {
+    const id = String(staff[0] || "").trim();
+    const name = String(staff[1] || "").trim();
+    if (!id || !name) return;
+    const key = personKey(name) || id;
+    if (!people.has(key)) people.set(key, { id, name });
+  });
+  return [...people.values()];
+}
 function readDiaryReports() { return readJsonFile(diaryReportsFile, {}); }
 function writeDiaryReports(data) { writeJsonAtomic(diaryReportsFile, data); }
 
@@ -1417,6 +1514,22 @@ function api(req, res, pathname) {
         data[partnerMatch[1]] = Array.isArray(input.rows) ? input.rows : [];
         writePartners(data);
         return json(res, 200, { data: data[partnerMatch[1]] });
+      });
+    }
+  }
+  if (pathname === "/api/v1/materials") {
+    if (req.method === "GET") {
+      if (!requireAccount(req, res, "materials.view")) return;
+      const data = readMaterials();
+      return json(res, 200, { data, total: data.length });
+    }
+    if (req.method === "PATCH") {
+      if (!requireAccount(req, res, "materials.edit")) return;
+      return readJson(req, (error, input) => {
+        if (error) return json(res, 400, { error: error.message });
+        const data = Array.isArray(input.rows) ? input.rows.map(normalizeMaterialRow).filter((row) => row.item) : [];
+        writeMaterials(data);
+        return json(res, 200, { data, total: data.length });
       });
     }
   }
@@ -1561,7 +1674,7 @@ function api(req, res, pathname) {
   if (pathname === "/api/v1/insight") return json(res, 200, insight);
   if (pathname === "/api/v1/attendance/config" && req.method === "GET") {
     if (!requireAccount(req, res)) return;
-    return json(res, 200, { sites: attendanceSites, employees: attendanceEmployees });
+    return json(res, 200, { sites: attendanceSiteOptions(), employees: attendanceEmployeeOptions() });
   }
   if (pathname === "/api/v1/attendance/records" && req.method === "GET") {
     const account = requireAccount(req, res);
@@ -1574,20 +1687,21 @@ function api(req, res, pathname) {
     if (!account) return;
     readJson(req, (error, input) => {
       if (error) return json(res, 400, { error: error.message });
-      const employee = attendanceEmployees.find((item) => item.id === input.employeeId);
-      const site = attendanceSites.find((item) => item.id === input.siteId);
+      const employee = attendanceEmployeeOptions().find((item) => item.id === input.employeeId);
+      const site = attendanceSiteOptions().find((item) => item.id === input.siteId);
       const latitude = Number(input.latitude);
       const longitude = Number(input.longitude);
       const accuracy = Number(input.accuracy);
       const type = input.type === "check-out" ? "check-out" : "check-in";
       if (account.employeeId && account.employeeId !== input.employeeId && !hasPermission(account, "hrm.approve")) return json(res, 403, { error: "Không có quyền chấm công cho nhân sự khác" });
       if (!employee) return json(res, 400, { error: "Nhân sự không hợp lệ" });
-      if (!site) return json(res, 400, { error: "Công trình không hợp lệ" });
+      if (!site) return json(res, 400, { error: "Vị trí không hợp lệ" });
       if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return json(res, 400, { error: "Thiếu tọa độ GPS" });
       if (!Number.isFinite(accuracy) || accuracy > 150) return json(res, 400, { error: "GPS chưa đủ chính xác. Hãy bật định vị chính xác và thử lại." });
-      if (!input.hasFacePhoto) return json(res, 400, { error: "Hãy chụp ảnh xác thực tại công trình." });
-      const distance = distanceMeters({ latitude, longitude }, site);
-      const insideGeofence = distance <= site.radiusMeters;
+      if (!input.hasFacePhoto) return json(res, 400, { error: "Hãy chụp ảnh xác thực tại vị trí." });
+      const hasGeofence = attendanceSiteHasGeofence(site);
+      const distance = hasGeofence ? distanceMeters({ latitude, longitude }, site) : null;
+      const insideGeofence = hasGeofence ? distance <= site.radiusMeters : false;
       const record = {
         id: `cc-${Date.now()}`,
         employeeId: employee.id,
@@ -1634,15 +1748,24 @@ function api(req, res, pathname) {
           id,
           code: String(input.code || `DA-${projects.length + 1}`).trim(),
           name: String(input.name).trim(),
-          type: String(input.type || "Xây dựng"),
-          group: String(input.group || "Thi công"),
-          manager: String(input.manager || "Chưa phân công"),
+          type: String(input.type || "Nội thất").trim(),
+          buildingType: String(input.buildingType || "Căn hộ").trim(),
+          group: String(input.group || "Thi công").trim(),
+          owner: String(input.owner || "").trim(),
+          location: String(input.location || "").trim(),
+          manager: String(input.manager || "").trim(),
+          commander: String(input.commander || "").trim(),
+          qs: String(input.qs || "").trim(),
+          accountant: String(input.accountant || "").trim(),
           progress: 0,
-          status: String(input.status || "Kế hoạch"),
-          health: "Bình thường",
+          status: String(input.status || "Kế hoạch").trim(),
+          health: String(input.health || "Bình thường").trim(),
+          startDate: String(input.startDate || "").trim(),
+          endDate: String(input.endDate || "").trim(),
+          duration: String(input.duration || "").trim(),
           budget: 0,
           spent: 0,
-          description: String(input.description || "Dự án mới khởi tạo")
+          description: String(input.description || "Dự án mới khởi tạo").trim()
         };
         addProject(project);
         runtimeProjects.unshift(project);
@@ -2245,7 +2368,7 @@ function staticFile(req, res, pathname) {
       .pipe(res);
   }
   if (requested === "/constructions/detail/index.html") {
-    const html = fs.readFileSync(filename, "utf8").replace(/\/construction\.js(?:\?v=\d+)?/g, "/construction.js?v=165");
+    const html = fs.readFileSync(filename, "utf8").replace(/\/construction\.js(?:\?v=\d+)?/g, "/construction.js?v=175");
     res.writeHead(200, { "content-type": mime[".html"], "cache-control": "no-cache" });
     return res.end(html);
   }

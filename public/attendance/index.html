@@ -4,25 +4,24 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="theme-color" content="#087f78">
-    <title>LE DOME - Chấm công công trình</title>
-    <link rel="stylesheet" href="/attendance/mobile.css">
+    <title>LE DOME - Chấm công vị trí</title>
+    <link rel="stylesheet" href="/attendance/mobile.css?v=2">
   </head>
   <body>
     <main>
       <header class="mobile-head">
-        <span class="brand-mark">LD</span>
-        <div><b>LE DOME</b><small>Chấm công công trình</small></div>
+        <img class="mobile-logo" src="/assets/ledome-logo-light.png" alt="LE DOME">
+        <small>Chấm công vị trí</small>
       </header>
       <section class="attendance-card">
         <div class="clock"><b id="clock">--:--</b><span id="today"></span></div>
         <label>Nhân sự<select id="employee"></select></label>
-        <label>Công trình<select id="site"></select></label>
+        <label>Vị trí<select id="site"></select></label>
         <section class="gps-panel">
-          <div><b>⌖ Vị trí GPS</b><span id="gps-status">Chưa lấy vị trí</span></div>
-          <button id="locate">Lấy vị trí</button>
+          <div><b>⌖ Vị trí GPS</b><span id="gps-status">Đang tự động định vị...</span></div>
           <p id="gps-detail"></p>
         </section>
-        <label class="photo-field">Ảnh xác thực tại công trình
+        <label class="photo-field">Ảnh xác thực tại vị trí
           <input id="photo" type="file" accept="image/*" capture="user">
           <span id="photo-label">＋ Chụp ảnh bằng camera trước</span>
         </label>
@@ -38,6 +37,6 @@
         <div id="history"></div>
       </section>
     </main>
-    <script src="/attendance/mobile.js"></script>
+    <script src="/attendance/mobile.js?v=4"></script>
   </body>
 </html>

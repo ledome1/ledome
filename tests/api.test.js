@@ -118,6 +118,9 @@ test("protected APIs require login", async () => {
   const dashboard = await fetch(`${origin}/api/v1/dashboard/projects`);
   assert.equal(dashboard.status, 401);
 
+  const materials = await fetch(`${origin}/api/v1/materials`);
+  assert.equal(materials.status, 401);
+
   const navigation = await fetch(`${origin}/api/v1/navigation`);
   assert.equal(navigation.status, 401);
 
@@ -183,6 +186,63 @@ test("account access levels apply the config boundary", async () => {
   await login();
 });
 
+test("accounts API persists custom permission toggles", async () => {
+  const accounts = await authed(`${origin}/api/v1/accounts`).then((res) => res.json());
+  const original = structuredClone(accounts.data);
+  const leader = accounts.data.find((account) => account.loginId.toLowerCase() === "dungbui");
+  const updatedAccounts = accounts.data.map((account) => account.staffCode === leader.staffCode
+    ? { ...account, permissions: { ...account.permissions, "projects.delete": false } }
+    : account);
+
+  const saved = await authed(`${origin}/api/v1/accounts`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ accounts: updatedAccounts })
+  });
+  assert.equal(saved.status, 200);
+
+  try {
+    const current = await authed(`${origin}/api/v1/accounts`).then((res) => res.json());
+    const customLeader = current.data.find((account) => account.staffCode === leader.staffCode);
+    assert.equal(customLeader.permissions["projects.delete"], false);
+    assert.equal(customLeader.permissions.projects, true);
+
+    const { response } = await login(leader.loginId, "1");
+    assert.equal(response.status, 200);
+    const deniedDelete = await authed(`${origin}/api/v1/projects/not-real`, { method: "DELETE" });
+    assert.equal(deniedDelete.status, 403);
+  } finally {
+    await login();
+    await authed(`${origin}/api/v1/accounts`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ accounts: original })
+    });
+    await login();
+  }
+});
+
+test("catalog API includes and persists project list", async () => {
+  const catalog = await authed(`${origin}/api/v1/catalog`).then((res) => res.json());
+  assert.ok(Array.isArray(catalog.data.projectList));
+  assert.ok(catalog.data.projectList.length > 0);
+
+  const marker = `TEST-${Date.now()}`;
+  const data = { ...catalog.data, projectList: [marker, ...catalog.data.projectList] };
+  const saved = await authed(`${origin}/api/v1/catalog`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ data })
+  }).then((res) => res.json());
+  assert.equal(saved.data.projectList[0], marker);
+
+  await authed(`${origin}/api/v1/catalog`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ data: catalog.data })
+  });
+});
+
 test("server-side business stores persist through API", async () => {
   const partners = await authed(`${origin}/api/v1/partners/customers`).then((res) => res.json());
   const marker = `KH${Date.now()}`;
@@ -202,6 +262,16 @@ test("server-side business stores persist through API", async () => {
     body: JSON.stringify({ data: finance.data })
   }).then((res) => res.json());
   assert.equal(savedFinance.data.transactions[0][7], 123);
+
+  const materials = await authed(`${origin}/api/v1/materials`).then((res) => res.json());
+  const materialMarker = `VT${Date.now()}`;
+  const materialRows = [{ id: materialMarker, date: "2026-06-06", item: "Vat tu test", category: "THIET BI", supplier: "NCC test", quantity: 2, unit: "cai", locationType: "Kho VP", location: "VP", project: "", status: "Đã nhận", note: "Test" }, ...materials.data];
+  const savedMaterials = await authed(`${origin}/api/v1/materials`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ rows: materialRows })
+  }).then((res) => res.json());
+  assert.equal(savedMaterials.data[0].id, materialMarker);
 
   const drive = await authed(`${origin}/api/v1/drive`).then((res) => res.json());
   drive.data.unshift(["DRV999", "File test.pdf", "PDF", "Công ty", "Test", "HoangDinh", "2026-06-04", 1, "Toàn công ty", ""]);
@@ -263,20 +333,23 @@ test("backup endpoint creates a backup record", async () => {
 
 test("attendance GPS check-in validates site distance and supports approval", async () => {
   const config = await authed(`${origin}/api/v1/attendance/config`).then((res) => res.json());
-  assert.equal(config.sites.length, 3);
-  assert.equal(config.employees[0].id, "NV001");
+  assert.ok(config.sites.some((site) => site.name === "VP Le Dome"));
+  assert.ok(config.sites.some((site) => site.name === "Khác"));
+  assert.ok(config.sites.some((site) => site.projectId === "p1"));
+  assert.equal(config.employees[0].id, "NS001");
+  const ledome = config.sites.find((site) => site.id === "ledome");
 
   const weakGps = await authed(`${origin}/api/v1/attendance/check`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ employeeId: "NV001", siteId: "green-city", latitude: 21.028511, longitude: 105.804817, accuracy: 300, hasFacePhoto: true })
+    body: JSON.stringify({ employeeId: "NS001", siteId: ledome.id, latitude: ledome.latitude, longitude: ledome.longitude, accuracy: 300, hasFacePhoto: true })
   });
   assert.equal(weakGps.status, 400);
 
   const valid = await authed(`${origin}/api/v1/attendance/check`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ employeeId: "NV001", siteId: "green-city", latitude: 21.028511, longitude: 105.804817, accuracy: 12, hasFacePhoto: true })
+    body: JSON.stringify({ employeeId: "NS001", siteId: ledome.id, latitude: ledome.latitude, longitude: ledome.longitude, accuracy: 12, hasFacePhoto: true })
   }).then((res) => res.json());
   assert.equal(valid.status, "Hợp lệ");
   assert.equal(valid.distanceMeters, 0);
@@ -284,7 +357,7 @@ test("attendance GPS check-in validates site distance and supports approval", as
   const outside = await authed(`${origin}/api/v1/attendance/check`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ employeeId: "NV002", siteId: "green-city", latitude: 21.038511, longitude: 105.804817, accuracy: 15, hasFacePhoto: true })
+    body: JSON.stringify({ employeeId: "NS002", siteId: ledome.id, latitude: ledome.latitude + 0.01, longitude: ledome.longitude, accuracy: 15, hasFacePhoto: true })
   }).then((res) => res.json());
   assert.equal(outside.status, "Cần duyệt");
 
@@ -317,13 +390,40 @@ test("unknown project returns 404", async () => {
 
 test("created, updated and deleted projects stay in sync across project APIs", async () => {
   const name = `Dự án mới ${Date.now()}`;
+  const createInput = {
+    name,
+    code: "DA-NEW",
+    owner: "CDT Test",
+    location: "Ha Noi",
+    type: "Noi that",
+    buildingType: "Can ho",
+    group: "Thi cong",
+    status: "Ke hoach",
+    health: "Binh thuong",
+    manager: "DINH Cong Hoang",
+    commander: "Ho Quang Chien",
+    qs: "Nguyen Hoang Hai",
+    accountant: "Y",
+    startDate: "01/07/2026",
+    endDate: "30/07/2026",
+    duration: "30 ngay"
+  };
   const response = await authed(`${origin}/api/v1/projects`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ name, code: "DA-NEW", status: "Kế hoạch" })
+    body: JSON.stringify(createInput)
   });
   assert.equal(response.status, 201);
   const project = await response.json();
+  assert.equal(project.owner, createInput.owner);
+  assert.equal(project.location, createInput.location);
+  assert.equal(project.buildingType, createInput.buildingType);
+  assert.equal(project.commander, createInput.commander);
+  assert.equal(project.qs, createInput.qs);
+  assert.equal(project.accountant, createInput.accountant);
+  assert.equal(project.startDate, createInput.startDate);
+  assert.equal(project.endDate, createInput.endDate);
+  assert.equal(project.duration, createInput.duration);
 
   const patch = await authed(`${origin}/api/v1/projects/${project.id}`, {
     method: "PATCH",

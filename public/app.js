@@ -2,21 +2,23 @@
 const money = (value) => new Intl.NumberFormat("vi-VN").format(value);
 const moneyInput = (value) => Number(value || 0).toLocaleString("vi-VN");
 const parseMoneyInput = (value) => Number(String(value || "").replace(/[^\d]/g, "")) || 0;
-const state = { page: location.hash.slice(1) || "projects", nav: [], account: null, customerId: "", customerQuery: "", customerFilter: "Tất cả", crmQuery: "", crmStatus: "Tất cả", crmSupplierCategory: "Tất cả", catalogType: "constructionCategories", catalogQuery: "", driveQuery: "", driveUploadMessage: "", financeQuery: "", financeKind: "Tất cả", financeFilterOpen: "", financeFilters: { type: [], group: [], topic: [], category: [], partner: [] }, personalQuery: "", personalKind: "Tất cả", navCollapsed: {} };
+const state = { page: location.hash.slice(1) || "projects", nav: [], account: null, customerId: "", customerQuery: "", customerFilter: "Tất cả", crmQuery: "", crmStatus: "Tất cả", crmSupplierCategory: "Tất cả", crmContractorCategory: "Tất cả", catalogType: "constructionCategories", catalogQuery: "", catalogCollapsed: {}, materialsQuery: "", materialsLocation: "Tất cả", materialsStatus: "Tất cả", standardsQuery: "", standardsCategory: "Tất cả", driveQuery: "", driveUploadMessage: "", financeQuery: "", financeKind: "Tất cả", financeFilterOpen: "", financeFilters: { type: [], group: [], topic: [], category: [], partner: [] }, personalQuery: "", personalKind: "Tất cả", navCollapsed: {} };
 const AUTH_STORAGE = "ledome.auth.v1";
 const LOGIN_REMEMBER_STORAGE = "ledome.login.remember.v1";
 const NAV_COLLAPSE_STORAGE = "ledome.navCollapsed.v1";
+const SIDEBAR_VISIBILITY_STORAGE = "ledome.sidebarHidden.v1";
+const CATALOG_COLLAPSE_STORAGE = "ledome.catalogCollapsed.v1";
 const FINANCE_STORAGE = "ledome.finance.v1";
 const PERSONAL_FINANCE_STORAGE = "ledome.personalFinance.v1";
 const MODULE_PERMISSION = {
   projects: "projects", "projects-overview": "projects", insight: "projects", drive: "projects", tasks: "projects", approval: "projects", fleet: "projects",
   "partners-overview": "partners", customers: "partners", contractors: "partners", suppliers: "partners",
-  "hrm-overview": "hrm", "hrm-staff": "hrm", "hrm-attendance": "hrm", "hrm-payroll": "hrm",
+  "hrm-overview": "hrm", "hrm-staff": "hrm", "hrm-attendance": "hrm", "hrm-overtime": "hrm", "hrm-payroll": "hrm",
   "finance-overview": "finance", "finance-ledome": "finance", "finance-projects": "finance",
   "personal-finance-overview": "personalFinance", "personal-finance-transactions": "personalFinance", "personal-finance-budget": "personalFinance", "personal-finance-report": "personalFinance",
-  catalog: "config", materials: "config", processes: "config", standards: "config", accounts: "config"
+  catalog: "config", materials: "materials", processes: "config", standards: "config", accounts: "config"
 };
-const pageTitles = { home: "DASHBOARD", insight: "INSIGHT", projects: "❖ Danh sách dự án", "projects-overview": "▣ Tổng quan dự án", drive: "▰ LE DOME DRIVE", "partners-overview": "▣ Tổng quan đối tác", customers: "♟ Khách hàng", contractors: "▣ Nhà thầu", suppliers: "▤ Nhà cung cấp", "hrm-overview": "▣ Tổng quan nhân sự", "hrm-staff": "♟ Nhân sự", "hrm-attendance": "▣ Chấm công", "hrm-payroll": "$ Lương", "finance-overview": "▣ Tổng quan", "finance-ledome": "▣ Vận hành", "finance-projects": "▤ Dự án", "personal-finance-overview": "◈ Tài chính cá nhân", "personal-finance-transactions": "▤ Giao dịch cá nhân", "personal-finance-budget": "▣ Ngân sách tháng", "personal-finance-report": "◉ Báo cáo tháng", catalog: "▰ Cơ sở dữ liệu", materials: "▰ Kho", processes: "▰ Quy trình", standards: "▰ Quy chuẩn", accounts: "▣ Tài khoản" };
+const pageTitles = { home: "DASHBOARD", insight: "INSIGHT", projects: "❖ DASHBOARD", "projects-overview": "▣ Tổng quan dự án", drive: "▰ LE DOME DRIVE", "partners-overview": "▣ Tổng quan đối tác", customers: "♟ Khách hàng", contractors: "▣ Nhà thầu", suppliers: "▤ Nhà cung cấp", "hrm-overview": "▣ Tổng quan nhân sự", "hrm-staff": "♟ Nhân sự", "hrm-attendance": "▣ Bảng chấm công", "hrm-overtime": "▤ Phiếu Overtime", "hrm-payroll": "$ Lương", "finance-overview": "▣ Tổng quan", "finance-ledome": "▣ Vận hành", "finance-projects": "▤ Dự án", "personal-finance-overview": "◈ Tài chính cá nhân", "personal-finance-transactions": "▤ Giao dịch cá nhân", "personal-finance-budget": "▣ Ngân sách tháng", "personal-finance-report": "◉ Báo cáo tháng", catalog: "▰ Cơ sở dữ liệu", materials: "▰ Kho", processes: "▰ Quy trình", standards: "▰ Quy chuẩn Tiêu chuẩn", accounts: "▣ Tài khoản" };
 const api = (url, options = {}) => fetch(`/api/v1${url}`, { credentials: "same-origin", ...options }).then(async (res) => {
   const body = await res.json();
   if (!res.ok) throw new Error(body.error || `API ${res.status}`);
@@ -39,24 +41,73 @@ const PROJECT_NAV_FALLBACK = [
   ["▰  Cầu vượt tuyến vành đai", "project/p3"]
 ];
 let projectNavItems = null;
+let sidebarHidden = false;
+
+function isMobileSidebar() {
+  return matchMedia("(max-width: 900px)").matches;
+}
+
+function syncSidebarToggle() {
+  const button = $("#menu");
+  if (!button) return;
+  const sidebar = $(".sidebar");
+  const open = Boolean(sidebar?.classList.contains("open"));
+  document.body.classList.toggle("sidebar-mobile-open", isMobileSidebar() && open);
+  const label = isMobileSidebar() ? (open ? "Ẩn sidebar" : "Hiện sidebar") : (sidebarHidden ? "Hiện sidebar" : "Ẩn sidebar");
+  button.textContent = "☰";
+  button.setAttribute("aria-label", label);
+  button.setAttribute("title", label);
+  button.setAttribute("aria-expanded", String(isMobileSidebar() ? open : !sidebarHidden));
+}
+
+function setSidebarHidden(hidden, persist = true) {
+  sidebarHidden = Boolean(hidden);
+  document.body.classList.toggle("sidebar-hidden", sidebarHidden);
+  if (sidebarHidden) $(".sidebar")?.classList.remove("open");
+  if (persist) {
+    try {
+      localStorage.setItem(SIDEBAR_VISIBILITY_STORAGE, sidebarHidden ? "1" : "0");
+    } catch {}
+  }
+  syncSidebarToggle();
+}
+
+function toggleSidebar() {
+  if (isMobileSidebar()) {
+    $(".sidebar")?.classList.toggle("open");
+    return syncSidebarToggle();
+  }
+  setSidebarHidden(!sidebarHidden);
+}
 
 function setTitle(page, subtitle = "") {
   $("#title").textContent = pageTitles[page] || state.nav.find((x) => x[1] === page)?.[0] || "Ledome-MGMT";
   $("#subtitle").textContent = subtitle;
 }
 
+function hasClientPermission(permission) {
+  if (!permission) return true;
+  const permissions = state.account?.permissions || {};
+  if (Object.prototype.hasOwnProperty.call(permissions, permission)) return Boolean(permissions[permission]);
+  const [module] = permission.split(".");
+  return Boolean(permissions[module]);
+}
+
 function permissionForPage(page) {
-  if (page === "home" || page.startsWith("project/")) return "projects";
-  return MODULE_PERMISSION[page] || "projects";
+  if (page === "home" || page.startsWith("project/")) return "projects.view";
+  if (page === "accounts") return "config.accounts";
+  const module = MODULE_PERMISSION[page] || "projects";
+  if (module === "config") return "config";
+  if (module === "personalFinance") return "personalFinance.view";
+  return `${module}.view`;
 }
 
 function canAccessPersonalFinance() {
-  return Boolean(state.account?.permissions?.personalFinance || state.account?.permissions?.["personalFinance.view"]);
+  return hasClientPermission("personalFinance.view");
 }
 
 function canAccess(page) {
-  if (permissionForPage(page) === "personalFinance") return canAccessPersonalFinance();
-  return Boolean(state.account?.permissions?.[permissionForPage(page)]);
+  return hasClientPermission(permissionForPage(page));
 }
 
 function openProjectDetail(id) {
@@ -94,13 +145,13 @@ function renderNotifications() {
 function renderNav() {
   const activeProjects = Array.isArray(projectNavItems) ? projectNavItems : PROJECT_NAV_FALLBACK;
   const groups = [
-    ["", [["⌕  Tìm kiếm dự án...", "projects"], ["◉  INSIGHT", "insight"], ["▰  LE DOME DRIVE", "drive"]]],
+    ["", [["◉  INSIGHT", "insight"], ["▰  LE DOME DRIVE", "drive"]]],
     ["DỰ ÁN", [["▣  Tổng quan", "projects-overview"], ...activeProjects]],
     ["ĐỐI TÁC", [["▣  Tổng quan", "partners-overview"], ["♟  Khách hàng", "customers"], ["▣  Nhà thầu", "contractors"], ["▤  Nhà cung cấp", "suppliers"]]],
-    ["NHÂN SỰ", [["▣  Tổng quan", "hrm-overview"], ["♟  Nhân sự", "hrm-staff"], ["▣  Chấm công", "hrm-attendance"], ["$  Lương", "hrm-payroll"]]],
+    ["NHÂN SỰ", [["▣  Tổng quan", "hrm-overview"], ["♟  Nhân sự", "hrm-staff"], ["▣  Bảng chấm công", "hrm-attendance"], ["▤  Phiếu Overtime", "hrm-overtime"], ["$  Lương", "hrm-payroll"]]],
     ["TÀI CHÍNH", [["▣  Tổng quan", "finance-overview"], ["▣  Vận hành", "finance-ledome"], ["▤  Dự án", "finance-projects"]]],
-    ["CẤU HÌNH", [["▰  Cơ sở dữ liệu", "catalog"], ["▰  Kho", "materials"], ["▰  Quy trình", "processes"], ["▰  Quy chuẩn", "standards"], ["▣  Tài khoản", "accounts"]]],
-    ["", [["✣  DỰ ÁN MẪU", "projects"], ["⊘  DỰ ÁN ĐÓNG", "projects"]]],
+    ["KHO", [["▰  Kho", "materials"]]],
+    ["CẤU HÌNH", [["▰  Cơ sở dữ liệu", "catalog"], ["▰  Quy trình", "processes"], ["▰  Quy chuẩn Tiêu chuẩn", "standards"], ["▣  Tài khoản", "accounts"]]],
     ["TÀI CHÍNH CÁ NHÂN", [["◈  Tổng quan", "personal-finance-overview"], ["▤  Giao dịch", "personal-finance-transactions"], ["▣  Ngân sách tháng", "personal-finance-budget"], ["◉  Báo cáo tháng", "personal-finance-report"]]]
   ].map(([group, items]) => [group, items.filter(([, id]) => canAccess(id))]).filter(([, items]) => items.length);
   $("#nav").innerHTML = groups.map(([group, items], index) => {
@@ -131,6 +182,7 @@ function renderNav() {
     }
     location.hash = button.dataset.page;
     $(".sidebar").classList.remove("open");
+    syncSidebarToggle();
   };
 }
 
@@ -148,7 +200,7 @@ async function projectLanding() {
   });
   $("#app").innerHTML = `
     <div class="project-toolbar">
-      <div class="menu-wrap"><button class="btn quick" data-action="toggle-quick">♟ Xem nhanh⌄</button><div class="tool-menu" id="quick-menu"><button>▦ Danh sách dự án</button><button>▤ Dự án theo nhóm</button><button>◉ Tổng quan nhanh</button></div></div>
+      <div class="menu-wrap"><button class="btn quick" data-action="toggle-quick">♟ Xem nhanh⌄</button><div class="tool-menu" id="quick-menu"><button>▦ DASHBOARD</button><button>▤ Dự án theo nhóm</button><button>◉ Tổng quan nhanh</button></div></div>
       <button class="btn quick" data-action="reload">⟳ Tải lại</button>
       <select class="toolbar-select sort-select" aria-label="Sắp xếp"><option value="code">Mã dự án</option><option value="name">Tên dự án</option><option value="created">Ngày tạo</option><option value="updated" selected>Ngày cập nhật</option><option value="status">Trạng thái</option><option value="health">Tình trạng</option></select>
       <button class="sort-dir" data-action="sort-dir" aria-label="Sắp xếp giảm dần">${ui.sortDir === "desc" ? "⇣" : "⇡"}</button>
@@ -177,7 +229,14 @@ async function projectLanding() {
 
 function projectModal() {
   const templates = ["Mẫu nội thất", "Mẫu Kiến trúc", "Mẫu Kiến trúc Nội thất", "Mẫu quy hoạch"];
-  return `<div class="modal-backdrop" id="project-modal"><section class="project-modal"><header><h2>Khởi tạo dự án</h2><button data-action="close-modal">×</button></header><div class="creation-options"><button data-action="new-project">＋<b>Khởi tạo dự án mới</b><small>Tạo dự án thực tế hoặc dự án mẫu</small></button><button>▤<b>Khởi tạo từ Excel</b><small>Nhập dữ liệu theo file mẫu</small></button><button data-action="show-templates">▦<b>Khởi tạo từ dự án mẫu</b><small>Chọn một mẫu dự án đã thiết lập sẵn</small></button></div><section class="template-picker" id="template-picker"><h3>Chọn dự án mẫu</h3><p>Nội dung chi tiết của từng mẫu sẽ được bổ sung sau.</p><div>${templates.map((name) => `<button data-template="${name}"><b>${name}</b><small>Nội dung mẫu đang cập nhật</small></button>`).join("")}</div></section><form id="project-form"><h3>Thông tin dự án <small id="selected-template"></small></h3><label>Mã dự án<input name="code" value="DA-${String(Date.now()).slice(-4)}"></label><label>Tên dự án<input name="name" id="nameProject" required placeholder="Nhập tên dự án"></label><label>Mô tả<textarea name="description" placeholder="Nhập mô tả dự án"></textarea></label><label>Nhóm dự án<select name="group"><option>Thiết kế</option><option>Thi công</option><option>Thiết kế Thi công</option></select></label><label>Loại dự án<select name="type" id="typeProject"><option>Dự án thực tế</option><option>Dự án mẫu</option></select></label><label>Lĩnh vực<select><option>Chọn lĩnh vực</option><option>Cơ điện</option><option>Giao thông</option><option>Xây dựng</option><option>Nội thất</option></select></label><label>Quy trình<select><option>Chọn quy trình</option><option>Quy trình thi công xây dựng</option><option>Quy trình thiết kế thi công nội thất</option></select></label><label>Quản trị dự án<input name="manager" placeholder="Chọn người quản trị"></label><label>Thực hiện dự án<input placeholder="Chọn thành viên"></label><label>Người theo dõi<input placeholder="Chọn người theo dõi"></label><label>Trạng thái<select name="status" id="statusProject"><option>Kế hoạch</option><option>Đang thực hiện</option><option>Tạm dừng</option><option>Hoàn thành</option><option>Đóng</option></select></label><footer><button type="button" class="btn secondary" data-action="close-modal">Đóng</button><button class="btn">Tạo và mở chi tiết</button></footer></form></section></div>`;
+  const optionTags = (items, selected = "") => items.map((item) => `<option ${item === selected ? "selected" : ""}>${item}</option>`).join("");
+  const people = ["", "DINH Công Hoàng", "Bùi Xuân Dũng", "Nguyễn Hoàng Hải", "Bùi Vũ Kiên", "Hồ Quang Chiến", "X", "Y", "Z", "Nguyễn Hà Vân", "Khác"];
+  return `<div class="modal-backdrop" id="project-modal"><section class="project-modal project-create-modal"><header><h2>Khởi tạo dự án</h2><button data-action="close-modal">×</button></header><div class="creation-options"><button data-action="new-project">＋<b>Khởi tạo dự án mới</b><small>Tạo dự án thực tế hoặc dự án mẫu</small></button><button>▤<b>Khởi tạo từ Excel</b><small>Nhập dữ liệu theo file mẫu</small></button><button data-action="show-templates">▦<b>Khởi tạo từ dự án mẫu</b><small>Chọn một mẫu dự án đã thiết lập sẵn</small></button></div><section class="template-picker" id="template-picker"><h3>Chọn dự án mẫu</h3><p>Nội dung chi tiết của từng mẫu sẽ được bổ sung sau.</p><div>${templates.map((name) => `<button data-template="${name}"><b>${name}</b><small>Nội dung mẫu đang cập nhật</small></button>`).join("")}</div></section><form id="project-form" class="project-create-form"><h3>Thông tin dự án <small id="selected-template"></small></h3>
+    <fieldset class="identity"><legend>Nhận diện dự án</legend><label class="wide">Tên dự án<input name="name" id="nameProject" required placeholder="Nhập tên dự án"></label><label>Mã dự án<input name="code" value="DA-${String(Date.now()).slice(-4)}"></label><label>Chủ đầu tư<input name="owner" placeholder="Nhập chủ đầu tư"></label><label class="wide">Địa điểm<input name="location" placeholder="Nhập địa điểm dự án"></label></fieldset>
+    <fieldset class="classification"><legend>Phân loại</legend><label>Phạm vi<select name="type" id="scopeProject">${optionTags(["Nội thất", "Kiến trúc", "Nội thất kiến trúc", "Khác"], "Nội thất")}</select></label><label>Loại hình<select name="buildingType">${optionTags(["Căn hộ", "Nhà phố", "Biệt thự", "Homestay", "Nhà hàng", "Quán cafe", "Bar", "Văn phòng", "Khác"], "Căn hộ")}</select></label><label>Nhóm dự án<select name="group">${optionTags(["Thiết kế", "Thi công", "Thiết kế Thi công"], "Thi công")}</select></label><label>Trạng thái<select name="status" id="statusProject">${optionTags(["Kế hoạch", "Đang thực hiện", "Tạm dừng", "Hoàn thành", "Đóng"], "Kế hoạch")}</select></label><label>Tình trạng<select name="health">${optionTags(["Bình thường", "Theo dõi", "Rủi ro", "Chậm tiến độ"], "Bình thường")}</select></label></fieldset>
+    <fieldset class="people"><legend>Nhân sự phụ trách</legend><label>Giám đốc dự án<select name="manager">${optionTags(people, "")}</select></label><label>Chỉ huy trưởng<select name="commander">${optionTags(people, "")}</select></label><label>Giám sát dự án<select name="qs">${optionTags(people, "")}</select></label><label>Kế toán dự án<select name="accountant">${optionTags(people, "")}</select></label></fieldset>
+    <fieldset class="timeline"><legend>Thời gian</legend><label>Ngày bắt đầu<input name="startDate" placeholder="dd/mm/yyyy"></label><label>Ngày kết thúc<input name="endDate" placeholder="dd/mm/yyyy"></label><label>Thời gian<input name="duration" placeholder="VD: 161 ngày"></label></fieldset>
+    <footer><button type="button" class="btn secondary" data-action="close-modal">Đóng</button><button class="btn">Tạo và mở chi tiết</button></footer></form></section></div>`;
 }
 
 function bindLanding() {
@@ -187,9 +246,10 @@ function bindLanding() {
     if (card) return void (location.href = `/constructions/detail/${card.dataset.project}/`);
     const template = event.target.closest("[data-template]")?.dataset.template;
     if (template) {
+      const templateScope = { "Mẫu nội thất": "Nội thất", "Mẫu Kiến trúc": "Kiến trúc", "Mẫu Kiến trúc Nội thất": "Nội thất kiến trúc", "Mẫu quy hoạch": "Khác" };
       $("#selected-template").textContent = `- ${template}`;
       $("#nameProject").value = template;
-      $("#typeProject").value = "Dự án mẫu";
+      $("#scopeProject").value = templateScope[template] || "Nội thất";
       $("#template-picker").classList.remove("open");
       return $("#project-form").classList.add("open");
     }
@@ -227,7 +287,7 @@ async function projectTable() {
   const response = await api("/projects");
   const data = activeProjectsOnly(response.data);
   setTitle("projects", "Quản lý danh sách và trạng thái dự án xây dựng");
-  $("#app").innerHTML = `<div class="hero"><div><h2>Danh sách dự án</h2><span class="muted">${data.length} dự án đang hiển thị</span></div><button class="btn">+ Tạo dự án</button></div>
+  $("#app").innerHTML = `<div class="hero"><div><h2>DASHBOARD</h2><span class="muted">${data.length} dự án đang hiển thị</span></div><button class="btn">+ Tạo dự án</button></div>
   <table><thead><tr><th>Mã dự án</th><th>Tên dự án</th><th>Loại</th><th>Quản lý</th><th>Tiến độ</th><th>Tình trạng</th><th>Ngân sách</th></tr></thead><tbody>
   ${data.map((p) => `<tr><td>${p.code}</td><td class="project-name" data-project="${p.id}">${p.name}</td><td>${p.type}</td><td>${p.manager}</td><td>${progress(p.progress)}<small>${p.progress}%</small></td><td>${badge(p.health)}</td><td>${money(p.budget)} đ</td></tr>`).join("")}</tbody></table>`;
   $("#app").onclick = (event) => {
@@ -305,7 +365,7 @@ const crmMap = () => `<div class="crm-map"><i></i><i></i><i></i><i></i><b>⌖</b
 function customerPanel() {
   const selects = ["Phân loại","Thẻ","Trạng thái","Phân cấp","Chiến dịch","Lĩnh vực","Nguồn khách hàng","Quy mô hoạt động","Loại khách hàng *","Nhóm khách hàng","Kênh bán hàng","Quốc gia","Tỉnh thành","Quận huyện"];
   return `<aside class="crm-drawer" id="crm-drawer"><header><b>Tạo khách hàng mới</b><button data-crm="close-drawer">×</button></header><form id="crm-create-form">
-    <label>Mã khách hàng<input placeholder="Nhập mã khách hàng" value="KH${String(Date.now()).slice(-4)}"></label><label>Tên khách hàng *<input name="name" required placeholder="Nhập tên khách hàng"></label>
+    <label>Tên khách hàng *<input name="name" required placeholder="Nhập tên khách hàng"></label>
     <label>Người phụ trách<span class="crm-person">● Trần Mạnh Hùng</span></label><label>Người theo dõi<span class="crm-person">＋ TÀI KHOẢN TRẢI NGHIỆM</span></label>
     <label>Mã số thuế<input placeholder="Nhập mã số thuế"></label><label>Địa chỉ<input placeholder="Nhập địa chỉ"></label>${crmMap()}
     ${selects.slice(0,2).map((x) => `<label>${x}<select><option>Chọn ${x.toLowerCase()}</option><option>Chủ đầu tư</option><option>Nhà thầu</option></select></label>`).join("")}
@@ -322,8 +382,8 @@ function customers() {
   const rows = CRM_CUSTOMERS.filter((c) => (!query || `${c[0]} ${c[1]}`.toLocaleLowerCase("vi").includes(query)) && (state.customerFilter === "Tất cả" || c[2].includes(state.customerFilter)));
   $("#app").innerHTML = `<section class="crm-shell"><aside class="crm-filter"><input id="crm-search" value="${state.customerQuery}" placeholder="Tìm kiếm..."><h4>✓ Tất cả</h4><button>Tôi phụ trách</button><button>Tôi theo dõi</button><button>Chưa có người phụ trách</button><h4>♟ Phân loại⌄</h4>${["Chủ đầu tư","Nhà thầu"].map((x) => `<button data-filter="${x}">✓ ${x}</button>`).join("")}<h4>♟ Nhóm khách hàng⌄</h4><h4>▦ Loại khách hàng⌄</h4><h4>▦ Nguồn khách hàng⌄</h4><h4>⌁ Kênh bán hàng⌄</h4><h4>◉ Lĩnh vực⌄</h4><h4>◉ Quy mô hoạt động⌄</h4><h4>▦ Khu vực⌄</h4><h4>⚑ Trạng thái⌄</h4><h4>♟ Nhân viên phụ trách⌄</h4><h4>♟ Thẻ⌄</h4></aside>
   <div class="crm-main"><div class="crm-toolbar"><b>❖ Khách hàng (${rows.length})</b><span></span><button>↻ Tải lại</button><button>Ngày cập nhật⌄</button><button>Tất cả thời gian</button><button class="crm-add" data-crm="add">＋ Thêm mới</button><button class="crm-add">Tiện ích⌄</button></div>
-  <div class="crm-table-wrap"><table class="crm-table"><thead><tr><th></th><th>Mã KH</th><th>Tên khách hàng</th><th>Phân loại</th><th>Người phụ trách</th><th>Người theo dõi</th><th>Thẻ</th><th>Hợp đồng</th><th>Giá trị hợp đồng</th><th>Công nợ phải thu</th><th>Công nợ phải trả</th><th>Dự án</th></tr></thead><tbody>
-  ${rows.map((c) => `<tr><td><input type="checkbox"> <i class="crm-status"></i></td><td>${c[0]}</td><td><button class="crm-name" data-customer="${c[0]}">${c[1]}</button></td><td>${crmTags(c[2])}</td><td><span class="crm-avatar">●</span> ${c[3]}</td><td></td><td></td><td>${c[4]}</td><td>${money(c[5])}</td><td>${money(c[6])}</td><td>${money(c[7])}</td><td>0</td></tr>`).join("")}</tbody></table></div><footer class="crm-pager"><b>1</b> Hiển thị 1 - ${rows.length} trên tổng số ${CRM_CUSTOMERS.length} bản ghi</footer></div>${customerPanel()}</section>`;
+  <div class="crm-table-wrap"><table class="crm-table"><thead><tr><th></th><th>Tên khách hàng</th><th>Phân loại</th><th>Người phụ trách</th><th>Người theo dõi</th><th>Thẻ</th><th>Hợp đồng</th><th>Giá trị hợp đồng</th><th>Công nợ phải thu</th><th>Công nợ phải trả</th><th>Dự án</th></tr></thead><tbody>
+  ${rows.map((c) => `<tr><td><input type="checkbox"> <i class="crm-status"></i></td><td><button class="crm-name" data-customer="${c[0]}">${c[1]}</button></td><td>${crmTags(c[2])}</td><td><span class="crm-avatar">●</span> ${c[3]}</td><td></td><td></td><td>${c[4]}</td><td>${money(c[5])}</td><td>${money(c[6])}</td><td>${money(c[7])}</td><td>0</td></tr>`).join("")}</tbody></table></div><footer class="crm-pager"><b>1</b> Hiển thị 1 - ${rows.length} trên tổng số ${CRM_CUSTOMERS.length} bản ghi</footer></div>${customerPanel()}</section>`;
   bindCustomers();
 }
 
@@ -333,7 +393,7 @@ function customerDetail(id) {
   $("#app").innerHTML = `<section class="crm-detail"><div class="crm-detail-bar"><b>Chi tiết khách hàng</b><span></span><button class="crm-add">▣ Lưu</button><button class="crm-danger">▣ Xóa</button><button class="crm-blue">● Thiết lập</button><button data-crm="back">× Đóng</button></div>
   <aside class="crm-profile"><h2><i>▦</i>${customer[1]}</h2>${[["Số lượng hợp đồng",customer[4]],["Giá trị hợp đồng",money(customer[5])],["Công nợ phải thu",money(customer[6])],["Công nợ phải trả",money(customer[7])],["Số lượng dự án","12"],["Ngày tạo","21/06/2023"],["Ngày cập nhật gần nhất","27/05/2026"],["Ngày liên hệ gần nhất","14/04/2025 10:52"],["Phân loại",customer[2].join(", ")],["Trạng thái","Tiềm năng"],["Chiến dịch",""],["Loại khách hàng",""],["Nguồn khách hàng",""],["Nhóm khách hàng",""],["Điểm khách hàng",""],["Phân cấp",""],["Thẻ",""]].map(([a,b]) => `<p><span>${a}</span><b>${b}</b></p>`).join("")}
   <section><h3>Liên hệ (1)</h3><p><span class="crm-avatar">●</span><b> QUYẾT<br><small>⌕ 0987654</small></b></p><a>⌕ Thêm liên hệ</a><a>＋ Tạo liên hệ</a></section><section><h3>Người phụ trách(1)</h3><p><span class="crm-avatar">●</span><b> Lê Xuân Kiên<br><small>✉ giamdoc@kdfcd</small></b></p><a>⌕ Thêm người phụ trách</a></section><section><h3>Người theo dõi</h3><a>⌕ Thêm người theo dõi</a></section></aside>
-  <main class="crm-detail-main"><nav>${["Thông tin","Trao đổi (1)","Ghi chú (0)","Hoạt động (34)","Đính kèm","Báo giá (0)","Hợp đồng bán (14)","Hợp đồng mua (1)","Bán hàng","Công việc","Thu chi","Cơ hội (0)","Chăm sóc (0)","Nhiệm vụ"].map((x,i) => `<button class="${i ? "" : "active"}">${x}</button>`).join("")}</nav><form><label>Mã khách hàng<input value="${customer[0]}"></label><label>Tên khách hàng *<input value="${customer[1]}"></label><label>Mã số thuế<input placeholder="Nhập mã số thuế"></label><label>Địa chỉ<div class="crm-address"><input value="Kim Mã"><button>⌖</button></div></label><label class="crm-check"><input type="checkbox" checked> Hoạt động</label><label>Lĩnh vực<select><option>Chọn lĩnh vực</option></select></label><label>Quy mô hoạt động<select><option>Chọn quy mô hoạt động</option></select></label><label>Kênh bán hàng<select><option>Chọn kênh bán hàng</option></select></label><label>Quốc gia<select><option>Chọn quốc gia</option></select></label><label>Tỉnh thành<select><option>Chọn tỉnh thành</option></select></label><label>Quận huyện<select><option>Chọn quận huyện</option></select></label><label>Số điện thoại<input placeholder="Nhập số điện thoại"></label><label>Email<input placeholder="Nhập email"></label><label>Website<input placeholder="Nhập website"></label><label>Ngày thành lập<input placeholder="Chọn ngày thành lập"></label><label>Người giới thiệu<select><option>Chọn người giới thiệu</option></select></label></form></main>
+  <main class="crm-detail-main"><nav>${["Thông tin","Trao đổi (1)","Ghi chú (0)","Hoạt động (34)","Đính kèm","Báo giá (0)","Hợp đồng bán (14)","Hợp đồng mua (1)","Bán hàng","Công việc","Thu chi","Cơ hội (0)","Chăm sóc (0)","Nhiệm vụ"].map((x,i) => `<button class="${i ? "" : "active"}">${x}</button>`).join("")}</nav><form><label>Tên khách hàng *<input value="${customer[1]}"></label><label>Mã số thuế<input placeholder="Nhập mã số thuế"></label><label>Địa chỉ<div class="crm-address"><input value="Kim Mã"><button>⌖</button></div></label><label class="crm-check"><input type="checkbox" checked> Hoạt động</label><label>Lĩnh vực<select><option>Chọn lĩnh vực</option></select></label><label>Quy mô hoạt động<select><option>Chọn quy mô hoạt động</option></select></label><label>Kênh bán hàng<select><option>Chọn kênh bán hàng</option></select></label><label>Quốc gia<select><option>Chọn quốc gia</option></select></label><label>Tỉnh thành<select><option>Chọn tỉnh thành</option></select></label><label>Quận huyện<select><option>Chọn quận huyện</option></select></label><label>Số điện thoại<input placeholder="Nhập số điện thoại"></label><label>Email<input placeholder="Nhập email"></label><label>Website<input placeholder="Nhập website"></label><label>Ngày thành lập<input placeholder="Chọn ngày thành lập"></label><label>Người giới thiệu<select><option>Chọn người giới thiệu</option></select></label></form></main>
   <div class="crm-modal" id="crm-edit-modal"><section><header><b>Cập nhật thông tin quản lý khách hàng</b><button data-crm="close-modal">×</button></header><label>Phân loại<div>${crmTags(customer[2])}</div></label><footer><button data-crm="close-modal">× Đóng</button><button class="crm-add" data-crm="close-modal">▣ Lưu</button></footer></section></div></section>`;
   $("#app").onclick = (event) => {
     const action = event.target.closest("[data-crm]")?.dataset.crm;
@@ -393,28 +453,141 @@ const CRM_DIRECTORY = {
 };
 
 const crmStatusClass = (status) => status === "Đang hợp tác" ? "active" : status === "Tiềm năng" ? "lead" : "paused";
-const crmProjects = (projects = []) => `<div class="directory-projects">${projects.map((project) => `<i>${escapeHtml(project)}</i>`).join("")}</div>`;
+function crmProjectInfo(project) {
+  if (project && typeof project === "object") return { name: String(project.name || project.code || "").trim(), code: String(project.code || "").trim() };
+  return { name: String(project || "").trim(), code: "" };
+}
+const crmProjects = (projects = []) => {
+  const items = projects.map(crmProjectInfo).filter((project) => project.name);
+  if (!items.length) return `<span class="directory-auto-empty">Chưa phát sinh</span>`;
+  return `<div class="directory-projects">${items.map((project) => `<i title="${project.code ? `Mã dự án: ${escapeHtml(project.code)}` : escapeHtml(project.name)}">${escapeHtml(project.name)}</i>`).join("")}</div>`;
+};
+function partnerNameKey(value) {
+  return plainVietnamese(value).replace(/[^a-z0-9]/g, "");
+}
+function partnerNextCode(type, rows = CRM_DIRECTORY[type]?.rows || []) {
+  const prefix = CRM_DIRECTORY[type]?.code || "DT";
+  const max = rows.reduce((best, row) => Math.max(best, Number(String(row?.[0] || "").replace(/\D/g, "")) || 0), 0);
+  return `${prefix}${String(max + 1).padStart(3, "0")}`;
+}
+function partnerBlankRow(type, name, rows = CRM_DIRECTORY[type]?.rows || []) {
+  return [partnerNextCode(type, rows), name, "", "", "Đang hợp tác", "", 0, 0, [], ""];
+}
+function syncPartnerRowsFromNames(type, names = []) {
+  const currentRows = CRM_DIRECTORY[type]?.rows || [];
+  const used = new Set();
+  const takeByName = (name) => {
+    const key = partnerNameKey(name);
+    const index = currentRows.findIndex((row, rowIndex) => !used.has(rowIndex) && partnerNameKey(row?.[1]) === key);
+    if (index >= 0) {
+      used.add(index);
+      return [...currentRows[index]];
+    }
+    return null;
+  };
+  CRM_DIRECTORY[type].rows = financeUnique(names).map((name, index) => {
+    const matched = takeByName(name);
+    if (matched) {
+      matched[1] = name;
+      return matched;
+    }
+    const row = currentRows[index] && !used.has(index) ? [...currentRows[index]] : partnerBlankRow(type, name, currentRows);
+    used.add(index);
+    row[1] = name;
+    return row;
+  });
+  return CRM_DIRECTORY[type].rows;
+}
+function partnerNameParts(value) {
+  return String(value || "")
+    .split(/[,\n;]/u)
+    .map((item) => item.replace(/\s+/g, " ").trim())
+    .filter(Boolean);
+}
+function projectCustomerNames(financeData = {}, projectRows = catalogProjectRows) {
+  const names = [];
+  (Array.isArray(projectRows) ? projectRows : []).forEach((project) => {
+    names.push(...partnerNameParts(project?.owner), ...partnerNameParts(project?.client));
+  });
+  (Array.isArray(financeData.projects) ? financeData.projects : []).forEach((project) => {
+    names.push(...partnerNameParts(project?.[2]));
+  });
+  return financeUnique(names);
+}
+async function ensureCustomerPartnersFromProjects(financeData = {}) {
+  const names = projectCustomerNames(financeData, catalogProjectRows);
+  if (!names.length) return false;
+  const rows = CRM_DIRECTORY.customers?.rows || [];
+  const known = new Set(rows.map((row) => partnerNameKey(row?.[1])));
+  const missing = names.filter((name) => !known.has(partnerNameKey(name)));
+  if (!missing.length) return false;
+  missing.forEach((name) => rows.push(partnerBlankRow("customers", name, rows)));
+  CRM_DIRECTORY.customers.rows = rows;
+  try {
+    await savePartnerRows("customers");
+  } catch (error) {
+    console.warn("Cannot persist project customer partners", error);
+  }
+  return true;
+}
 const CATALOG_FALLBACK = {
+  projectList: [],
   constructionCategories: ["KHẢO SÁT - ĐO ĐẠC", "CHE PHỦ", "PHÁ DỠ", "VẬN CHUYỂN", "XÂY TRÁT", "CHỐNG THẤM", "ĐIỆN NƯỚC", "PCCC / AN TOÀN KỸ THUẬT", "ĐIỀU HÒA", "THIẾT BỊ THÔNG MINH - MẠNG - CAMERA", "THẠCH CAO", "ỐP LÁT", "ĐÁ", "SƠN BẢ", "SÀN GỖ - SÀN NHỰA", "CỬA", "NHÔM KÍNH", "SẮT", "GỖ NỘI THẤT", "RÈM", "CÂY - TIỂU CẢNH", "BIỂN BẢNG LOGO", "DEFECT CHẤM VÁ", "VỆ SINH CN", "KHÁC"],
   materialCategories: ["VẬT LIỆU HOÀN THIỆN", "PHỤ KIỆN ĐỒ NỘI THẤT", "THIẾT BỊ CHIẾU SÁNG", "THIẾT BỊ BẾP", "THIẾT BỊ VỆ SINH", "ĐÈN DECOR", "ĐỒ DECOR", "ĐỒ DECOR BẾP", "CHĂN GA ĐỆM", "ĐỒ THỦ CÔNG", "KHÁC"],
   contractTypes: ["Hợp đồng thiết kế", "Hợp đồng thi công", "Hợp đồng thiết kế thi công", "Hợp đồng phát sinh"]
 };
-let catalogData = { constructionCategories: [...CATALOG_FALLBACK.constructionCategories], materialCategories: [...CATALOG_FALLBACK.materialCategories], contractTypes: [...CATALOG_FALLBACK.contractTypes] };
+let catalogData = { projectList: [...CATALOG_FALLBACK.projectList], constructionCategories: [...CATALOG_FALLBACK.constructionCategories], materialCategories: [...CATALOG_FALLBACK.materialCategories], contractTypes: [...CATALOG_FALLBACK.contractTypes] };
+let catalogProjectDefaults = [];
+let catalogProjectRows = [];
+let catalogAutosaveTimer = null;
+let catalogAutosaveScope = "";
 function catalogList(input, fallback) {
   const source = Array.isArray(input) ? input : fallback;
   return [...new Set(source.map((item) => String(item || "").trim()).filter(Boolean))];
 }
+function catalogProjectLookupKey(value) {
+  return String(value || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/đ/g, "d").replace(/Đ/g, "D").toLocaleLowerCase("vi").replace(/[^a-z0-9]/g, "");
+}
 function normalizeCatalogData(input = {}) {
   return {
+    projectList: catalogList(input.projectList, catalogProjectDefaults.length ? catalogProjectDefaults : CATALOG_FALLBACK.projectList),
     constructionCategories: catalogList(input.constructionCategories, CATALOG_FALLBACK.constructionCategories),
     materialCategories: catalogList(input.materialCategories, CATALOG_FALLBACK.materialCategories),
     contractTypes: catalogList(input.contractTypes, CATALOG_FALLBACK.contractTypes)
   };
 }
+const projectListOptions = () => catalogList(catalogData.projectList, catalogProjectDefaults.length ? catalogProjectDefaults : CATALOG_FALLBACK.projectList);
 const materialCategoryOptions = () => catalogList(catalogData.materialCategories, CATALOG_FALLBACK.materialCategories);
 const constructionCategoryOptions = () => catalogList(catalogData.constructionCategories, CATALOG_FALLBACK.constructionCategories);
 const contractTypeOptions = () => catalogList(catalogData.contractTypes, CATALOG_FALLBACK.contractTypes);
 const CATALOG_LIST_CONFIG = {
+  projectList: {
+    title: "Danh sách dự án",
+    note: "Dùng cho Chủ đề của nhóm DỰ ÁN trong sổ giao dịch tài chính.",
+    placeholder: "VD: 6ATS",
+    preserveCase: true
+  },
+  partnerCustomers: {
+    title: "Danh sách khách hàng",
+    note: "Link trực tiếp 2 chiều với ĐỐI TÁC > Khách hàng. Tự bổ sung theo Chủ đầu tư/Khách hàng trong danh sách dự án.",
+    placeholder: "VD: Anh Việt",
+    preserveCase: true,
+    partnerType: "customers"
+  },
+  partnerContractors: {
+    title: "Danh sách nhà thầu",
+    note: "Link trực tiếp 2 chiều với ĐỐI TÁC > Nhà thầu.",
+    placeholder: "VD: VHD",
+    preserveCase: true,
+    partnerType: "contractors"
+  },
+  partnerSuppliers: {
+    title: "Danh sách Nhà cung cấp",
+    note: "Link trực tiếp 2 chiều với ĐỐI TÁC > Nhà cung cấp.",
+    placeholder: "VD: NCC HOMEKIT",
+    preserveCase: true,
+    partnerType: "suppliers"
+  },
   constructionCategories: {
     title: "Danh sách Hạng mục thi công",
     note: "Dùng cho Nhà thầu, Hợp đồng nhận thầu/giao thầu và các màn thi công.",
@@ -432,6 +605,7 @@ const CATALOG_LIST_CONFIG = {
     preserveCase: true
   }
 };
+const FINANCE_CAPITAL_CATEGORY_OPTIONS = ["NGÂN HÀNG", "KHÁC"];
 const TRANSACTION_FLOW_LIST_CONFIG = {
   financeFlowTypes: {
     field: "types",
@@ -440,27 +614,43 @@ const TRANSACTION_FLOW_LIST_CONFIG = {
     readOnly: true,
     preserveCase: true
   },
-  financeFlowTopics: {
+  financeOperationTopics: {
+    scope: "operation",
     field: "topics",
-    title: "Chủ đề",
+    title: "Chủ đề vận hành",
     placeholder: "VD: VẬN HÀNH"
   },
-  financeFlowCategories: {
+  financeOperationCategories: {
+    scope: "operation",
     field: "categories",
-    title: "Hạng mục",
+    title: "Hạng mục vận hành",
     placeholder: "VD: ĐIỆN"
   },
-  financeFlowPartners: {
+  financeOperationPartners: {
+    scope: "operation",
     field: "partners",
-    title: "Đối tượng",
+    title: "Đối tượng vận hành",
     placeholder: "VD: NCC HOMEKIT",
     preserveCase: true
+  },
+  financeCapitalTopics: {
+    scope: "capital",
+    field: "topics",
+    title: "Chủ đề tài chính",
+    placeholder: "VD: VAY"
+  },
+  financeCapitalCategories: {
+    scope: "capital",
+    field: "categories",
+    title: "Hạng mục tài chính",
+    placeholder: "",
+    readOnly: true
   }
 };
 const TRANSACTION_FLOW_LIST_TYPES = Object.keys(TRANSACTION_FLOW_LIST_CONFIG);
 const FINANCE_TRANSACTION_TYPES = ["Thu", "Chi"];
 let catalogFinanceData = null;
-let catalogTransactionFlow = { types: [...FINANCE_TRANSACTION_TYPES], topics: [], categories: [], partners: [] };
+let catalogTransactionFlow = { types: [...FINANCE_TRANSACTION_TYPES], operation: { topics: [], categories: [], partners: [] }, capital: { topics: [], categories: [...FINANCE_CAPITAL_CATEGORY_OPTIONS], partners: [] } };
 async function loadCatalogData() {
   try {
     const body = await api("/catalog");
@@ -471,6 +661,27 @@ async function loadCatalogData() {
   }
   return catalogData;
 }
+async function loadCatalogProjectDefaults() {
+  try {
+    const body = await api("/finance/overview");
+    const projects = financeProjectRowCodes(body.data || {});
+    if (projects.length) return projects;
+  } catch {}
+  try {
+    const body = await api("/projects");
+    return catalogList(activeProjectsOnly(body.data || []).map((project) => project.code || project.name), CATALOG_FALLBACK.projectList);
+  } catch {}
+  return CATALOG_FALLBACK.projectList;
+}
+async function loadCatalogProjects() {
+  try {
+    const body = await api("/projects");
+    catalogProjectRows = Array.isArray(body.data) ? body.data : [];
+  } catch {
+    catalogProjectRows = [];
+  }
+  return catalogProjectRows;
+}
 async function saveCatalogData(data) {
   const body = await api("/catalog", {
     method: "PATCH",
@@ -479,6 +690,40 @@ async function saveCatalogData(data) {
   });
   catalogData = normalizeCatalogData(body.data || data);
   return catalogData;
+}
+async function savePartnerCatalogLists() {
+  if (!hasClientPermission("partners.edit")) return;
+  const types = financeUnique(Object.values(CATALOG_LIST_CONFIG).map((config) => config.partnerType).filter(Boolean));
+  if (!types.length) return;
+  await Promise.all(types.map((type) => savePartnerRows(type)));
+}
+async function saveCurrentCatalogScope(scope = state.page) {
+  if (scope === "processes") {
+    catalogFinanceData = catalogFinanceData || await loadFinanceData();
+    catalogFinanceData.options = { ...(catalogFinanceData.options || {}), transactionFlow: catalogTransactionFlow };
+    await saveFinanceData(catalogFinanceData);
+    return;
+  }
+  await saveCatalogData(catalogData);
+  await savePartnerCatalogLists();
+}
+function scheduleCatalogAutosave(scope = state.page) {
+  clearTimeout(catalogAutosaveTimer);
+  catalogAutosaveScope = scope;
+  catalogAutosaveTimer = setTimeout(() => {
+    catalogAutosaveTimer = null;
+    const targetScope = catalogAutosaveScope || scope;
+    catalogAutosaveScope = "";
+    saveCurrentCatalogScope(targetScope).catch((error) => console.warn("Cannot autosave catalog", error));
+  }, 400);
+}
+async function flushCatalogAutosave() {
+  if (!catalogAutosaveTimer) return;
+  clearTimeout(catalogAutosaveTimer);
+  catalogAutosaveTimer = null;
+  const targetScope = catalogAutosaveScope || state.page;
+  catalogAutosaveScope = "";
+  await saveCurrentCatalogScope(targetScope);
 }
 const plainVietnamese = (value) => String(value || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/đ/g, "d").replace(/Đ/g, "D").toLocaleLowerCase("vi").replace(/\s+/g, " ").trim();
 const MATERIAL_CATEGORY_ALIASES = new Map([
@@ -530,11 +775,11 @@ function sortMaterialCategories(categories) {
   return [...new Set(categories.map(normalizeMaterialCategory).filter(Boolean))]
     .sort((a, b) => materialCategoryOrder(a) - materialCategoryOrder(b) || a.localeCompare(b, "vi", { sensitivity: "base" }));
 }
-const DIRECTORY_COLUMN_STORAGE = "ledome.directoryColumnWidths.v3";
-const DIRECTORY_DEFAULT_WIDTHS = [80, 230, 160, 130, 150, 135, 135, 190, 280, 72];
+const DIRECTORY_COLUMN_STORAGE = "ledome.directoryColumnWidths.v4";
+const DIRECTORY_DEFAULT_WIDTHS = [230, 160, 130, 150, 135, 135, 190, 280, 72];
 const DIRECTORY_SUPPLIER_WIDTHS = [190, 230, 155, 130, 135, 135, 190, 310, 72];
 const DIRECTORY_AUTO_WIDTH_RULES = [
-  [64, 92], [130, 320], [120, 240], [120, 230], [110, 260],
+  [130, 320], [120, 240], [120, 230], [110, 260],
   [120, 150], [120, 150], [140, 320], [220, 680], [72, 72]
 ];
 const DIRECTORY_SUPPLIER_AUTO_WIDTH_RULES = [
@@ -666,8 +911,14 @@ function supplierCategoryOptions(rows) {
   return ["Tất cả", ...sortMaterialCategories(materialCategoryOptions())];
 }
 
-function supplierCategoryFieldMarkup() {
-  return `<fieldset class="directory-multi directory-form-wide"><legend>Hạng mục vật tư</legend><div class="directory-check-list">${materialCategoryOptions().map((option) => `<label class="directory-check"><input type="checkbox" name="supplierCategories" value="${escapeHtml(option)}"><span>${escapeHtml(option)}</span></label>`).join("")}</div></fieldset>`;
+function directoryCheckOptionMarkup(name, option) {
+  const safe = escapeHtml(option);
+  return `<label class="directory-check" title="${safe}" data-full-label="${safe}"><input type="checkbox" name="${name}" value="${safe}"><span title="${safe}">${safe}</span></label>`;
+}
+
+function supplierCategoryFieldMarkup(selected = []) {
+  const options = sortMaterialCategories([...materialCategoryOptions(), ...selected]);
+  return `<fieldset class="directory-multi directory-form-wide"><legend>Hạng mục vật tư</legend><div class="directory-check-list">${options.map((option) => directoryCheckOptionMarkup("supplierCategories", option)).join("")}</div></fieldset>`;
 }
 
 function setSupplierCategoryChecks(form, categories = []) {
@@ -681,16 +932,185 @@ function supplierSelectedFormCategories(form) {
   return sortMaterialCategories([...form.querySelectorAll('input[name="supplierCategories"]:checked')].map((input) => input.value));
 }
 
-function directoryFilterMarkup(type, supplierOptions = []) {
-  const options = type === "suppliers" ? supplierOptions : ["Tất cả", "Đang hợp tác", "Tiềm năng", "Tạm ngưng"];
+function directoryCategoryParts(value) {
+  return String(value || "")
+    .split(/[,\n;]/u)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function contractorCategories(row) {
+  return financeUnique(directoryCategoryParts(row?.[5]));
+}
+
+function contractorCategoryOptions(selected = []) {
+  return financeUnique([...constructionCategoryOptions(), ...selected]);
+}
+
+function contractorCategoryFieldMarkup(selected = []) {
+  return `<fieldset class="directory-multi directory-form-wide"><legend>Hạng mục thi công</legend><div class="directory-check-list">${contractorCategoryOptions(selected).map((option) => directoryCheckOptionMarkup("contractorCategories", option)).join("")}</div></fieldset>`;
+}
+
+function setContractorCategoryChecks(form, categories = []) {
+  const selected = new Set(financeUnique(categories));
+  form.querySelectorAll('input[name="contractorCategories"]').forEach((input) => {
+    input.checked = selected.has(input.value);
+  });
+}
+
+function contractorSelectedFormCategories(form) {
+  return financeUnique([...form.querySelectorAll('input[name="contractorCategories"]:checked')].map((input) => input.value));
+}
+
+function directoryProjectKey(value) {
+  return plainVietnamese(value).replace(/[^a-z0-9]/g, "");
+}
+
+function directoryPartnerMatches(value, name) {
+  const left = directoryProjectKey(value);
+  const right = directoryProjectKey(name);
+  if (!left || !right) return false;
+  return left === right;
+}
+
+function directoryProjectRef(data = {}, code = "") {
+  const key = directoryProjectKey(code);
+  const row = (Array.isArray(data.projects) ? data.projects : []).find((project) => directoryProjectKey(project?.[0]) === key || directoryProjectKey(project?.[1]) === key);
+  return { code: row?.[0] || code, name: row?.[1] || code };
+}
+
+function directoryDateValue(value) {
+  const parts = financeDateParts(value);
+  return parts ? Date.UTC(parts.year, parts.month - 1, parts.day) : 0;
+}
+
+function directoryProjectOrderMap(financeData = {}) {
+  const order = new Map();
+  const add = (value, index) => {
+    const key = directoryProjectKey(value);
+    if (key && !order.has(key)) order.set(key, index);
+  };
+  (Array.isArray(projectNavItems) ? projectNavItems : PROJECT_NAV_FALLBACK).forEach(([label, id], index) => {
+    add(label, index);
+    add(String(id || "").split("/").pop(), index);
+  });
+  (Array.isArray(financeData.projects) ? financeData.projects : []).forEach((project, index) => {
+    const rank = order.size + index;
+    add(project?.[0], rank);
+    add(project?.[1], rank);
+  });
+  return order;
+}
+
+function directorySystemProfile(type, row, financeData = {}) {
+  const name = row?.[1] || "";
+  const projects = new Map();
+  const addProject = (code, latestAt = 0) => {
+    const value = String(code || "").trim();
+    if (!value) return;
+    const ref = directoryProjectRef(financeData, value);
+    const key = directoryProjectKey(ref.code || ref.name);
+    const current = projects.get(key);
+    projects.set(key, { ...ref, latestAt: Math.max(Number(current?.latestAt || 0), Number(latestAt || 0)) });
+  };
+  let receivable = 0;
+  let payable = 0;
+  const transactions = Array.isArray(financeData.transactions) ? financeData.transactions : [];
+  const projectRows = Array.isArray(financeData.projects) ? financeData.projects : [];
+  const budgetRows = Array.isArray(financeData.budgets) ? financeData.budgets : [];
+  if (type === "customers") {
+    projectRows.forEach((project) => {
+      if (!directoryPartnerMatches(project?.[2], name)) return;
+      addProject(project[0]);
+      receivable += Number(project[11] || 0);
+      payable += Number(project[12] || 0);
+    });
+    transactions.forEach((transaction) => {
+      if (transaction?.[2] === FINANCE_PROJECT_GROUP && transaction?.[1] === "Thu" && directoryPartnerMatches(transaction?.[5], name)) addProject(transaction[3], directoryDateValue(transaction[0]));
+    });
+  } else {
+    budgetRows.forEach((budget) => {
+      if (!directoryPartnerMatches(budget?.[3], name)) return;
+      addProject(budget[0]);
+      payable += Number(budget[8] || 0);
+    });
+    transactions.forEach((transaction) => {
+      if (transaction?.[2] === FINANCE_PROJECT_GROUP && transaction?.[1] === "Chi" && directoryPartnerMatches(transaction?.[5], name)) addProject(transaction[3], directoryDateValue(transaction[0]));
+      if (transaction?.[2] === FINANCE_PROJECT_GROUP && transaction?.[1] === "Thu" && directoryPartnerMatches(transaction?.[5], name)) {
+        addProject(transaction[3], directoryDateValue(transaction[0]));
+        receivable += Number(transaction[7] || 0);
+      }
+    });
+    if (type === "suppliers") {
+      MATERIAL_ROWS.forEach((material) => {
+        if (directoryPartnerMatches(material?.supplier, name)) addProject(material.project, directoryDateValue(material.date));
+      });
+    }
+  }
+  return { receivable, payable, projects: [...projects.values()].sort((a, b) => Number(b.latestAt || 0) - Number(a.latestAt || 0) || String(a.name || a.code).localeCompare(String(b.name || b.code), "vi", { sensitivity: "base" })) };
+}
+
+function directoryProjectOrderValue(profile = {}, projectOrder = new Map()) {
+  return (profile.projects || []).reduce((best, project) => Math.min(best, projectOrder.get(directoryProjectKey(project.code)) ?? projectOrder.get(directoryProjectKey(project.name)) ?? Number.MAX_SAFE_INTEGER), Number.MAX_SAFE_INTEGER);
+}
+
+function directoryLatestProjectValue(profile = {}) {
+  return (profile.projects || []).reduce((latest, project) => Math.max(latest, Number(project.latestAt || 0)), 0);
+}
+
+function directoryCompareRows(type, profileByCode, projectOrder) {
+  return (a, b) => {
+    const profileA = profileByCode.get(a[0]) || {};
+    const profileB = profileByCode.get(b[0]) || {};
+    const hasProjectA = (profileA.projects || []).length ? 0 : 1;
+    const hasProjectB = (profileB.projects || []).length ? 0 : 1;
+    if (hasProjectA !== hasProjectB) return hasProjectA - hasProjectB;
+    const latestDelta = directoryLatestProjectValue(profileB) - directoryLatestProjectValue(profileA);
+    if (latestDelta) return latestDelta;
+    const orderDelta = directoryProjectOrderValue(profileA, projectOrder) - directoryProjectOrderValue(profileB, projectOrder);
+    if (Number.isFinite(orderDelta) && orderDelta) return orderDelta;
+    if (type === "suppliers") {
+      const categoryDelta = supplierPrimaryCategory(a).localeCompare(supplierPrimaryCategory(b), "vi", { sensitivity: "base" });
+      if (categoryDelta) return categoryDelta;
+    }
+    return String(a[1] || "").localeCompare(String(b[1] || ""), "vi", { sensitivity: "base", numeric: true });
+  };
+}
+
+function directoryAutoSummary(profile = null) {
+  if (!profile) return `<div class="directory-auto-note">Nhập tên đối tác để hệ thống đối chiếu giao dịch, ngân sách và dự án liên quan.</div>`;
+  return `<div class="directory-auto-grid">
+    <article><small>Công nợ phải thu</small><b>${money(profile.receivable || 0)} đ</b></article>
+    <article><small>Công nợ phải trả</small><b>${money(profile.payable || 0)} đ</b></article>
+    <article class="wide"><small>Dự án tham gia</small>${crmProjects(profile.projects)}</article>
+  </div>`;
+}
+
+function contractorCategoryFilterOptions() {
+  return ["Tất cả", ...contractorCategoryOptions()];
+}
+
+function directoryFilterMarkup(type, supplierOptions = [], contractorOptions = []) {
+  const options = type === "suppliers" ? supplierOptions : type === "contractors" ? contractorOptions : ["Tất cả", "Đang hợp tác", "Tiềm năng", "Tạm ngưng"];
   return `<select id="directory-filter">${options.map((option) => `<option>${escapeHtml(option)}</option>`).join("")}</select>`;
 }
 
-function directoryRowMarkup(type, row) {
+function directorySearchText(type, row, profile = null) {
+  const category = type === "suppliers" ? supplierDisplayCategory(row) : type === "contractors" ? contractorCategories(row).join(", ") : row[5];
+  const projectNames = (profile?.projects || []).map((project) => `${project.name || ""} ${project.code || ""}`).join(" ");
+  const visible = type === "suppliers" ? [category, ...row.slice(1, 6), projectNames, row[9]] : [...row.slice(1, 5), category, projectNames, row[9]];
+  return visible.join(" ");
+}
+
+function directoryRowMarkup(type, row, profile = null) {
+  const receivable = profile?.receivable ?? 0;
+  const payable = profile?.payable ?? 0;
+  const projects = profile?.projects || [];
   if (type === "suppliers") {
-    return `<tr><td>${escapeHtml(supplierDisplayCategory(row))}</td><td>${escapeHtml(row[1])}</td><td>${escapeHtml(row[2])}</td><td>${escapeHtml(row[3])}</td><td class="directory-money">${money(row[6])}</td><td class="directory-money">${money(row[7])}</td><td>${crmProjects(row[8])}</td><td class="directory-note" title="${escapeHtml(row[9])}">${escapeHtml(row[9])}</td><td class="directory-actions"><button title="Chỉnh sửa" data-directory="edit" data-code="${escapeHtml(row[0])}">✎</button><button title="Xóa" data-directory="delete" data-code="${escapeHtml(row[0])}">×</button></td></tr>`;
+    return `<tr><td>${escapeHtml(supplierDisplayCategory(row))}</td><td>${escapeHtml(row[1])}</td><td>${escapeHtml(row[2])}</td><td>${escapeHtml(row[3])}</td><td class="directory-money">${money(receivable)}</td><td class="directory-money">${money(payable)}</td><td>${crmProjects(projects)}</td><td class="directory-note" title="${escapeHtml(row[9])}">${escapeHtml(row[9])}</td><td class="directory-actions"><button title="Chỉnh sửa" data-directory="edit" data-code="${escapeHtml(row[0])}">✎</button><button title="Xóa" data-directory="delete" data-code="${escapeHtml(row[0])}">×</button></td></tr>`;
   }
-  return `<tr><td><b>${escapeHtml(row[0])}</b></td><td>${escapeHtml(row[1])}</td><td>${escapeHtml(row[2])}</td><td>${escapeHtml(row[3])}</td><td>${escapeHtml(row[5])}</td><td class="directory-money">${money(row[6])}</td><td class="directory-money">${money(row[7])}</td><td>${crmProjects(row[8])}</td><td class="directory-note" title="${escapeHtml(row[9])}">${escapeHtml(row[9])}</td><td class="directory-actions"><button title="Chỉnh sửa" data-directory="edit" data-code="${escapeHtml(row[0])}">✎</button><button title="Xóa" data-directory="delete" data-code="${escapeHtml(row[0])}">×</button></td></tr>`;
+  const group = type === "contractors" ? contractorCategories(row).join(", ") : row[5];
+  return `<tr><td>${escapeHtml(row[1])}</td><td>${escapeHtml(row[2])}</td><td>${escapeHtml(row[3])}</td><td>${escapeHtml(group)}</td><td class="directory-money">${money(receivable)}</td><td class="directory-money">${money(payable)}</td><td>${crmProjects(projects)}</td><td class="directory-note" title="${escapeHtml(row[9])}">${escapeHtml(row[9])}</td><td class="directory-actions"><button title="Chỉnh sửa" data-directory="edit" data-code="${escapeHtml(row[0])}">✎</button><button title="Xóa" data-directory="delete" data-code="${escapeHtml(row[0])}">×</button></td></tr>`;
 }
 
 async function loadPartnerRows(type) {
@@ -715,35 +1135,47 @@ async function savePartnerRows(type) {
 async function crmDirectory(type) {
   const config = CRM_DIRECTORY[type];
   const isSupplier = type === "suppliers";
-  if (isSupplier || type === "contractors") await loadCatalogData();
+  const isContractor = type === "contractors";
+  const isCustomer = type === "customers";
+  if (isSupplier || isContractor) await loadCatalogData();
+  if (isCustomer) await loadCatalogProjects();
   await loadPartnerRows(type);
+  if (isSupplier) await loadMaterialsRows();
+  const financeData = await loadFinanceData();
+  if (isCustomer) await ensureCustomerPartnersFromProjects(financeData);
+  const profileByCode = new Map(config.rows.map((row) => [row[0], directorySystemProfile(type, row, financeData)]));
+  const projectOrder = directoryProjectOrderMap(financeData);
   const groupLabel = type === "customers" ? "Khu vực" : "Hạng mục";
   const supplierOptions = isSupplier ? supplierCategoryOptions(config.rows) : [];
+  const contractorOptions = isContractor ? contractorCategoryFilterOptions() : [];
   if (isSupplier && state.crmSupplierCategory !== "Tất cả" && !supplierOptions.includes(state.crmSupplierCategory)) state.crmSupplierCategory = "Tất cả";
+  if (isContractor && state.crmContractorCategory !== "Tất cả" && !contractorOptions.includes(state.crmContractorCategory)) state.crmContractorCategory = "Tất cả";
   const headers = isSupplier
     ? ["Hạng mục", `Tên ${config.singular}`, "Người liên hệ", "Số điện thoại", "Công nợ phải thu", "Công nợ phải trả", "Tên dự án", "Ghi chú", ""]
-    : ["Mã", `Tên ${config.singular}`, "Người liên hệ", "Số điện thoại", groupLabel, "Công nợ phải thu", "Công nợ phải trả", "Tên dự án", "Ghi chú", ""];
+    : [`Tên ${config.singular}`, "Người liên hệ", "Số điện thoại", groupLabel, "Công nợ phải thu", "Công nợ phải trả", "Tên dự án", "Ghi chú", ""];
   const query = state.crmQuery.toLocaleLowerCase("vi");
   const rows = config.rows
     .filter((row) => {
-      const searchText = isSupplier ? [...row, supplierDisplayCategory(row)].join(" ") : row.join(" ");
+      const searchText = directorySearchText(type, row, profileByCode.get(row[0]));
       const matchQuery = !query || searchText.toLocaleLowerCase("vi").includes(query);
-      const matchFilter = isSupplier ? state.crmSupplierCategory === "Tất cả" || supplierCategories(row).includes(state.crmSupplierCategory) : state.crmStatus === "Tất cả" || row[4] === state.crmStatus;
+      const matchFilter = isSupplier
+        ? state.crmSupplierCategory === "Tất cả" || supplierCategories(row).includes(state.crmSupplierCategory)
+        : isContractor
+          ? state.crmContractorCategory === "Tất cả" || contractorCategories(row).includes(state.crmContractorCategory)
+          : state.crmStatus === "Tất cả" || row[4] === state.crmStatus;
       return matchQuery && matchFilter;
     })
-    .sort((a, b) => isSupplier
-      ? supplierPrimaryCategory(a).localeCompare(supplierPrimaryCategory(b), "vi", { sensitivity: "base" }) || String(a[0]).localeCompare(String(b[0]), "vi", { numeric: true })
-      : 0);
+    .sort(directoryCompareRows(type, profileByCode, projectOrder));
   setTitle(type, "");
   $("#app").innerHTML = `<section class="directory">
     <header class="directory-head"><div><h2>${config.icon} ${config.title}</h2><p>Quản lý danh sách và thông tin liên hệ</p></div><button class="btn" data-directory="add">＋ Thêm ${config.singular}</button></header>
     <div class="directory-summary"><article><small>Tổng số</small><b>${config.rows.length}</b><span>${config.title.toLowerCase()} đã lưu</span></article><article><small>Đang hợp tác</small><b>${config.rows.filter((x) => x[4] === "Đang hợp tác").length}</b><span>Đang hoạt động</span></article><article><small>Tiềm năng</small><b>${config.rows.filter((x) => x[4] === "Tiềm năng").length}</b><span>Cần tiếp tục theo dõi</span></article></div>
-    <div class="directory-tools"><input id="directory-search" value="${escapeHtml(state.crmQuery)}" placeholder="⌕ Tìm theo mã, tên hoặc người liên hệ">${directoryFilterMarkup(type, supplierOptions)}<button class="directory-auto-fit" data-directory="auto-fit">Tự xếp</button><button data-directory="add">＋ Thêm mới</button></div>
-    <div class="directory-table-wrap"><table class="directory-table directory-table-wide directory-resizable-table" data-directory-table="${type}">${directoryColumnMarkup(type, headers.length)}<thead><tr>${directoryHeaderMarkup(headers)}</tr></thead><tbody>${rows.map((row) => directoryRowMarkup(type, row)).join("")}</tbody></table></div>
+    <div class="directory-tools"><input id="directory-search" value="${escapeHtml(state.crmQuery)}" placeholder="⌕ Tìm theo tên hoặc người liên hệ">${directoryFilterMarkup(type, supplierOptions, contractorOptions)}<button class="directory-auto-fit" data-directory="auto-fit">Tự xếp</button><button data-directory="add">＋ Thêm mới</button></div>
+    <div class="directory-table-wrap"><table class="directory-table directory-table-wide directory-resizable-table" data-directory-table="${type}">${directoryColumnMarkup(type, headers.length)}<thead><tr>${directoryHeaderMarkup(headers)}</tr></thead><tbody>${rows.map((row) => directoryRowMarkup(type, row, profileByCode.get(row[0]))).join("")}</tbody></table></div>
     <div class="directory-empty ${rows.length ? "" : "open"}">Không tìm thấy dữ liệu phù hợp.</div>${crmDirectoryModal(config, groupLabel, type)}
   </section>`;
-  $("#directory-filter").value = isSupplier ? state.crmSupplierCategory : state.crmStatus;
-  bindCrmDirectory(type);
+  $("#directory-filter").value = isSupplier ? state.crmSupplierCategory : isContractor ? state.crmContractorCategory : state.crmStatus;
+  bindCrmDirectory(type, financeData, profileByCode);
   bindDirectoryColumnResize(type);
   bindOverflowTooltips($("#app"));
 }
@@ -752,19 +1184,31 @@ function crmDirectoryModal(config, groupLabel = "Nhóm", type = "") {
   const groupField = type === "suppliers"
     ? supplierCategoryFieldMarkup()
     : type === "contractors"
-      ? `<label>${groupLabel}<select name="group">${constructionCategoryOptions().map((option) => `<option>${escapeHtml(option)}</option>`).join("")}</select></label>`
+      ? contractorCategoryFieldMarkup()
       : `<label>${groupLabel}<input name="group" placeholder="Nhập ${groupLabel.toLowerCase()}"></label>`;
-  return `<div class="directory-modal" id="directory-modal"><form id="directory-form"><header><h3 id="directory-modal-title">Thêm ${config.singular}</h3><button type="button" data-directory="close">×</button></header><input type="hidden" name="currentCode"><label>Mã<input name="code" required></label><label>Tên ${config.singular}<input name="name" required placeholder="Nhập tên"></label><label>Người liên hệ<input name="contact" required placeholder="Nhập họ tên"></label><label>Số điện thoại<input name="phone" placeholder="Nhập số điện thoại"></label><label>Trạng thái<select name="status"><option>Đang hợp tác</option><option>Tiềm năng</option><option>Tạm ngưng</option></select></label>${groupField}<label>Công nợ phải thu<input name="receivable" inputmode="numeric" data-money-input placeholder="0"></label><label>Công nợ phải trả<input name="payable" inputmode="numeric" data-money-input placeholder="0"></label><label class="directory-form-wide">Tên dự án<input name="projects" placeholder="Nhập nhiều dự án, phân cách bằng dấu phẩy"></label><label class="directory-form-wide">Ghi chú<textarea name="note" placeholder="Nhập ghi chú"></textarea></label><footer><button type="button" class="btn secondary" data-directory="close">Đóng</button><button class="btn">Lưu</button></footer></form></div>`;
+  return `<div class="directory-modal" id="directory-modal"><form id="directory-form"><header><h3 id="directory-modal-title">Thêm ${config.singular}</h3><button type="button" data-directory="close">×</button></header><input type="hidden" name="currentCode"><label>Tên ${config.singular}<input name="name" required placeholder="Nhập tên"></label><label>Người liên hệ<input name="contact" required placeholder="Nhập họ tên"></label><label>Số điện thoại<input name="phone" placeholder="Nhập số điện thoại"></label><label>Trạng thái<select name="status"><option>Đang hợp tác</option><option>Tiềm năng</option><option>Tạm ngưng</option></select></label>${groupField}<section class="directory-auto-panel directory-form-wide"><header><b>Thông tin tự động từ hệ thống</b><span>Không nhập tay trong form đối tác</span></header><div data-directory-auto-summary>${directoryAutoSummary(null)}</div></section><label class="directory-form-wide">Ghi chú<textarea name="note" placeholder="Nhập ghi chú"></textarea></label><footer><button type="button" class="btn secondary" data-directory="close">Đóng</button><button class="btn">Lưu</button></footer></form></div>`;
 }
 
-function bindCrmDirectory(type) {
+async function refreshDirectoryCatalogField(type, form, selected = []) {
+  if (type !== "suppliers" && type !== "contractors") return;
+  await loadCatalogData();
+  const field = form.querySelector(".directory-multi");
+  if (!field) return;
+  field.outerHTML = type === "suppliers" ? supplierCategoryFieldMarkup(selected) : contractorCategoryFieldMarkup(selected);
+  if (type === "suppliers") setSupplierCategoryChecks(form, selected);
+  if (type === "contractors") setContractorCategoryChecks(form, selected);
+}
+
+function bindCrmDirectory(type, financeData = {}, profileByCode = new Map()) {
   const config = CRM_DIRECTORY[type];
   const isSupplier = type === "suppliers";
+  const isContractor = type === "contractors";
   const modal = $("#directory-modal");
   const form = $("#directory-form");
   $("#directory-search").oninput = (event) => { state.crmQuery = event.target.value; crmDirectory(type); };
   $("#directory-filter").onchange = (event) => {
     if (isSupplier) state.crmSupplierCategory = event.target.value;
+    else if (isContractor) state.crmContractorCategory = event.target.value;
     else state.crmStatus = event.target.value;
     crmDirectory(type);
   };
@@ -773,6 +1217,14 @@ function bindCrmDirectory(type) {
       input.value = input.value.replace(/[^\d]/g, "").replace(/\B(?=(\d{3})+(?!\d))/g, ".");
     };
   });
+  const autoSummary = form.querySelector("[data-directory-auto-summary]");
+  const updateAutoSummary = (row = null) => {
+    if (!autoSummary) return;
+    const draft = row || ["", form.elements.name.value, form.elements.contact.value, form.elements.phone.value, form.elements.status.value, "", 0, 0, [], form.elements.note.value];
+    const profile = draft[1] ? directorySystemProfile(type, draft, financeData) : null;
+    autoSummary.innerHTML = directoryAutoSummary(profile);
+  };
+  form.elements.name.addEventListener("input", () => updateAutoSummary());
   $("#app").onclick = async (event) => {
     const button = event.target.closest("[data-directory]");
     if (!button) return;
@@ -782,8 +1234,8 @@ function bindCrmDirectory(type) {
     if (action === "add") {
       form.reset();
       form.elements.currentCode.value = "";
-      form.elements.code.value = `${config.code}${String(config.rows.length + 1).padStart(3, "0")}`;
-      if (isSupplier) setSupplierCategoryChecks(form, []);
+      if (isSupplier || isContractor) await refreshDirectoryCatalogField(type, form, []);
+      updateAutoSummary(null);
       $("#directory-modal-title").textContent = `Thêm ${config.singular}`;
       return modal.classList.add("open");
     }
@@ -797,14 +1249,13 @@ function bindCrmDirectory(type) {
     }
     if (action === "edit" && index >= 0) {
       const row = config.rows[index];
-      ["code","name","contact","phone","status"].forEach((name, i) => { form.elements[name].value = row[i]; });
-      if (isSupplier) setSupplierCategoryChecks(form, supplierCategories(row));
+      ["name","contact","phone","status"].forEach((name, i) => { form.elements[name].value = row[i + 1]; });
+      if (isSupplier) await refreshDirectoryCatalogField(type, form, supplierCategories(row));
+      else if (isContractor) await refreshDirectoryCatalogField(type, form, contractorCategories(row));
       else form.elements.group.value = row[5];
-      form.elements.receivable.value = moneyInput(row[6]);
-      form.elements.payable.value = moneyInput(row[7]);
-      form.elements.projects.value = row[8].join(", ");
       form.elements.note.value = row[9];
       form.elements.currentCode.value = row[0];
+      updateAutoSummary(row);
       $("#directory-modal-title").textContent = `Chỉnh sửa ${config.singular}`;
       return modal.classList.add("open");
     }
@@ -817,8 +1268,16 @@ function bindCrmDirectory(type) {
       alert("Chọn ít nhất một hạng mục vật tư cho nhà cung cấp.");
       return;
     }
-    const row = [data.code, data.name, data.contact, data.phone, data.status, isSupplier ? categories.join(", ") : data.group, parseMoneyInput(data.receivable), parseMoneyInput(data.payable), data.projects.split(",").map((project) => project.trim()).filter(Boolean), data.note];
+    const contractorCategoryValues = isContractor ? contractorSelectedFormCategories(form) : [];
+    if (isContractor && !contractorCategoryValues.length) {
+      alert("Chọn ít nhất một hạng mục thi công cho nhà thầu.");
+      return;
+    }
+    const nextCode = data.currentCode || `${config.code}${String(config.rows.length + 1).padStart(3, "0")}`;
     const index = config.rows.findIndex((item) => item[0] === data.currentCode);
+    const previous = index >= 0 ? config.rows[index] : [];
+    const group = isSupplier ? categories.join(", ") : isContractor ? contractorCategoryValues.join(", ") : data.group;
+    const row = [nextCode, data.name, data.contact, data.phone, data.status, group, Number(previous[6] || 0), Number(previous[7] || 0), Array.isArray(previous[8]) ? previous[8] : [], data.note];
     if (index >= 0) config.rows[index] = row;
     else config.rows.unshift(row);
     await savePartnerRows(type);
@@ -1108,6 +1567,655 @@ function bindDrive() {
   };
 }
 
+const MATERIAL_LOCATION_TYPES = ["Kho VP", "Kho dự án"];
+const MATERIAL_STATUSES = ["Đã nhận", "Lưu kho", "Đã xuất dùng", "Cần kiểm tra"];
+let MATERIAL_ROWS = [];
+
+async function loadMaterialsRows() {
+  try {
+    const body = await api("/materials");
+    MATERIAL_ROWS = Array.isArray(body.data) ? body.data : [];
+  } catch {
+    MATERIAL_ROWS = [];
+  }
+  return MATERIAL_ROWS;
+}
+
+async function saveMaterialsRows(rows = MATERIAL_ROWS) {
+  const body = await api("/materials", {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ rows })
+  });
+  MATERIAL_ROWS = Array.isArray(body.data) ? body.data : rows;
+  return MATERIAL_ROWS;
+}
+
+function materialNextId(rows = MATERIAL_ROWS) {
+  const max = rows.reduce((best, row) => Math.max(best, Number(String(row.id || "").replace(/\D/g, "")) || 0), 0);
+  return `VT${String(max + 1).padStart(3, "0")}`;
+}
+
+function materialQuantity(value) {
+  const amount = Number(value || 0);
+  return Number.isInteger(amount) ? money(amount) : amount.toLocaleString("vi-VN", { maximumFractionDigits: 2 });
+}
+
+function materialOptions(values, selected = "", placeholder = "Chọn") {
+  const list = financeUnique([...(values || []), selected]);
+  return `<option value="">${placeholder}</option>${list.map((value) => `<option value="${escapeHtml(value)}" ${value === selected ? "selected" : ""}>${escapeHtml(value)}</option>`).join("")}`;
+}
+
+function materialBadge(status) {
+  const cls = status === "Cần kiểm tra" ? "danger" : status === "Đã xuất dùng" ? "done" : "";
+  return `<i class="material-status ${cls}">${escapeHtml(status || "Đã nhận")}</i>`;
+}
+
+function materialFilteredRows(rows = MATERIAL_ROWS) {
+  const query = state.materialsQuery.toLocaleLowerCase("vi");
+  return rows
+    .map((row, index) => ({ row, index }))
+    .filter(({ row }) => (!query || Object.values(row).join(" ").toLocaleLowerCase("vi").includes(query))
+      && (state.materialsLocation === "Tất cả" || row.locationType === state.materialsLocation)
+      && (state.materialsStatus === "Tất cả" || row.status === state.materialsStatus));
+}
+
+function materialForm(row = {}) {
+  const categories = financeUnique([...materialCategoryOptions(), ...constructionCategoryOptions(), ...MATERIAL_ROWS.map((item) => item.category)]);
+  const suppliers = financeUnique([...(CRM_DIRECTORY.suppliers?.rows || []).map((item) => item[1]), ...MATERIAL_ROWS.map((item) => item.supplier)]);
+  const projects = financeUnique([...projectListOptions(), ...MATERIAL_ROWS.map((item) => item.project)]);
+  return `<div class="finance-modal" id="material-modal"><form id="material-form"><header><h3>${row.id ? "Chỉnh sửa vật tư" : "Thêm vật tư"}</h3><button type="button" data-material="close-modal">×</button></header>
+    <input type="hidden" name="currentId" value="${escapeHtml(row.id || "")}">
+    <label>Ngày nhận<input name="date" type="date" value="${escapeHtml(row.date || new Date().toISOString().slice(0, 10))}" required></label>
+    <label>Tên vật tư / thiết bị<input name="item" value="${escapeHtml(row.item || "")}" required placeholder="VD: Khóa từ"></label>
+    <label>Hạng mục<select name="category">${materialOptions(categories, row.category, "Chọn hạng mục")}</select></label>
+    <label>NCC<select name="supplier">${materialOptions(suppliers, row.supplier, "Chọn NCC")}</select></label>
+    <label>Số lượng<input name="quantity" inputmode="decimal" value="${escapeHtml(row.quantity ?? 1)}" required></label>
+    <label>Đơn vị<input name="unit" value="${escapeHtml(row.unit || "cái")}"></label>
+    <label>Kho lưu<select name="locationType">${MATERIAL_LOCATION_TYPES.map((type) => `<option ${row.locationType === type ? "selected" : ""}>${type}</option>`).join("")}</select></label>
+    <label>Vị trí kho<input name="location" value="${escapeHtml(row.location || "")}" placeholder="VD: Văn phòng Le Dome"></label>
+    <label>Dự án<select name="project">${materialOptions(projects, row.project, "Không gắn dự án")}</select></label>
+    <label>Trạng thái<select name="status">${MATERIAL_STATUSES.map((status) => `<option ${row.status === status ? "selected" : ""}>${status}</option>`).join("")}</select></label>
+    <label class="wide">Ghi chú<textarea name="note" placeholder="Thông tin nhận hàng, chờ lắp đặt, điều chuyển...">${escapeHtml(row.note || "")}</textarea></label>
+    <footer><button type="button" class="btn secondary" data-material="close-modal">Đóng</button><button class="btn">Lưu vật tư</button></footer>
+  </form></div>`;
+}
+
+function materialTableRows(rows) {
+  const canEdit = Boolean(state.account?.permissions?.["materials.edit"]);
+  const canDelete = Boolean(state.account?.permissions?.["materials.delete"]);
+  return rows.map(({ row, index }) => `<tr>
+    <td>${financeDate(row.date)}</td>
+    <td><b>${escapeHtml(row.item)}</b><small>${escapeHtml(row.id)}</small></td>
+    <td>${escapeHtml(row.category || "")}</td>
+    <td>${escapeHtml(row.supplier || "")}</td>
+    <td class="material-qty">${materialQuantity(row.quantity)} ${escapeHtml(row.unit || "")}</td>
+    <td><b>${escapeHtml(row.locationType || "")}</b><small>${escapeHtml(row.location || "")}</small></td>
+    <td>${escapeHtml(row.project || "")}</td>
+    <td>${materialBadge(row.status)}</td>
+    <td>${escapeHtml(row.note || "")}</td>
+    <td class="material-actions">${canEdit ? `<button data-material="edit" data-index="${index}">Sửa</button>` : ""}${canDelete ? `<button data-material="delete" data-index="${index}">×</button>` : ""}</td>
+  </tr>`).join("");
+}
+
+async function renderMaterials() {
+  await Promise.all([loadCatalogData(), loadCatalogProjectDefaults().then((items) => { catalogProjectDefaults = items; }), loadPartnerRows("suppliers")]);
+  await loadMaterialsRows();
+  const rows = materialFilteredRows(MATERIAL_ROWS);
+  const totalQty = MATERIAL_ROWS.reduce((sum, row) => sum + Number(row.quantity || 0), 0);
+  const officeCount = MATERIAL_ROWS.filter((row) => row.locationType === "Kho VP").length;
+  const projectCount = MATERIAL_ROWS.filter((row) => row.locationType === "Kho dự án").length;
+  const checkCount = MATERIAL_ROWS.filter((row) => row.status === "Cần kiểm tra").length;
+  const canEdit = Boolean(state.account?.permissions?.["materials.edit"]);
+  setTitle("materials", "Danh sách vật tư thiết bị nhận từ NCC");
+  $("#app").innerHTML = `<section class="materials-page">
+    <header class="materials-head"><div><h2>▰ Kho</h2><p>Quản lý vật tư thiết bị nhận từ NCC, lưu tại Kho VP hoặc Kho dự án.</p></div>${canEdit ? `<button class="btn" data-material="add">＋ Thêm vật tư</button>` : ""}</header>
+    <div class="materials-kpis"><article><small>Dòng vật tư</small><b>${MATERIAL_ROWS.length}</b><span>Đã ghi nhận</span></article><article><small>Tổng số lượng</small><b>${materialQuantity(totalQty)}</b><span>Theo đơn vị từng dòng</span></article><article><small>Kho VP</small><b>${officeCount}</b><span>Dòng đang lưu văn phòng</span></article><article><small>Kho dự án</small><b>${projectCount}</b><span>Dòng gắn công trình</span></article></div>
+    <div class="materials-tools"><input id="materials-search" value="${escapeHtml(state.materialsQuery)}" placeholder="Tìm vật tư, NCC, dự án, ghi chú"><select id="materials-location"><option>Tất cả</option>${MATERIAL_LOCATION_TYPES.map((type) => `<option ${state.materialsLocation === type ? "selected" : ""}>${type}</option>`).join("")}</select><select id="materials-status"><option>Tất cả</option>${MATERIAL_STATUSES.map((status) => `<option ${state.materialsStatus === status ? "selected" : ""}>${status}</option>`).join("")}</select><span>${rows.length} dòng hiển thị${checkCount ? ` · ${checkCount} cần kiểm tra` : ""}</span></div>
+    <div class="materials-table-wrap"><table class="materials-table"><thead><tr><th>Ngày nhận</th><th>Vật tư / thiết bị</th><th>Hạng mục</th><th>NCC</th><th>Số lượng</th><th>Kho lưu</th><th>Dự án</th><th>Trạng thái</th><th>Ghi chú</th><th></th></tr></thead><tbody>${materialTableRows(rows) || `<tr><td colspan="10">Chưa có vật tư phù hợp.</td></tr>`}</tbody></table></div>
+    ${materialForm()}
+  </section>`;
+  bindMaterials();
+}
+
+function bindMaterials() {
+  $("#materials-search").oninput = (event) => { state.materialsQuery = event.target.value; renderMaterials(); };
+  $("#materials-location").onchange = (event) => { state.materialsLocation = event.target.value; renderMaterials(); };
+  $("#materials-status").onchange = (event) => { state.materialsStatus = event.target.value; renderMaterials(); };
+  $("#app").onclick = async (event) => {
+    const action = event.target.closest("[data-material]")?.dataset.material;
+    if (!action) return;
+    const modal = $("#material-modal");
+    if (action === "close-modal") return modal.classList.remove("open");
+    if (action === "add") {
+      $("#material-form").outerHTML = materialForm({ id: "", quantity: 1, status: "Đã nhận", locationType: "Kho VP" }).match(/<form[\s\S]*<\/form>/)[0];
+      $("#material-form").onsubmit = materialSubmitHandler;
+      return modal.classList.add("open");
+    }
+    const index = Number(event.target.closest("[data-index]")?.dataset.index);
+    if (action === "edit") {
+      $("#material-form").outerHTML = materialForm(MATERIAL_ROWS[index]).match(/<form[\s\S]*<\/form>/)[0];
+      $("#material-form").onsubmit = materialSubmitHandler;
+      return modal.classList.add("open");
+    }
+    if (action === "delete" && index >= 0 && confirm(`Xóa vật tư "${MATERIAL_ROWS[index].item}"?`)) {
+      MATERIAL_ROWS.splice(index, 1);
+      await saveMaterialsRows();
+      return renderMaterials();
+    }
+  };
+  $("#material-form").onsubmit = materialSubmitHandler;
+}
+
+async function materialSubmitHandler(event) {
+  event.preventDefault();
+  const data = Object.fromEntries(new FormData(event.currentTarget));
+  const row = {
+    id: data.currentId || materialNextId(),
+    date: data.date,
+    item: data.item,
+    category: data.category,
+    supplier: data.supplier,
+    quantity: Number(String(data.quantity || "").replace(",", ".")) || 0,
+    unit: data.unit,
+    locationType: data.locationType,
+    location: data.location,
+    project: data.project,
+    status: data.status,
+    note: data.note
+  };
+  const index = MATERIAL_ROWS.findIndex((item) => item.id === data.currentId);
+  if (index >= 0) MATERIAL_ROWS[index] = row;
+  else MATERIAL_ROWS.unshift(row);
+  await saveMaterialsRows();
+  renderMaterials();
+}
+
+const STANDARDS_SOURCE_LABELS = [
+  "PDF Le Dome v3",
+  "TCVN 4085:2011",
+  "TCVN 9377:2012",
+  "QCVN 06:2022/BXD",
+  "TCVN 3890:2023",
+  "TCVN 7447",
+  "TCVN 4519",
+  "TCVN 9206",
+  "TCVN 5687:2024",
+  "QCVN 16:2023/BXD"
+];
+const CONSTRUCTION_STANDARD_SEED = [
+  {
+    category: "KHẢO SÁT - ĐO ĐẠC",
+    source: ["PDF Le Dome v3", "Le Dome bổ sung"],
+    scope: "Khóa số liệu hiện trạng trước khi thi công, làm cơ sở triển khai bản vẽ và nghiệm thu từng lớp.",
+    prepare: ["Chụp ảnh/quay video hiện trạng toàn bộ mặt bằng, lối vận chuyển, thang máy, cửa, sàn, tường và thiết bị cần giữ lại.", "Kiểm tra nguồn điện, cấp thoát nước, vị trí hộp kỹ thuật, cửa đi/cửa sổ, cao độ sàn và các điểm có nguy cơ thấm.", "Bật mốc cao độ chuẩn +1m, trục tim, đường mực tường, vị trí thiết bị và lưu vào bản vẽ/ảnh hiện trường."],
+    execute: ["Dùng laser, thước thép và nivo để kiểm tra kích thước dài/rộng/cao, độ vuông góc, độ phẳng và sai lệch hiện trạng.", "Đánh dấu rõ khu vực phá dỡ, khu vực giữ lại, tuyến vận chuyển, vị trí tập kết vật tư và rác.", "Báo lại thiết kế/chủ trì thi công khi hiện trạng sai khác bản vẽ hoặc có xung đột MEP."],
+    accept: ["Có biên bản khảo sát, ảnh hiện trạng, bản vẽ ghi chú sai lệch và mốc cao độ/trục tim còn nhìn thấy tại công trình.", "Các kích thước chính, lỗ chờ, cao độ, vị trí thiết bị được đối chiếu trước khi chuyển bước.", "Mọi thay đổi so với thiết kế phải có xác nhận trước khi thi công."],
+    reject: ["Thi công khi chưa có mốc chuẩn hoặc mốc bị mất.", "Không kiểm tra điện nước/cửa/an ninh trước khi rời công trình.", "Không ghi nhận hiện trạng dẫn đến tranh chấp hư hỏng hoặc khối lượng."]
+  },
+  {
+    category: "CHE PHỦ",
+    source: ["PDF Le Dome v3", "Le Dome bổ sung"],
+    scope: "Bảo vệ hiện trạng, bề mặt hoàn thiện và lối vận chuyển trước mọi công tác bụi, nước, va đập.",
+    prepare: ["Xác định khu vực cần giữ lại: sàn, cửa, kính, thang máy, thiết bị vệ sinh, đồ nội thất, tủ điện và hệ MEP.", "Chuẩn bị bạt, nilon, carton, xốp góc, băng dính phù hợp; không dùng băng dính làm bong sơn hoặc hỏng bề mặt.", "Dọn sạch bụi/rác trước khi phủ để tránh cát sạn cọ xước bề mặt."],
+    execute: ["Che phủ kín lối vận chuyển, chân tường, sàn đã hoàn thiện và thiết bị hiện hữu trước khi phá dỡ/trộn vữa/sơn.", "Bọc riêng các thiết bị cần giữ lại, ghi nhãn nếu tháo ra cất giữ.", "Kiểm tra và thay lớp che phủ khi bị rách, ướt, bẩn hoặc mất khả năng bảo vệ."],
+    accept: ["Bề mặt được che kín, mép dán gọn, không cản trở lối thoát hiểm và không che mất điểm cần kiểm tra kỹ thuật.", "Sau mỗi ca, khu vực che phủ không đọng nước, không vương đinh/vít/sạn gây xước.", "Không phát sinh vết xước, mẻ, lem sơn/vữa trên hiện trạng cần giữ."],
+    reject: ["Phá dỡ hoặc trộn vữa khi chưa che phủ.", "Dán băng keo trực tiếp lên bề mặt dễ bong/tróc mà không thử trước.", "Lớp phủ bị rách nhưng vẫn thi công tiếp."]
+  },
+  {
+    category: "PHÁ DỠ",
+    source: ["PDF Le Dome v3", "Le Dome bổ sung"],
+    scope: "Tháo dỡ đúng phạm vi thiết kế, không làm hư hỏng phần giữ lại, đảm bảo an toàn và vệ sinh.",
+    prepare: ["Khóa/kiểm tra điện nước trước khi phá dỡ; xác định rõ đường ống, dây điện, thiết bị âm tường có nguy cơ va chạm.", "Bọc dán bảo vệ trước khi phá dỡ; phân loại thiết bị giữ lại, thiết bị bỏ đi và vật tư có thể tái sử dụng.", "Thông báo giờ thi công ồn/bụi, chuẩn bị bao tải, xe gom rác và vị trí tập kết."],
+    execute: ["Phá dỡ theo lớp, từ trên xuống dưới, từ ngoài vào trong; không đập phá tùy tiện vào kết cấu, hộp kỹ thuật hoặc tường không thuộc phạm vi.", "Thiết bị tháo giữ lại phải xếp gọn, dán nhãn, tránh thất lạc và tránh đặt lên bề mặt hoàn thiện.", "Rác phá dỡ phải gom theo ca, không để cản lối đi, không kéo lê làm xước sàn/thang máy."],
+    accept: ["Phạm vi phá dỡ đúng bản vẽ, mép phá gọn, không nứt lan, không hư hỏng hệ MEP và hiện trạng giữ lại.", "Mặt bằng sau phá dỡ sạch, khô, an toàn để chuyển bước.", "Có ảnh xác nhận trước/sau và ghi chú phần phát sinh nếu có."],
+    reject: ["Phá dỡ khi chưa kiểm tra điện nước.", "Để rác, sắt thép, gạch vỡ trên lối đi.", "Làm mất thiết bị khách giữ lại hoặc gây hư hỏng phần không thi công."]
+  },
+  {
+    category: "VẬN CHUYỂN",
+    source: ["Le Dome bổ sung"],
+    scope: "Đưa vật tư/thiết bị vào công trình không gây hư hỏng, thất lạc, sai vị trí hoặc ảnh hưởng cư dân/tòa nhà.",
+    prepare: ["Xác nhận giờ vận chuyển, thang máy/lối đi được phép dùng, tải trọng, kích thước kiện hàng và vị trí tập kết.", "Đóng gói chống xước, chống ẩm, chống va đập; hàng dễ vỡ phải có nhãn và người chịu trách nhiệm nhận.", "Chuẩn bị biên bản giao nhận, danh mục số lượng, ảnh kiện hàng trước khi đưa lên công trình."],
+    execute: ["Không kéo lê vật tư trên sàn; dùng xe đẩy bánh mềm hoặc nâng tay có bảo vệ góc cạnh.", "Tập kết theo hạng mục/khu vực, chừa lối đi và lối thoát hiểm; vật tư nặng đặt sát tường/khu vực chịu lực phù hợp.", "Đồ gỗ, kính, đá, thiết bị hoàn thiện phải vận chuyển sau khi đã có phương án bảo vệ mặt bằng."],
+    accept: ["Số lượng, mã hàng, tình trạng bề mặt và vị trí lưu khớp phiếu nhận/kho.", "Không trầy xước thang máy, hành lang, cửa, sàn và vật tư.", "Vật tư được che phủ, kê cao, tránh ẩm và có người phụ trách."],
+    reject: ["Tập kết bừa bãi chắn lối thi công/thoát hiểm.", "Không kiểm đếm khi nhận hàng.", "Đặt vật tư ẩm, nặng hoặc sắc cạnh trực tiếp lên sàn hoàn thiện."]
+  },
+  {
+    category: "XÂY TRÁT",
+    source: ["PDF Le Dome v3", "TCVN 4085:2011", "TCVN 9377:2012"],
+    scope: "Xây tường, tô trát đúng vị trí, phẳng, vuông, chắc, sạch và đủ điều kiện cho các lớp hoàn thiện sau.",
+    prepare: ["Sàng cát sạch, dùng nước sạch, lót bạt dưới máng trộn và giữ khu vực trộn khô gọn.", "Búng mực vị trí tường, độ dày hoàn thiện và kiểm tra bằng laser trước khi xây/trát.", "Tưới ẩm bề mặt, làm sạch rêu bụi/tạp chất; đóng lưới tại vị trí bê tông giáp tường, góc cửa, rãnh ống âm tường."],
+    execute: ["Tường xây phải căng dây lèo, bắt mỏ góc, có thép neo vào vách/cột bê tông; tường 100 gia cường lưới/thép theo nhịp 4-5 hàng.", "Lanh tô ăn sâu tối thiểu 20cm mỗi bên; sau 24h mới chèn hàng gạch nghiêng đầu tường nếu cần.", "Trát theo lớp, không trát giáp mí tùy tiện; dùng thước 2m, nivo và đèn rọi kiểm tra mặt phẳng, gờ cạnh, chân tường."],
+    accept: ["Khối xây đúng vị trí/kích thước, mạch vữa đầy, hàng gạch thẳng, góc cạnh đúng thiết kế, không dính vữa bẩn.", "Lớp trát bám chắc, không bong bộp, mặt phẳng đều, góc vuông ke, chân tường thẳng sạch để chuẩn bị ốp/lát.", "Bề mặt được dưỡng ẩm sau thi công, không va chạm trong giai đoạn chưa khô."],
+    reject: ["Cát/vữa bừa bãi, máng trộn không lót bạt, gạch cát chắn lối đi.", "Không neo tường vào vách/cột hoặc không gia cường vị trí giao vật liệu.", "Tường/trát rỗng, nứt, cong, lệch kích thước cửa/lỗ chờ."]
+  },
+  {
+    category: "CHỐNG THẤM",
+    source: ["PDF Le Dome v3", "TCVN 9377:2012"],
+    scope: "Xử lý chống thấm khu ướt, ban công, cổ ống, mép tường và các vị trí có nguy cơ nước.",
+    prepare: ["Vệ sinh kỹ bề mặt, góc, mép, cổ ống; đục bỏ phần rỗng yếu, bo góc và xử lý khe nứt trước khi quét.", "Che chắn khu vực liền kề, kiểm tra cao độ phễu thoát sàn và tuyến thoát nước.", "Vật liệu chống thấm phải đúng chủng loại, còn hạn, trộn/thi công theo hướng dẫn hãng."],
+    execute: ["Quét/phủ đủ lớp, đều màng, lên chân tường và ôm cổ ống theo thiết kế; không để lỗ kim, rách, bọt khí.", "Ngâm nước test tối thiểu 12h theo tiêu chuẩn Le Dome; khu rủi ro cao nên kéo dài thời gian test theo yêu cầu kỹ thuật.", "Sau test đạt phải cán vữa/lớp bảo vệ ngay hoặc khóa khu vực để tránh đi lại, va chạm lên màng chống thấm."],
+    accept: ["Mép, nối, cổ ống kín; không thấm xuống trần/tường khu dưới, không tụt nước bất thường khi test.", "Có ảnh trước khi phủ bảo vệ và biên bản test nước.", "Lớp bảo vệ không làm thủng màng, cao độ vẫn đảm bảo thoát nước."],
+    reject: ["Bỏ qua test nước.", "Đi lại/đặt vật tư lên lớp chống thấm chưa bảo vệ.", "Cổ ống, chân tường, góc sàn không được xử lý riêng."]
+  },
+  {
+    category: "ĐIỆN NƯỚC",
+    source: ["TCVN 7447", "TCVN 4519", "TCVN 9206", "PDF Le Dome v3"],
+    scope: "Thi công hệ điện, cấp thoát nước và thiết bị vệ sinh an toàn, dễ bảo trì, không rò rỉ, không xung đột hoàn thiện.",
+    prepare: ["Rà soát bản vẽ MEP với thực tế: vị trí ổ cắm/công tắc, thiết bị vệ sinh, đèn, phễu, trục kỹ thuật và cao độ hoàn thiện.", "Định vị laser, đánh dấu tuyến ống/dây; không đục cắt kết cấu khi chưa được duyệt.", "Che đậy miệng thoát, đầu ống và thiết bị để tránh vữa/rác lọt vào."],
+    execute: ["Dây điện đi trong ống bảo vệ, phân tuyến nguồn/điều khiển/tín hiệu, có nối đất và bảo vệ chống rò phù hợp.", "Ống nước cố định chắc, đúng dốc thoát, có thử áp/thử kín trước khi che phủ; đầu chờ được bịt kín và ghi nhãn.", "Thiết bị vệ sinh lắp thẳng, cân bằng, hoạt động tốt; đeo bao tay và dán bảo vệ sau khi lắp."],
+    accept: ["Test cách điện, test nguồn, test áp, test thoát nước và vận hành từng thiết bị đạt.", "Không rò nước, không nghẹt thoát, không xước lớp men/mạ chrome, không bẩn bề mặt hoàn thiện.", "Có sơ đồ/ảnh tuyến âm tường trước khi trát, ốp hoặc đóng trần."],
+    reject: ["Rác/vữa rơi vào lỗ thoát bồn cầu, bồn tắm, lavabo.", "Không thử áp trước khi che phủ.", "Dây/ống không cố định, không ghi nhãn hoặc bị xung đột với khoan lắp thiết bị."]
+  },
+  {
+    category: "PCCC / AN TOÀN KỸ THUẬT",
+    source: ["QCVN 06:2022/BXD", "TCVN 3890:2023", "Le Dome bổ sung"],
+    scope: "Giữ an toàn cháy nổ, an toàn điện, an toàn lao động và lối thoát trong suốt thi công.",
+    prepare: ["Xác định lối thoát hiểm, vị trí bình chữa cháy, tủ điện tạm, khu vực hàn/cắt/nhiệt và vật liệu dễ cháy.", "Trang bị bình chữa cháy phù hợp, biển cảnh báo, dây điện tạm có aptomat/RCD và ổ cắm công nghiệp an toàn.", "Công nhân dùng PPE phù hợp: giày, găng, kính, khẩu trang, dây an toàn khi làm trên cao."],
+    execute: ["Không che chắn lối thoát hiểm, đầu báo, họng nước, tủ PCCC; vật tư không xếp chắn hành lang.", "Hàn/cắt/mài phải có người giám sát, che tia lửa, dọn vật liệu dễ cháy và kiểm tra sau khi kết thúc.", "Điện tạm treo cao/gọn, không đấu nối trần, không dùng dây hở hoặc ổ cắm quá tải."],
+    accept: ["Mỗi ca thi công có kiểm tra điện tạm, vệ sinh bụi/rác dễ cháy và lối thoát.", "Bình chữa cháy còn áp, đặt dễ lấy; khu vực nguy hiểm có cảnh báo.", "Không có vi phạm an toàn nghiêm trọng trước khi rời công trình."],
+    reject: ["Dùng dây điện hở, nối tạm bằng băng keo kém an toàn.", "Hàn/cắt gần vật liệu dễ cháy không che chắn.", "Chặn lối thoát hiểm hoặc tháo/che thiết bị PCCC hiện hữu."]
+  },
+  {
+    category: "ĐIỀU HÒA",
+    source: ["TCVN 5687:2024", "Le Dome bổ sung"],
+    scope: "Thi công hệ điều hòa đúng vị trí, thoát nước tốt, kín gas, bảo trì được và không ảnh hưởng trần/nội thất.",
+    prepare: ["Kiểm tra tải lạnh, vị trí dàn lạnh/dàn nóng, tuyến ống đồng, ống thoát ngưng, nguồn điện và cửa thăm bảo trì.", "Bọc bảo ôn đúng chiều dày, chuẩn bị giá treo/ty treo độc lập, đệm chống rung và vật tư thoát nước.", "Phối hợp trần, đèn, tủ và hốc gió trước khi khoan/cắt."],
+    execute: ["Ống đồng đi gọn, không bẹp gập, bảo ôn kín mối nối; dàn lạnh/dàn nóng cân bằng, chắc và có khoảng thao tác bảo trì.", "Ống nước ngưng có độ dốc, test xả nước trước khi đóng trần; không xả vào vị trí gây mùi/ngập.", "Hút chân không, thử kín và chạy thử theo hướng dẫn hãng trước bàn giao."],
+    accept: ["Máy chạy ổn định, không rung ồn bất thường, không đọng sương, không rò nước/rò gas.", "Miệng gió, khe hồi, cửa thăm đúng vị trí, không xung đột đèn/trần/nội thất.", "Có ảnh tuyến ống âm trần và phiếu chạy thử."],
+    reject: ["Không test thoát ngưng trước khi đóng trần.", "Ống bảo ôn hở gây đọng sương.", "Dàn nóng thiếu khoảng thoáng hoặc không có phương án bảo trì."]
+  },
+  {
+    category: "THIẾT BỊ THÔNG MINH - MẠNG - CAMERA",
+    source: ["TCVN 7447", "Le Dome bổ sung"],
+    scope: "Thi công hệ tín hiệu, mạng, camera và thiết bị thông minh ổn định, có nhãn, dễ vận hành.",
+    prepare: ["Chốt sơ đồ tủ mạng, vị trí AP/camera/cảm biến/công tắc thông minh và nguồn cấp.", "Tách tuyến điện lực và tín hiệu; chuẩn bị ống chờ, hộp kỹ thuật, dây đúng chuẩn và nhãn đầu dây.", "Kiểm tra vùng phủ Wi-Fi/camera, góc nhìn, vị trí tránh ngược sáng và khu vực riêng tư."],
+    execute: ["Dây tín hiệu không kéo căng, không nối âm tường tùy tiện; đầu dây bấm chuẩn và có dự phòng hợp lý.", "Thiết bị lắp thẳng, chắc, đúng cao độ; nguồn adapter/tủ mạng thông thoáng, có quản lý dây.", "Cập nhật cấu hình, đặt tên thiết bị theo phòng/khu vực và lưu tài khoản bàn giao."],
+    accept: ["Test mạng, camera, cảm biến, kịch bản bật/tắt, điều khiển từ app và mất/khôi phục nguồn.", "Mọi đầu dây, port switch, thiết bị đều có nhãn và sơ đồ.", "Hình ảnh camera rõ, không rung, không bị che bởi rèm/tủ/đèn."],
+    reject: ["Không ghi nhãn dây/port.", "Đặt thiết bị thông minh ở vị trí khó bảo trì hoặc nhiễu tín hiệu.", "Dùng chung hộp/tuyến gây nhiễu hoặc mất an toàn điện."]
+  },
+  {
+    category: "THẠCH CAO",
+    source: ["PDF Le Dome v3", "TCVN 9377:2012"],
+    scope: "Lắp trần/vách thạch cao đúng cao độ, phẳng, chắc, sắc nét và không xung đột MEP.",
+    prepare: ["Kiểm tra cao độ trần, vị trí đèn, miệng gió, cửa thăm, rèm, thiết bị treo và tuyến MEP trước khi lên xương.", "Dùng laser bật mực, kiểm tra vật tư xương/tấm/ty treo đúng chủng loại, không cong vênh/gỉ.", "Xác nhận vị trí gia cường cho đèn nặng, cửa thăm, rèm, thiết bị treo."],
+    execute: ["Ty treo thẳng đứng, không xiên vẹo; xương chính/phụ đều, chắc, tránh trùng vị trí đèn/họng gió.", "Băng lưới xử lý mối nối; mép khe, góc giật cấp, phào âm phải thẳng, vuông ke, sắc nét.", "Không treo tải trực tiếp lên tấm thạch cao khi chưa có gia cường."],
+    accept: ["Trần đúng cao độ thiết kế, mặt phẳng đều; kiểm bằng thước cân bằng, laser và đèn rọi.", "Mối nối không nứt, vít chìm đúng, cạnh/góc sạch, cửa thăm thao tác được.", "MEP trên trần đã test trước khi đóng kín."],
+    reject: ["Ty treo lệch/thiếu, xương yếu hoặc khoảng cách xương không đều.", "Đóng tấm che mất điểm cần bảo trì.", "Mặt trần võng, nứt mối nối, mép khe lem xấu."]
+  },
+  {
+    category: "ỐP LÁT",
+    source: ["PDF Le Dome v3", "TCVN 9377:2012"],
+    scope: "Ốp/lát gạch đúng mạch, phẳng, bám chắc, thoát nước tốt và bảo vệ bề mặt sau thi công.",
+    prepare: ["Dọn sạch nền/tường, kiểm tra cao độ, độ phẳng, chống thấm và vị trí phễu thoát trước khi ốp lát.", "Bật laser xác định viên/hàng định vị; kiểm tra gạch đúng mẫu, kích thước, lô màu và tình trạng cong vênh/sứt mẻ.", "Chuẩn bị ke cân bằng, cữ mạch, keo/vữa đúng loại và phương án bảo vệ sàn sau lát."],
+    execute: ["Bắt buộc dùng cài cữ mạch/ke cân bằng; mạch ngang dọc đều, cạnh viên thẳng, không để rỗng chân.", "Khu vệ sinh ưu tiên ốp tường trước, lát sàn sau; hàng gạch cuối cắt sắc, vừa phễu và chân tường.", "Vệ sinh vữa/keo khi còn thi công được, không để bám chết trên bề mặt."],
+    accept: ["Mặt ốp/lát phẳng, đặc chắc, gõ không bộp; màu sắc/hoa văn/mạch đồng đều.", "Mạch đầy, thẳng, sắc; viên cắt quanh phễu, góc, nẹp gọn và đúng thiết kế.", "Không nứt, ố, sứt mẻ, bong, lem hóa chất/vữa/sơn."],
+    reject: ["Mạch không đều do không dùng cữ.", "Sàn không phẳng, gạch bộp/long chân.", "Không bảo vệ sàn sau khi hoàn thiện."]
+  },
+  {
+    category: "ĐÁ",
+    source: ["TCVN 9377:2012", "QCVN 16:2023/BXD", "Le Dome bổ sung"],
+    scope: "Thi công đá ốp/lát/mặt bàn đúng mẫu, an toàn liên kết, sắc cạnh và chống thấm bẩn.",
+    prepare: ["Kiểm tra chủng loại đá, vân/màu, độ dày, kích thước, cạnh bo/vát, chống thấm mặt sau nếu yêu cầu.", "Shopdrawing chia tấm, vị trí nối, hướng vân, lỗ khoét lavabo/bếp/ổ cắm và phương án nâng đỡ.", "Bề mặt nền/tường phải phẳng, chắc, khô; vị trí treo/ốp cao cần có neo hoặc kết cấu đỡ phù hợp."],
+    execute: ["Cắt/khoét bằng dụng cụ phù hợp, không mẻ cạnh; dùng keo/vữa/neo theo đúng vị trí và tải trọng.", "Canh mạch đều, bơm keo kín, xử lý chống thấm mép, cổ lỗ khoét, vị trí tiếp xúc nước.", "Không để axit/hóa chất mạnh, vữa xi măng hoặc sắt gỉ tiếp xúc gây ố đá."],
+    accept: ["Tấm đá phẳng, chắc, không bộp, không nứt, không sứt cạnh; vân/màu được duyệt.", "Mạch nối thẳng, kín, cùng màu; lỗ khoét vừa thiết bị và được xử lý chống thấm.", "Bề mặt sạch, không trầy, không ố, có bảo vệ sau nghiệm thu."],
+    reject: ["Tự ý đảo vân/lô màu chưa duyệt.", "Cắt khoét mẻ cạnh, nứt góc.", "Thiếu neo/đỡ ở vị trí đá treo hoặc mặt đá chịu tải."]
+  },
+  {
+    category: "SƠN BẢ",
+    source: ["PDF Le Dome v3", "TCVN 9377:2012"],
+    scope: "Hoàn thiện bả, giáp, sơn đạt bề mặt phẳng mịn, màu đồng nhất, cạnh nét và không lem bẩn.",
+    prepare: ["Vệ sinh kỹ bề mặt, xử lý nứt/rỗ, đảm bảo tường/trần đủ khô trước khi bả/sơn.", "Che phủ khu vực đã hoàn thiện; dùng băng dính phù hợp để tránh bong màng sơn khi vá dặm.", "Kiểm tra vật tư sơn/bột bả đúng mã màu, lô hàng, hạn dùng và hướng dẫn hãng."],
+    execute: ["Lăn sơn lót; bả 1-2 lớp, lớp trước khô mới làm lớp sau; xả nhám kỹ và vệ sinh bụi trước sơn phủ.", "Dùng đèn rọi kiểm tra độ phẳng mịn; góc lồi nên bo rất nhẹ 1-2mm để hạn chế mẻ cạnh.", "Sơn góc/cạnh bằng cọ trước, sau đó lăn roller; đường giao 2 màu nên đặt lệch cạnh 2-5mm khi cần."],
+    accept: ["Bề mặt phẳng mịn, không gợn/cong, không rỗ, không xước nhám; góc mép sắc và đều.", "Màu đồng nhất, không đậm nhạt, chảy sơn, bong do băng dính hoặc lem sàn/khu hoàn thiện.", "Mép hình vẽ/đường màu sắc nét, dặm vá không lộ mảng."],
+    reject: ["Sơn khi bề mặt còn ẩm/bụi.", "Không dùng đèn rọi kiểm tra trước sơn phủ.", "Màu lệch lô, cạnh lem, băng dính làm bong sơn."]
+  },
+  {
+    category: "SÀN GỖ - SÀN NHỰA",
+    source: ["PDF Le Dome v3", "TCVN 9377:2012", "Le Dome bổ sung"],
+    scope: "Lắp sàn gỗ/sàn nhựa phẳng, êm, đúng khe co giãn, mép nối kín và được bảo vệ sau hoàn thiện.",
+    prepare: ["Kiểm tra nền phẳng, khô, sạch; xử lý điểm gồ/lõm, ẩm hoặc cát sạn trước khi lát.", "Để vật liệu thích nghi môi trường theo khuyến nghị hãng; kiểm tra mã màu, lô hàng, phụ kiện nẹp/phào.", "Bật laser/hàng đầu tiên song song trục nhà và xác định điểm kết thúc, khe co giãn."],
+    execute: ["Thi công theo chiều/hướng đã duyệt, mạch nối so le, mép tấm khít; không ép mất khe co giãn.", "Vị trí kết thúc gỗ cần sạch, đảm bảo khe co ngót khoảng 15mm hoặc theo hãng.", "Phào/nẹp thẳng, chắc, mối nối gọn; phào bo cong phải dùng phào uốn, không cắt nối gấp khúc."],
+    accept: ["Sàn phẳng, êm, không ọp, không kêu bất thường; mép tấm không vỡ nứt.", "Mép nối khít, nẹp/phào nét, không cong vênh, không lem keo.", "Bề mặt không xước, không hở khe bất thường và được che phủ sau nghiệm thu."],
+    reject: ["Lát trên nền ẩm/bẩn/gồ ghề.", "Thiếu khe co giãn hoặc nẹp/phào xử lý xấu.", "Không bảo vệ sàn sau hoàn thiện."]
+  },
+  {
+    category: "CỬA",
+    source: ["Le Dome bổ sung", "TCVN 9377:2012"],
+    scope: "Lắp cửa đúng kích thước, thẳng, kín, vận hành êm và không xung đột hoàn thiện.",
+    prepare: ["Kiểm tra kích thước ô chờ sau xây/trát/ốp, cao độ sàn hoàn thiện, chiều mở và phụ kiện khóa/bản lề.", "Xác nhận mẫu cửa, màu, hướng mở, vị trí tay nắm, nẹp, gioăng và khe hở chân cửa.", "Bảo vệ bề mặt cửa và khu vực sàn/tường lân cận trước lắp đặt."],
+    execute: ["Khung cửa lắp thẳng đứng, vuông góc, cố định chắc; bơm foam/keo/khe theo đúng vật liệu.", "Cánh cửa cân, khe đều, không cạ sàn, không xệ; phụ kiện lắp đủ vít và đúng vị trí.", "Không cắt sửa tùy tiện làm mất bảo hành hoặc sai thiết kế."],
+    accept: ["Cửa đóng mở êm, khóa hoạt động tốt, khe hở đều, gioăng kín, nẹp thẳng và sạch keo.", "Bề mặt không xước/mẻ/cong vênh, màu đúng duyệt.", "Cao độ chân cửa phù hợp sàn hoàn thiện và không cản thoát nước khu ướt."],
+    reject: ["Lắp khi ô chờ chưa chuẩn gây cắt vá xấu.", "Cánh xệ/cạ, khóa kẹt hoặc khe sáng không đều.", "Bơm keo lem, nẹp hở, bề mặt trầy xước."]
+  },
+  {
+    category: "NHÔM KÍNH",
+    source: ["Le Dome bổ sung", "QCVN 16:2023/BXD"],
+    scope: "Thi công nhôm kính an toàn, kín nước/kín gió, đúng mẫu và vận hành bền.",
+    prepare: ["Kiểm tra kích thước ô chờ, độ vuông, cao độ, vị trí thoát nước và bề mặt liên kết.", "Xác nhận hệ nhôm, màu sơn, loại kính, độ dày, phụ kiện, gioăng và mẫu keo.", "Chuẩn bị phương án nâng kính, chống rơi vỡ và bảo vệ mép kính."],
+    execute: ["Khung nhôm lắp thẳng, cân, cố định chắc; lỗ thoát nước không bị bít.", "Kính lắp đúng chiều/mặt, có đệm kê, gioăng đủ; keo silicone bơm đều, bám dính tốt, không rỗ/bọt.", "Phụ kiện đóng mở điều chỉnh êm, không xệ cánh, không cạ ray."],
+    accept: ["Cửa/vách kín nước, kín gió ở mức thiết kế; test phun nước vị trí rủi ro.", "Kính không nứt, xước sâu, mẻ cạnh; khung không cong, không trầy rõ.", "Keo đều màu, đường keo thẳng sạch, phụ kiện vận hành tốt."],
+    reject: ["Thiếu đệm kê kính hoặc lắp kính mẻ cạnh.", "Bịt lỗ thoát nước khung nhôm.", "Đường keo rỗ, đứt đoạn, bám bẩn hoặc lem rộng."]
+  },
+  {
+    category: "SẮT",
+    source: ["Le Dome bổ sung", "QCVN 16:2023/BXD"],
+    scope: "Gia công/lắp đặt sắt thép trang trí, khung đỡ, lan can, kết cấu phụ chắc, đúng bản vẽ và chống gỉ.",
+    prepare: ["Kiểm tra kích thước, thép/hộp/tấm đúng quy cách; vị trí neo, bản mã và bề mặt liên kết đủ chịu lực.", "Duyệt shopdrawing, mẫu sơn/mạ, chi tiết hàn, vị trí khoan và phương án chống cháy khi hàn.", "Che chắn tia lửa, bụi mài và bề mặt hoàn thiện xung quanh."],
+    execute: ["Cắt/hàn đúng kích thước, mối hàn đủ, mài gọn; khung lắp thẳng, vuông, không vặn.", "Bản mã/bulong/neo đủ số lượng, siết chắc; vị trí ngoài trời/khu ẩm phải xử lý chống gỉ kỹ.", "Sơn lót chống gỉ và sơn phủ đủ lớp; không sơn phủ khi bề mặt còn dầu, bụi, ẩm."],
+    accept: ["Kết cấu chắc, không rung lắc, không sắc cạnh nguy hiểm; kích thước đúng bản vẽ.", "Mối hàn mịn, không cháy lẹm, không rỗ; bề mặt sơn đều, không gỉ, không lem khu hoàn thiện.", "Lỗ khoan/bản mã được che xử lý thẩm mỹ."],
+    reject: ["Hàn/cắt không che chắn gây cháy/xước.", "Thiếu chống gỉ hoặc sơn phủ lên bề mặt bẩn.", "Khung lệch, rung, cạnh sắc, bản mã yếu."]
+  },
+  {
+    category: "GỖ NỘI THẤT",
+    source: ["PDF Le Dome v3", "Le Dome bổ sung"],
+    scope: "Lắp đặt đồ gỗ/nội thất đúng thiết kế, chắc, sắc nét, bảo vệ hoàn thiện và phối hợp tốt các thầu khác.",
+    prepare: ["Vận chuyển đồ gỗ lên công trình gọn gàng, tính toán mặt bằng lắp trước; không dựa/đặt gỗ lên bề mặt đã hoàn thiện.", "Kiểm tra chất lượng gỗ, màu, cạnh, phụ kiện, kích thước thực tế trước khi lắp.", "Phối hợp thiết kế, điện nước, đá, kính, thiết bị để khóa vị trí và trình tự lắp."],
+    execute: ["Lắp đúng bản vẽ và thực tế, chậm mà chắc, một lần ăn ngay; không tự ý sửa thiết kế.", "Căn chỉnh khe hở, cánh, ray, bản lề; cố định chắc nhưng không phá hỏng sàn/tường/trần.", "Che phủ bề mặt gỗ và phần hoàn thiện xung quanh trong suốt quá trình lắp."],
+    accept: ["Sản phẩm chính xác theo ý đồ/bản vẽ, sắc nét, chắc chắn, vận hành êm.", "Bề mặt không sứt sẹo, không cong vênh, không lem keo; phụ kiện đủ và đồng bộ.", "Hạn chế tối đa hư hỏng phần hoàn thiện khác; mọi defect được ghi nhận xử lý trước bàn giao."],
+    reject: ["Tự động làm sai thiết kế.", "Không kiểm tra chất lượng gỗ trước khi lắp.", "Thi công ẩu làm sứt sẹo, phải sửa đi sửa lại ảnh hưởng tiến độ."]
+  },
+  {
+    category: "RÈM",
+    source: ["Le Dome bổ sung"],
+    scope: "Lắp rèm, ray, hộp rèm đúng kích thước, rủ đẹp, vận hành êm và không xung đột điều hòa/đèn/cửa.",
+    prepare: ["Đo lại kích thước sau hoàn thiện, kiểm tra cao độ hộp rèm, vị trí trần/thạch cao gia cường và hướng mở cửa.", "Xác nhận mẫu vải, màu, độ cản sáng, kiểu may, loại ray/motor và nguồn điện nếu có.", "Kiểm tra bề mặt tường/trần đủ chắc để bắt ray."],
+    execute: ["Ray lắp thẳng, vít đủ và đúng khoảng cách; rèm treo đủ móc, nếp đều, không lê sàn ngoài thiết kế.", "Rèm motor phải đi dây gọn, test remote/app/công tắc và hành trình.", "Không làm bẩn vải, không khoan trúng dây/ống âm trần."],
+    accept: ["Rèm kéo êm, nếp đều, chiều cao đồng nhất, không cọ cửa/đồ nội thất.", "Ray/hộp rèm thẳng, chắc, không võng; vải sạch, không lỗi dệt, không bẩn.", "Motor/kịch bản điều khiển hoạt động ổn định nếu có."],
+    reject: ["Lắp ray vào trần yếu chưa gia cường.", "Rèm lệch cao độ, nếp xấu, ray võng.", "Không test motor hoặc không bàn giao điều khiển."]
+  },
+  {
+    category: "CÂY - TIỂU CẢNH",
+    source: ["Le Dome bổ sung"],
+    scope: "Thi công cây, chậu, tiểu cảnh an toàn tải trọng, chống thấm, thoát nước và dễ chăm sóc.",
+    prepare: ["Kiểm tra tải trọng sàn/ban công, chống thấm, thoát nước, ánh sáng và điều kiện chăm sóc.", "Duyệt loại cây, kích thước chậu, vật liệu phủ, hệ tưới/thoát nếu có.", "Bảo vệ sàn/tường và lối vận chuyển đất, đá, cây."],
+    execute: ["Chậu/khay có lớp thoát nước, chống tràn, chống thấm; không để đất trực tiếp lên sàn hoàn thiện.", "Cây đặt đúng vị trí, chắc, không cản lối đi/cửa thoát hiểm; đá/sỏi/trang trí cố định gọn.", "Hệ tưới phải test rò rỉ, tránh nước chảy vào tường/gỗ/ổ điện."],
+    accept: ["Tiểu cảnh sạch, đúng thiết kế, không rò nước, không mùi, không bẩn bề mặt xung quanh.", "Cây khỏe, không gãy dập, chậu chắc và có phương án bảo trì.", "Thoát nước hoạt động tốt sau test."],
+    reject: ["Bỏ qua kiểm tra chống thấm/thoát nước.", "Đặt cây/chậu quá tải hoặc chắn lối.", "Đất/nước làm bẩn, ố sàn/tường/gỗ."]
+  },
+  {
+    category: "BIỂN BẢNG LOGO",
+    source: ["Le Dome bổ sung", "TCVN 7447"],
+    scope: "Thi công logo, biển bảng, chữ nổi đúng nhận diện, chắc, an toàn điện và sắc nét.",
+    prepare: ["Duyệt bản vẽ kích thước, màu, chất liệu, ánh sáng, vị trí bắt vít/treo và nguồn điện.", "Kiểm tra mặt nền đủ phẳng/chắc, tránh khoan trúng MEP; chuẩn bị dưỡng khoan hoặc template chữ.", "Vật liệu phải không cong vênh, xước, lệch màu; bộ nguồn/LED phù hợp môi trường lắp."],
+    execute: ["Lắp theo template, canh laser trục và khoảng cách chữ; bản mã/keo/vít đủ chắc.", "Dây điện đi kín/gọn, có bảo vệ và dễ bảo trì; test sáng đều trước khi cố định hoàn toàn.", "Không để keo lem, dấu khoan bẩn hoặc cạnh sắc nguy hiểm."],
+    accept: ["Logo/biển đúng kích thước, cân trục, màu đúng duyệt; chữ thẳng, khoảng cách đều.", "Liên kết chắc, bề mặt sạch, không xước; ánh sáng đều, không nhấp nháy.", "Nguồn điện an toàn, dễ tắt/bảo trì."],
+    reject: ["Lắp lệch trục, sai màu, sai font/kích thước.", "Dây điện lộ xấu hoặc không an toàn.", "Khoan sai làm hỏng nền hoàn thiện."]
+  },
+  {
+    category: "DEFECT CHẤM VÁ",
+    source: ["PDF Le Dome v3", "Le Dome bổ sung"],
+    scope: "Rà soát và xử lý lỗi hoàn thiện trước bàn giao, không tạo thêm lỗi mới khi vá dặm.",
+    prepare: ["Lập punch list theo phòng/khu vực/hạng mục, đánh mã lỗi, ảnh lỗi, người phụ trách và hạn xử lý.", "Chuẩn bị đúng vật tư cùng mã màu/lô nếu có thể: sơn, keo, ron, nẹp, phụ kiện.", "Che phủ khu vực xung quanh trước khi chấm vá."],
+    execute: ["Xử lý từ lỗi nền tảng trước rồi đến bề mặt: thấm/nứt/bong trước, sau đó sơn, ron, nẹp, vệ sinh.", "Vá dặm theo mảng hợp lý, không chấm nhỏ lộ vết; dùng băng dính phù hợp tránh bong sơn.", "Sau sửa phải vệ sinh ngay và cập nhật trạng thái/ảnh sau."],
+    accept: ["Lỗi đã xử lý không còn thấy ở điều kiện ánh sáng nghiệm thu thông thường và đèn rọi khi cần.", "Màu, bóng, texture đồng nhất; không lem bẩn sang hạng mục khác.", "Punch list có trạng thái đóng và xác nhận nghiệm thu."],
+    reject: ["Sửa lỗi này gây lỗi mới.", "Dặm vá lệch màu/lộ mảng.", "Không có danh sách defect dẫn đến sót lỗi khi bàn giao."]
+  },
+  {
+    category: "VỆ SINH CN",
+    source: ["Le Dome bổ sung"],
+    scope: "Vệ sinh công nghiệp cuối công trình và vệ sinh theo giai đoạn để bảo vệ chất lượng hoàn thiện.",
+    prepare: ["Phân loại khu vực vệ sinh thô, vệ sinh tinh và vệ sinh bàn giao; xác định bề mặt nhạy cảm như gỗ, đá, kính, inox, sơn.", "Chọn hóa chất/dụng cụ phù hợp từng vật liệu; thử ở góc khuất trước khi dùng diện rộng.", "Thu gom vật tư thừa, đinh vít, bao bì, bụi xây dựng trước khi lau tinh."],
+    execute: ["Vệ sinh từ trên xuống dưới, từ trong ra ngoài; hút bụi trước khi lau ướt để tránh xước.", "Không dùng axit mạnh lên đá tự nhiên, inox, ron, phụ kiện mạ; không dùng vật sắc cạo kính/gỗ/sơn.", "Kiểm tra lại khe tủ, ray cửa, phễu thoát, thiết bị vệ sinh, mặt kính và sàn sau lau."],
+    accept: ["Công trình sạch bụi, không vệt hóa chất, không mùi khó chịu, không rác trong hộc/khe/khoang kỹ thuật.", "Bề mặt kính, đá, sàn, thiết bị, đồ gỗ không xước mới do vệ sinh.", "Có ảnh bàn giao và danh mục khu vực đã vệ sinh."],
+    reject: ["Dùng hóa chất sai làm ố đá, bạc màu kim loại hoặc bong sơn.", "Lau ướt trên bụi/cát gây xước.", "Bỏ sót khe, hộc tủ, phễu thoát, ray cửa."]
+  },
+  {
+    category: "KHÁC",
+    source: ["Le Dome bổ sung"],
+    scope: "Hạng mục phát sinh chưa có tiêu chuẩn riêng phải được kiểm soát bằng bản vẽ, mẫu duyệt và nghiệm thu theo rủi ro.",
+    prepare: ["Xác định rõ phạm vi, vật liệu, vị trí, tiêu chí thẩm mỹ/kỹ thuật và người duyệt trước thi công.", "Yêu cầu mẫu thử hoặc mockup với hạng mục mới, vật liệu mới hoặc vị trí dễ nhìn.", "Đánh giá rủi ro ảnh hưởng kết cấu, MEP, chống thấm, PCCC và hoàn thiện xung quanh."],
+    execute: ["Thi công theo mẫu/bản vẽ đã duyệt, ghi nhận ảnh từng bước trước khi che khuất.", "Bảo vệ hạng mục liền kề và khóa điểm dừng kiểm tra khi có rủi ro.", "Không tự ý thay vật liệu, màu, phương án liên kết hoặc trình tự thi công."],
+    accept: ["Đạt mẫu duyệt, đúng kích thước/vị trí, chắc, sạch, an toàn và không gây lỗi cho hạng mục khác.", "Có ảnh nghiệm thu, ghi chú vật liệu và hướng dẫn bảo trì nếu cần.", "Chủ trì thi công xác nhận trước khi bàn giao."],
+    reject: ["Thi công phát sinh không có duyệt.", "Không có tiêu chí nghiệm thu rõ ràng.", "Che khuất lỗi/rủi ro trước khi kiểm tra."]
+  }
+];
+
+function constructionStandardFor(category) {
+  const key = plainVietnamese(category);
+  return CONSTRUCTION_STANDARD_SEED.find((item) => plainVietnamese(item.category) === key)
+    || CONSTRUCTION_STANDARD_SEED.find((item) => item.category === "KHÁC");
+}
+
+function standardSearchText(item) {
+  return [item.category, item.scope, ...(item.source || []), ...(item.prepare || []), ...(item.execute || []), ...(item.accept || []), ...(item.reject || [])].join(" ");
+}
+
+function standardList(title, items) {
+  return `<section><h4>${escapeHtml(title)}</h4><ul>${items.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul></section>`;
+}
+
+function standardDossierCode(category) {
+  const index = constructionCategoryOptions().findIndex((item) => item === category);
+  return `LD-TC-${String(Math.max(0, index) + 1).padStart(2, "0")}`;
+}
+
+function standardVisualKind(category) {
+  const text = plainVietnamese(category);
+  if (text.includes("khao sat") || text.includes("do dac")) return "survey";
+  if (text.includes("che phu")) return "protection";
+  if (text.includes("pha do")) return "demolition";
+  if (text.includes("van chuyen")) return "transport";
+  if (text.includes("xay") || text.includes("trat")) return "masonry";
+  if (text.includes("chong tham")) return "waterproof";
+  if (text.includes("dien nuoc")) return "mep";
+  if (text.includes("pccc") || text.includes("an toan")) return "safety";
+  if (text.includes("dieu hoa")) return "hvac";
+  if (text.includes("thong minh") || text.includes("mang") || text.includes("camera")) return "network";
+  if (text.includes("thach cao")) return "ceiling";
+  if (text.includes("op lat") || text.includes("da")) return "tile";
+  if (text.includes("son")) return "paint";
+  if (text.includes("san go") || text.includes("san nhua")) return "flooring";
+  if (text.includes("cua")) return "door";
+  if (text.includes("nhom kinh")) return "glass";
+  if (text.includes("sat")) return "metal";
+  if (text.includes("go noi that")) return "joinery";
+  if (text.includes("rem")) return "curtain";
+  if (text.includes("cay") || text.includes("tieu canh")) return "landscape";
+  if (text.includes("bien bang") || text.includes("logo")) return "signage";
+  if (text.includes("defect") || text.includes("cham va")) return "defect";
+  if (text.includes("ve sinh")) return "cleaning";
+  return "generic";
+}
+
+function standardIllustrationSvg(kind) {
+  const common = `<defs><linearGradient id="g" x1="0" x2="1"><stop offset="0" stop-color="#e8f8f5"/><stop offset="1" stop-color="#f8fbfb"/></linearGradient></defs><rect width="360" height="190" rx="8" fill="url(#g)"/><rect x="18" y="145" width="324" height="18" rx="2" fill="#d8e6e8"/>`;
+  const scenes = {
+    survey: `<path d="M52 120h240" stroke="#73868b" stroke-width="3"/><path d="M88 120V62h34v58" fill="#fff" stroke="#168e87" stroke-width="4"/><path d="M105 62l118 44" stroke="#d94d55" stroke-width="3"/><circle cx="105" cy="58" r="10" fill="#168e87"/><rect x="230" y="70" width="60" height="52" fill="#fff" stroke="#18313b" stroke-width="3"/><path d="M242 88h36M242 104h28" stroke="#18313b" stroke-width="3"/>`,
+    protection: `<rect x="62" y="55" width="236" height="82" fill="#fff" stroke="#18313b" stroke-width="3"/><path d="M78 70h204M78 88h204M78 106h204M78 124h204" stroke="#d6e2e4" stroke-width="3"/><path d="M62 55l34 82M112 55l34 82M162 55l34 82M212 55l34 82" stroke="#18a999" stroke-width="3"/><rect x="34" y="126" width="70" height="22" fill="#f1c76b" stroke="#8a6d21" stroke-width="3"/>`,
+    demolition: `<rect x="78" y="44" width="150" height="96" fill="#fff" stroke="#18313b" stroke-width="3"/><path d="M78 76h150M78 108h150M114 44v96M154 44v96M194 44v96" stroke="#d6e2e4" stroke-width="3"/><path d="M228 72l36 18-18 28 34 22" fill="none" stroke="#d94d55" stroke-width="5"/><rect x="245" y="125" width="56" height="24" fill="#cfdadc" stroke="#73868b" stroke-width="3"/>`,
+    transport: `<rect x="96" y="76" width="56" height="42" fill="#fff" stroke="#18313b" stroke-width="3"/><rect x="162" y="58" width="62" height="60" fill="#e5f7f5" stroke="#168e87" stroke-width="3"/><path d="M82 122h170l22 24H108z" fill="#fff" stroke="#18313b" stroke-width="4"/><circle cx="132" cy="150" r="13" fill="#168e87"/><circle cx="244" cy="150" r="13" fill="#168e87"/><path d="M276 86h44v54" fill="none" stroke="#73868b" stroke-width="5"/>`,
+    masonry: `<rect x="62" y="64" width="210" height="78" fill="#fff" stroke="#18313b" stroke-width="3"/><path d="M62 90h210M62 116h210M98 64v26M156 64v26M214 64v26M126 90v26M184 90v26M242 90v26M98 116v26M156 116v26M214 116v26" stroke="#d94d55" stroke-width="3"/><path d="M298 42v104" stroke="#168e87" stroke-width="4"/><circle cx="298" cy="148" r="9" fill="#168e87"/>`,
+    waterproof: `<path d="M58 124h238v25H58z" fill="#fff" stroke="#18313b" stroke-width="3"/><path d="M82 124c24-34 54-34 78 0s54 34 78 0" fill="none" stroke="#168e87" stroke-width="5"/><path d="M204 56c-18 24-28 38-28 54a28 28 0 0056 0c0-16-10-30-28-54z" fill="#4bb7d8"/><path d="M70 84h52v40" fill="none" stroke="#18313b" stroke-width="4"/>`,
+    mep: `<rect x="54" y="58" width="230" height="86" fill="#fff" stroke="#18313b" stroke-width="3"/><path d="M78 92h84v32h96" fill="none" stroke="#168e87" stroke-width="7"/><path d="M78 72h180" stroke="#d94d55" stroke-width="5"/><circle cx="80" cy="92" r="12" fill="#fff" stroke="#168e87" stroke-width="4"/><rect x="238" y="106" width="38" height="38" rx="4" fill="#edf4f5" stroke="#18313b" stroke-width="3"/><path d="M248 122h18M248 132h18" stroke="#18313b" stroke-width="3"/>`,
+    safety: `<path d="M76 140h210" stroke="#18313b" stroke-width="4"/><rect x="82" y="58" width="48" height="82" rx="8" fill="#d94d55"/><path d="M90 82h32M96 104h20" stroke="#fff" stroke-width="5"/><path d="M178 54l56 94h-112z" fill="#fff2d9" stroke="#d69b2d" stroke-width="4"/><path d="M178 82v30M178 122v6" stroke="#18313b" stroke-width="6"/>`,
+    hvac: `<rect x="64" y="58" width="160" height="60" rx="6" fill="#fff" stroke="#18313b" stroke-width="3"/><path d="M82 78h124M82 96h86" stroke="#168e87" stroke-width="4"/><path d="M246 58h50v90h-50z" fill="#edf4f5" stroke="#18313b" stroke-width="3"/><circle cx="271" cy="102" r="22" fill="#fff" stroke="#168e87" stroke-width="4"/><path d="M271 80v44M249 102h44" stroke="#168e87" stroke-width="3"/>`,
+    network: `<rect x="74" y="104" width="110" height="42" rx="5" fill="#fff" stroke="#18313b" stroke-width="3"/><circle cx="100" cy="125" r="5" fill="#168e87"/><circle cx="122" cy="125" r="5" fill="#168e87"/><circle cx="144" cy="125" r="5" fill="#168e87"/><path d="M196 124h70M266 86v76" stroke="#168e87" stroke-width="4"/><path d="M242 78l48 18 0 46-48 18z" fill="#fff" stroke="#18313b" stroke-width="3"/><circle cx="266" cy="120" r="13" fill="#4bb7d8"/>`,
+    ceiling: `<rect x="50" y="50" width="250" height="58" fill="#fff" stroke="#18313b" stroke-width="3"/><path d="M50 70h250M50 90h250M94 50v58M138 50v58M182 50v58M226 50v58M270 50v58" stroke="#d6e2e4" stroke-width="3"/><path d="M92 42v40M180 42v40M268 42v40" stroke="#168e87" stroke-width="3"/><circle cx="92" cy="82" r="6" fill="#d94d55"/><circle cx="180" cy="82" r="6" fill="#d94d55"/><circle cx="268" cy="82" r="6" fill="#d94d55"/>`,
+    tile: `<rect x="66" y="48" width="210" height="96" fill="#fff" stroke="#18313b" stroke-width="3"/><path d="M66 80h210M66 112h210M108 48v96M150 48v96M192 48v96M234 48v96" stroke="#168e87" stroke-width="3"/><path d="M78 62l20 0M120 94l20 0M204 126l20 0" stroke="#d94d55" stroke-width="4"/>`,
+    paint: `<rect x="64" y="48" width="160" height="94" fill="#fff" stroke="#18313b" stroke-width="3"/><rect x="82" y="72" width="120" height="44" fill="#e5f7f5"/><path d="M230 74h46v24h-46z" fill="#168e87"/><path d="M276 86h30v50" fill="none" stroke="#18313b" stroke-width="5"/><rect x="248" y="136" width="58" height="12" fill="#d94d55"/>`,
+    flooring: `<path d="M58 64h246v84H58z" fill="#fff" stroke="#18313b" stroke-width="3"/><path d="M62 84h238M62 104h238M62 124h238M98 64v20M154 84v20M210 104v20M266 124v20" stroke="#d69b2d" stroke-width="4"/><path d="M76 146l58-58M152 146l58-58M228 146l58-58" stroke="#e8c27d" stroke-width="2"/>`,
+    door: `<rect x="116" y="42" width="122" height="112" fill="#fff" stroke="#18313b" stroke-width="4"/><rect x="134" y="58" width="80" height="96" fill="#e5f7f5" stroke="#168e87" stroke-width="3"/><circle cx="202" cy="108" r="5" fill="#18313b"/><path d="M250 68h46M250 92h46M250 116h46" stroke="#d94d55" stroke-width="4"/>`,
+    glass: `<rect x="70" y="48" width="214" height="104" fill="#e9f7fb" stroke="#18313b" stroke-width="4"/><path d="M177 48v104M70 100h214" stroke="#168e87" stroke-width="4"/><path d="M100 70l44 54M210 70l44 54" stroke="#fff" stroke-width="5"/><path d="M68 154h218" stroke="#73868b" stroke-width="4"/>`,
+    metal: `<path d="M78 128h210" stroke="#18313b" stroke-width="14"/><path d="M112 64l70 64M182 128l70-64" stroke="#73868b" stroke-width="12"/><path d="M178 98l22 22" stroke="#d94d55" stroke-width="5"/><path d="M210 92l12 18M198 82l9 18" stroke="#d69b2d" stroke-width="4"/>`,
+    joinery: `<rect x="70" y="48" width="220" height="100" fill="#fff" stroke="#18313b" stroke-width="3"/><rect x="84" y="62" width="84" height="72" fill="#e9d7b8" stroke="#8a6d21" stroke-width="3"/><rect x="186" y="62" width="84" height="72" fill="#e9d7b8" stroke="#8a6d21" stroke-width="3"/><path d="M168 62v72M228 62v72M96 96h60M198 96h60" stroke="#8a6d21" stroke-width="3"/>`,
+    curtain: `<path d="M64 54h230" stroke="#18313b" stroke-width="6"/><path d="M82 58c18 28 18 62 0 90M124 58c18 28 18 62 0 90M166 58c18 28 18 62 0 90M208 58c18 28 18 62 0 90M250 58c18 28 18 62 0 90" fill="none" stroke="#168e87" stroke-width="6"/><rect x="56" y="146" width="250" height="8" fill="#d6e2e4"/>`,
+    landscape: `<rect x="82" y="112" width="190" height="34" rx="6" fill="#fff" stroke="#18313b" stroke-width="3"/><path d="M120 112c-8-38 18-52 36-20 18-34 54-20 46 20M218 112c-16-34 8-56 36-24" fill="none" stroke="#168e87" stroke-width="7"/><path d="M96 146h204" stroke="#73868b" stroke-width="4"/><circle cx="154" cy="78" r="20" fill="#8ed2b1"/><circle cx="246" cy="78" r="18" fill="#8ed2b1"/>`,
+    signage: `<rect x="74" y="58" width="210" height="70" rx="6" fill="#18313b"/><text x="104" y="102" fill="#fff" font-size="28" font-weight="700">LE DOME</text><path d="M104 132v24M254 132v24" stroke="#18313b" stroke-width="5"/><circle cx="78" cy="60" r="10" fill="#18a999"/>`,
+    defect: `<rect x="78" y="44" width="210" height="112" rx="6" fill="#fff" stroke="#18313b" stroke-width="3"/><path d="M108 78h130M108 104h130M108 130h130" stroke="#d6e2e4" stroke-width="4"/><path d="M92 75l8 8 16-18M92 101l8 8 16-18" fill="none" stroke="#168e87" stroke-width="5"/><path d="M92 128l20 20M112 128l-20 20" stroke="#d94d55" stroke-width="5"/>`,
+    cleaning: `<path d="M118 54l82 92" stroke="#18313b" stroke-width="7"/><path d="M198 138l58-28 18 28-60 24z" fill="#168e87"/><path d="M82 132c36 18 82 18 132 0" fill="none" stroke="#4bb7d8" stroke-width="5"/><path d="M74 152h222" stroke="#d6e2e4" stroke-width="5"/>`,
+    generic: `<rect x="92" y="44" width="176" height="112" rx="6" fill="#fff" stroke="#18313b" stroke-width="3"/><path d="M122 80h116M122 108h116M122 136h78" stroke="#d6e2e4" stroke-width="4"/><path d="M102 78l8 8 16-18M102 106l8 8 16-18M102 134l8 8 16-18" fill="none" stroke="#168e87" stroke-width="5"/>`
+  };
+  return `<svg viewBox="0 0 360 190" role="img" aria-hidden="true">${common}${scenes[kind] || scenes.generic}</svg>`;
+}
+
+const STANDARD_PHOTO_ASSETS = {
+  survey: "/standard-assets/standard-photo-survey.png",
+  protection: "/standard-assets/standard-photo-protection.png",
+  demolition: "/standard-assets/standard-photo-demolition.png",
+  masonry: "/standard-assets/standard-photo-masonry.png",
+  waterproof: "/standard-assets/standard-photo-waterproofing.png",
+  waterproofing: "/standard-assets/standard-photo-waterproofing.png",
+  mep: "/standard-assets/standard-photo-mep.png",
+  safety: "/standard-assets/standard-photo-safety.png",
+  ceiling: "/standard-assets/standard-photo-ceiling.png",
+  tile: "/standard-assets/standard-photo-tiling.png",
+  tiling: "/standard-assets/standard-photo-tiling.png",
+  paint: "/standard-assets/standard-photo-painting.png",
+  painting: "/standard-assets/standard-photo-painting.png",
+  joinery: "/standard-assets/standard-photo-joinery.png",
+  handover: "/standard-assets/standard-photo-handover.png",
+  cleaning: "/standard-assets/standard-photo-handover.png",
+  generic: "/standard-assets/standard-photo-survey.png"
+};
+
+const STANDARD_PHOTO_SETS = {
+  survey: ["survey", "safety", "handover"],
+  protection: ["protection", "safety", "handover"],
+  demolition: ["demolition", "protection", "safety"],
+  transport: ["protection", "safety", "handover"],
+  masonry: ["masonry", "survey", "handover"],
+  waterproof: ["waterproof", "mep", "handover"],
+  mep: ["mep", "survey", "safety"],
+  safety: ["safety", "mep", "handover"],
+  hvac: ["mep", "safety", "handover"],
+  network: ["mep", "safety", "handover"],
+  ceiling: ["ceiling", "survey", "safety"],
+  tile: ["tile", "waterproof", "handover"],
+  paint: ["paint", "protection", "handover"],
+  flooring: ["tile", "protection", "handover"],
+  door: ["joinery", "survey", "handover"],
+  glass: ["handover", "safety", "survey"],
+  metal: ["safety", "survey", "handover"],
+  joinery: ["joinery", "survey", "handover"],
+  curtain: ["joinery", "survey", "handover"],
+  landscape: ["handover", "waterproof", "safety"],
+  signage: ["handover", "safety", "mep"],
+  defect: ["handover", "paint", "safety"],
+  cleaning: ["handover", "protection", "safety"],
+  generic: ["survey", "safety", "handover"]
+};
+
+function standardPhotoAsset(kind) {
+  return STANDARD_PHOTO_ASSETS[kind] || STANDARD_PHOTO_ASSETS.generic;
+}
+
+function standardIllustrations(category) {
+  const kind = standardVisualKind(category);
+  const photoKinds = STANDARD_PHOTO_SETS[kind] || STANDARD_PHOTO_SETS.generic;
+  return [
+    { title: "Ảnh hiện trường mẫu", caption: "Nhận diện đúng khu vực, bề mặt và điều kiện thi công trước khi bắt đầu.", src: standardPhotoAsset(photoKinds[0]) },
+    { title: "Điểm kiểm soát bắt buộc", caption: "Đánh dấu các mốc kỹ thuật, vị trí rủi ro và điểm cần nghiệm thu ảnh.", src: standardPhotoAsset(photoKinds[1]) },
+    { title: "Ảnh nghiệm thu gửi thầu", caption: "Chụp trước, trong và sau thi công để đối chiếu chất lượng và khối lượng.", src: standardPhotoAsset(photoKinds[2]) }
+  ];
+}
+
+function standardIllustrationCards(category) {
+  return `<div class="standard-visuals">${standardIllustrations(category).map((image) => `<figure class="standard-illustration"><img loading="lazy" decoding="async" src="${escapeHtml(image.src)}" alt="${escapeHtml(`${category} - ${image.title}`)}"><figcaption><b>${escapeHtml(image.title)}</b><span>${escapeHtml(image.caption)}</span></figcaption></figure>`).join("")}</div>`;
+}
+
+function standardCard(category) {
+  const item = constructionStandardFor(category);
+  const code = standardDossierCode(category);
+  return `<article class="standard-card" data-standard-category="${escapeHtml(category)}">
+    <header><div><h3>${escapeHtml(category)}</h3><p>${escapeHtml(item.scope)}</p></div><span>${(item.source || []).map((source) => `<i>${escapeHtml(source)}</i>`).join("")}<button type="button" data-standard-export="${escapeHtml(category)}">Xuất PDF</button></span></header>
+    <div class="standard-dossier">
+      <aside class="standard-cover-mini"><img src="/assets/ledome-logo-dark.png" alt="LE DOME"><b>Bộ hồ sơ tiêu chuẩn</b><strong>${escapeHtml(code)}</strong><small>Bản gửi nhà thầu thi công</small></aside>
+      ${standardIllustrationCards(category)}
+    </div>
+    <div class="standard-check-grid">
+      ${standardList("Chuẩn bị", item.prepare)}
+      ${standardList("Thi công", item.execute)}
+      ${standardList("Nghiệm thu", item.accept)}
+      ${standardList("Loại trừ lỗi", item.reject)}
+    </div>
+  </article>`;
+}
+
+function standardPrintList(title, items) {
+  return `<section><h3>${escapeHtml(title)}</h3><ul>${items.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul></section>`;
+}
+
+function standardPrintDossierPage(category) {
+  const item = constructionStandardFor(category);
+  const code = standardDossierCode(category);
+  return `<article class="print-dossier">
+    <section class="print-cover">
+      <img src="/assets/ledome-logo-dark.png" alt="LE DOME">
+      <p>HỒ SƠ QUY CHUẨN TIÊU CHUẨN THI CÔNG</p>
+      <h1>${escapeHtml(category)}</h1>
+      <div><span>Mã hồ sơ</span><b>${escapeHtml(code)}</b></div>
+      <div><span>Phiên bản</span><b>Le Dome v3 / 2026</b></div>
+      <div><span>Phạm vi phát hành</span><b>Gửi nhà thầu thi công</b></div>
+      <small>Hồ sơ dùng để phổ biến tiêu chuẩn, kiểm soát ảnh nghiệm thu và in kèm phụ lục hợp đồng/đơn giao việc.</small>
+    </section>
+    <section class="print-page">
+      <header><strong>${escapeHtml(code)}</strong><span>${(item.source || []).map(escapeHtml).join(" | ")}</span></header>
+      <h2>${escapeHtml(category)}</h2>
+      <p class="scope">${escapeHtml(item.scope)}</p>
+      ${standardIllustrationCards(category)}
+      <div class="print-check-grid">
+        ${standardPrintList("1. Chuẩn bị", item.prepare)}
+        ${standardPrintList("2. Thi công", item.execute)}
+        ${standardPrintList("3. Nghiệm thu", item.accept)}
+        ${standardPrintList("4. Loại trừ lỗi", item.reject)}
+      </div>
+      <footer><span>LE DOME</span><span>Nhà thầu ký nhận: ____________________</span></footer>
+    </section>
+  </article>`;
+}
+
+function standardExportPdf(categories) {
+  const list = categories.filter(Boolean);
+  if (!list.length) return;
+  const printWindow = window.open("", "_blank");
+  if (!printWindow) {
+    alert("Trình duyệt đang chặn cửa sổ xuất PDF. Vui lòng cho phép popup rồi thử lại.");
+    return;
+  }
+  printWindow.document.write(`<!doctype html><html lang="vi"><head><meta charset="UTF-8"><title>Le Dome - Hồ sơ tiêu chuẩn thi công</title><style>
+    *{box-sizing:border-box}body{margin:0;background:#eef3f5;color:#18313b;font-family:Inter,Segoe UI,Arial,sans-serif}.print-toolbar{position:sticky;top:0;z-index:4;display:flex;justify-content:flex-end;gap:8px;padding:10px 14px;background:#fff;border-bottom:1px solid #dce6e8}.print-toolbar button{padding:8px 12px;border:1px solid #168e87;background:#168e87;color:#fff;font-weight:700}.print-dossier{max-width:980px;margin:18px auto;background:#fff;box-shadow:0 6px 18px #0002}.print-cover{display:grid;align-content:center;min-height:1120px;padding:70px;border:1px solid #dce6e8;background:linear-gradient(145deg,#fff 0,#fff 56%,#e8f8f5 56%,#f7fbfb 100%)}.print-cover img{width:210px;margin-bottom:70px}.print-cover p{margin:0 0 18px;color:#168e87;font-weight:800;letter-spacing:.08em}.print-cover h1{max-width:720px;margin:0 0 55px;font-size:44px;line-height:1.14}.print-cover div{display:flex;width:520px;max-width:100%;justify-content:space-between;padding:13px 0;border-bottom:1px solid #bfd6d9}.print-cover span{color:#60777d}.print-cover b{color:#18313b}.print-cover small{max-width:640px;margin-top:55px;color:#60777d;line-height:1.6}.print-page{min-height:1120px;padding:42px 48px;background:#fff}.print-page>header,.print-page>footer{display:flex;justify-content:space-between;gap:20px;color:#60777d;font-size:12px}.print-page>header{padding-bottom:14px;border-bottom:2px solid #168e87}.print-page h2{margin:24px 0 8px;font-size:28px}.scope{margin:0 0 18px;color:#52676e;line-height:1.55}.standard-visuals{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:16px 0}.standard-illustration{overflow:hidden;margin:0;border:1px solid #dce6e8;background:#fbfdfd;break-inside:avoid}.standard-illustration img,.standard-illustration svg{display:block;width:100%;aspect-ratio:16/9;height:auto;object-fit:cover;background:#edf4f5}.standard-illustration figcaption{display:grid;gap:4px;padding:8px 10px}.standard-illustration b{font-size:12px;color:#168e87}.standard-illustration span{font-size:11px;color:#52676e;line-height:1.35}.print-check-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:18px}.print-check-grid section{break-inside:avoid;padding:12px;border:1px solid #dce6e8}.print-check-grid h3{margin:0 0 8px;color:#168e87;font-size:14px}.print-check-grid ul{margin:0;padding-left:18px}.print-check-grid li{margin-bottom:7px;line-height:1.45}.print-page>footer{margin-top:26px;padding-top:12px;border-top:1px solid #dce6e8}@page{size:A4;margin:12mm}@media print{body{background:#fff}.print-toolbar{display:none}.print-dossier{max-width:none;margin:0;box-shadow:none;page-break-after:always}.print-cover,.print-page{min-height:auto;border:0}.print-cover{height:267mm}.standard-illustration{break-inside:avoid}.print-check-grid section{break-inside:avoid}}@media(max-width:760px){.standard-visuals,.print-check-grid{grid-template-columns:1fr}.print-cover{min-height:760px;padding:38px}.print-cover h1{font-size:30px}.print-page{padding:28px}}
+  </style></head><body><div class="print-toolbar"><button onclick="window.print()">Xuất PDF / In hồ sơ</button></div>${list.map(standardPrintDossierPage).join("")}<script>window.addEventListener("load",()=>setTimeout(()=>window.print(),350));<\/script></body></html>`);
+  printWindow.document.close();
+}
+
+async function renderStandards() {
+  await loadCatalogData();
+  const categories = constructionCategoryOptions();
+  if (state.standardsCategory !== "Tất cả" && !categories.includes(state.standardsCategory)) state.standardsCategory = "Tất cả";
+  const query = plainVietnamese(state.standardsQuery);
+  const rows = categories.filter((category) => {
+    if (state.standardsCategory !== "Tất cả" && category !== state.standardsCategory) return false;
+    if (!query) return true;
+    return plainVietnamese(standardSearchText({ ...constructionStandardFor(category), category })).includes(query);
+  });
+  const checkCount = categories.reduce((sum, category) => {
+    const item = constructionStandardFor(category);
+    return sum + item.prepare.length + item.execute.length + item.accept.length + item.reject.length;
+  }, 0);
+  setTitle("standards", "Bộ tiêu chuẩn thi công theo hạng mục");
+  $("#app").innerHTML = `<section class="standards-page">
+    <header class="standards-head"><div><h2>▰ Quy chuẩn Tiêu chuẩn thi công</h2><p>Biên soạn thành bộ hồ sơ có bìa Le Dome, hình minh họa và checklist in gửi nhà thầu.</p></div><div><button class="btn secondary" data-page-link="catalog">Mở hạng mục thi công</button><button class="btn" data-standard-export-all>Xuất PDF bộ đang lọc</button></div></header>
+    <div class="standards-kpis"><article><small>Hạng mục</small><b>${categories.length}</b><span>Theo Cơ sở dữ liệu</span></article><article><small>Checklist</small><b>${checkCount}</b><span>Chuẩn bị, thi công, nghiệm thu, lỗi</span></article><article><small>Nguồn Le Dome</small><b>v3</b><span>49 trang PDF nội bộ</span></article><article><small>Tham chiếu</small><b>${STANDARDS_SOURCE_LABELS.length}</b><span>PDF, TCVN, QCVN</span></article></div>
+    <div class="standards-tools"><input id="standards-search" value="${escapeHtml(state.standardsQuery)}" placeholder="Tìm hạng mục, tiêu chuẩn, lỗi nghiệm thu"><select id="standards-category"><option value="Tất cả">Tất cả</option>${categories.map((category) => `<option value="${escapeHtml(category)}" ${state.standardsCategory === category ? "selected" : ""}>${escapeHtml(category)}</option>`).join("")}</select><span>${rows.length} hạng mục hiển thị</span></div>
+    <div class="standards-source-strip">${STANDARDS_SOURCE_LABELS.map((source) => `<span>${escapeHtml(source)}</span>`).join("")}</div>
+    <div class="standards-list">${rows.map(standardCard).join("") || `<article class="standard-card empty"><p>Không có tiêu chuẩn phù hợp.</p></article>`}</div>
+  </section>`;
+  bindStandards();
+}
+
+function bindStandards() {
+  $("#standards-search").oninput = (event) => { state.standardsQuery = event.target.value; renderStandards(); };
+  $("#standards-category").onchange = (event) => { state.standardsCategory = event.target.value || event.target.selectedOptions?.[0]?.textContent || "Tất cả"; renderStandards(); };
+  $("#app").onclick = (event) => {
+    const exportButton = event.target.closest("[data-standard-export]");
+    if (exportButton) return standardExportPdf([exportButton.dataset.standardExport]);
+    if (event.target.closest("[data-standard-export-all]")) return standardExportPdf([...document.querySelectorAll("[data-standard-category]")].map((card) => card.dataset.standardCategory));
+    const pageLink = event.target.closest("[data-page-link]")?.dataset.pageLink;
+    if (pageLink) location.hash = pageLink;
+  };
+}
+
 const FINANCE_SEED = {
   transactions: [
     ["2026-01-12","Chi","DỰ ÁN","VAY","","","",30000000,"","",""],
@@ -1219,15 +2327,70 @@ function financeBadge(text) {
   return `<i class="finance-badge ${danger ? "danger" : done ? "done" : ""}">${text || "Theo dõi"}</i>`;
 }
 
+function financeDateParts(value) {
+  if (!value && value !== 0) return null;
+  const text = String(value).trim();
+  let match = text.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})/);
+  if (match) return { year: Number(match[1]), month: Number(match[2]), day: Number(match[3]) };
+  match = text.match(/^(\d{1,2})[./-](\d{1,2})[./-](\d{4})$/);
+  if (match) return { year: Number(match[3]), month: Number(match[2]), day: Number(match[1]) };
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return { year: parsed.getFullYear(), month: parsed.getMonth() + 1, day: parsed.getDate() };
+}
+
+function financeDateSortValue(value) {
+  const parts = financeDateParts(value);
+  return parts ? Date.UTC(parts.year, parts.month - 1, parts.day) : Number.MAX_SAFE_INTEGER;
+}
+
 function financeDate(value) {
-  if (!value) return "";
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString("vi-VN");
+  const parts = financeDateParts(value);
+  return parts ? `${parts.day}/${parts.month}/${parts.year}` : value || "";
 }
 
 function financeMonth(value) {
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? "" : `${date.getMonth() + 1}/${date.getFullYear()}`;
+  const parts = financeDateParts(value);
+  return parts ? `${parts.month}/${parts.year}` : "";
+}
+
+function financeMonthKey(value) {
+  const parts = financeDateParts(value);
+  return parts ? `${parts.year}-${String(parts.month).padStart(2, "0")}` : "no-date";
+}
+
+function financeSignedMoney(value) {
+  const amount = Number(value || 0);
+  const sign = amount > 0 ? "+" : amount < 0 ? "-" : "";
+  return `${sign}${money(Math.abs(amount))}`;
+}
+
+function financeCompactMoney(value) {
+  const amount = Number(value || 0);
+  const abs = Math.abs(amount);
+  const sign = amount > 0 ? "+" : amount < 0 ? "-" : "";
+  if (!abs) return "0";
+  if (abs >= 1000000000) return `${sign}${(abs / 1000000000).toLocaleString("vi-VN", { maximumFractionDigits: abs >= 10000000000 ? 0 : 1 })} tỷ`;
+  if (abs >= 1000000) return `${sign}${(abs / 1000000).toLocaleString("vi-VN", { maximumFractionDigits: abs >= 10000000 ? 0 : 1 })} tr`;
+  if (abs >= 1000) return `${sign}${(abs / 1000).toLocaleString("vi-VN", { maximumFractionDigits: 0 })}k`;
+  return `${sign}${money(abs)}`;
+}
+
+function financeMonthlyBars(rows, cashIndex = 4) {
+  const max = Math.max(1, ...rows.map((row) => Math.abs(Number(row[cashIndex] || 0))));
+  return `<div class="finance-month-report">
+    <div class="finance-monthly-chart">${rows.map((row) => {
+      const income = Number(row[cashIndex - 2] || 0);
+      const expense = Number(row[cashIndex - 1] || 0);
+      const cash = Number(row[cashIndex] || 0);
+      const height = cash ? Math.max(16, Math.round(Math.abs(cash) * 112 / max)) : 0;
+      const status = cash < 0 ? "expense" : cash > 0 ? "income" : "empty";
+      const labelInside = height >= 42;
+      const labelText = financeCompactMoney(cash).replace(/\s+/g, "");
+      const label = cash ? `<b class="finance-bar-value ${labelInside ? "inside" : ""} ${financeAmountClass(cash)}">${labelText}</b>` : "";
+      return `<article class="${status}" title="Tháng ${row[0]}: Thu ${money(income)} đ · Chi ${money(expense)} đ · Dòng tiền ${financeSignedMoney(cash)} đ"><div class="finance-month-bar"><i style="${cash ? `height:${height}px` : ""}" class="${status}">${label}</i></div><em>T${row[0]}</em></article>`;
+    }).join("")}</div>
+  </div>`;
 }
 
 function financeStats(items) {
@@ -1254,19 +2417,25 @@ function financeGroupOptionsForType(type = "Chi") {
     : [FINANCE_CAPITAL_GROUP, FINANCE_OPERATION_GROUP, FINANCE_PROJECT_GROUP];
 }
 
+function financeTypeOptionsForGroups(groups = FINANCE_GROUPS) {
+  const activeGroups = groups.length ? groups : FINANCE_GROUPS;
+  return FINANCE_TRANSACTION_TYPES.filter((type) => activeGroups.some((group) => financeGroupOptionsForType(type).includes(group)));
+}
+
 function financePartnerNames(type) {
   return financeUnique((CRM_DIRECTORY[type]?.rows || []).map((row) => row[1]));
 }
 
+function financeProjectRowCodes(data = {}) {
+  return financeUnique((Array.isArray(data.projects) ? data.projects : []).map((row) => row[0]));
+}
+
 function financeProjectCodeOptions(data = {}) {
-  const options = data.options || {};
-  const projectRows = Array.isArray(data.projects) ? data.projects : [];
-  const transactions = Array.isArray(data.transactions) ? data.transactions : [];
-  return financeUnique([
-    ...financeArray(options.projectCodes),
-    ...projectRows.map((row) => row[0]),
-    ...transactions.filter((row) => row[2] === FINANCE_PROJECT_GROUP).map((row) => row[3])
-  ]);
+  const configured = projectListOptions();
+  const transactionCodes = financeUnique((Array.isArray(data.transactions) ? data.transactions : [])
+    .filter((row) => row[2] === FINANCE_PROJECT_GROUP)
+    .map((row) => row[3]));
+  return financeUnique([...configured, ...financeProjectRowCodes(data), ...transactionCodes]);
 }
 
 function financeProjectCategoryOptions(data = {}) {
@@ -1303,7 +2472,7 @@ function financeProjectPartnerOptions(data = {}, type = "Chi") {
 
 function financeContextOptionList(data = {}, group = FINANCE_OPERATION_GROUP, type = "Chi", field = "topics") {
   const options = data.options || {};
-  const managed = options.transactionFlow && typeof options.transactionFlow === "object" ? options.transactionFlow : {};
+  const flow = financeTransactionFlowOptions(data);
   const transactions = Array.isArray(data.transactions) ? data.transactions : [];
   const rows = transactions.filter((row) => row[2] === group);
   if (group === FINANCE_PROJECT_GROUP) {
@@ -1312,21 +2481,20 @@ function financeContextOptionList(data = {}, group = FINANCE_OPERATION_GROUP, ty
     return financeProjectPartnerOptions(data, type);
   }
   if (group === FINANCE_CAPITAL_GROUP) {
-    if (field === "topics") return financeUnique([...financeArray(managed.topics), ...financeArray(options.financeTopics), ...rows.map((row) => row[3])]);
-    if (field === "categories") return financeUnique([...financeArray(managed.categories), ...financeArray(options.financeCategories), ...rows.map((row) => row[4])]);
-    return financeUnique([...financeArray(managed.partners), ...financeArray(options.financePartners), ...rows.map((row) => row[5])]);
+    if (field === "topics") return financeUnique([...flow.capital.topics, ...rows.map((row) => row[3])]);
+    if (field === "categories") return [...FINANCE_CAPITAL_CATEGORY_OPTIONS];
+    return [];
   }
-  if (field === "topics") return financeUnique([...financeArray(managed.topics), ...financeArray(options.operationTopics), ...rows.map((row) => row[3])]);
-  if (field === "categories") return financeUnique([...financeArray(managed.categories), ...financeArray(options.operationCategories), ...rows.map((row) => row[4])]);
-  return financeUnique([...financeArray(managed.partners), ...financeArray(options.operationPartners), ...rows.map((row) => row[5])]);
+  if (field === "topics") return financeUnique([...flow.operation.topics, ...rows.map((row) => row[3])]);
+  if (field === "categories") return financeUnique([...flow.operation.categories, ...rows.map((row) => row[4])]);
+  return financeUnique([...flow.operation.partners, ...rows.map((row) => row[5])]);
 }
 
 function emptyFinanceTransactionFlow() {
   return {
     types: [...FINANCE_TRANSACTION_TYPES],
-    topics: [],
-    categories: [...contractTypeOptions()],
-    partners: []
+    operation: { topics: [], categories: [], partners: [] },
+    capital: { topics: [], categories: [...FINANCE_CAPITAL_CATEGORY_OPTIONS], partners: [] }
   };
 }
 
@@ -1336,29 +2504,21 @@ function financeTransactionFlowOptions(data = {}) {
   const transactions = Array.isArray(data.transactions) ? data.transactions : [];
   const operationRows = transactions.filter((row) => row[2] === FINANCE_OPERATION_GROUP);
   const capitalRows = transactions.filter((row) => row[2] === FINANCE_CAPITAL_GROUP);
-  const legacyTopics = managed ? [] : [
-    ...financeArray(options.operationTopics),
-    ...financeArray(options.financeTopics),
-    ...operationRows.map((row) => row[3]),
-    ...capitalRows.map((row) => row[3])
-  ];
-  const legacyCategories = managed ? [] : [
-    ...financeArray(options.operationCategories),
-    ...financeArray(options.financeCategories),
-    ...operationRows.map((row) => row[4]),
-    ...capitalRows.map((row) => row[4])
-  ];
-  const legacyPartners = managed ? [] : [
-    ...financeArray(options.operationPartners),
-    ...financeArray(options.financePartners),
-    ...operationRows.map((row) => row[5]),
-    ...capitalRows.map((row) => row[5])
-  ];
+  const flatManaged = managed && !managed.operation && !managed.capital ? managed : {};
+  const operationManaged = managed?.operation && typeof managed.operation === "object" ? managed.operation : {};
+  const capitalManaged = managed?.capital && typeof managed.capital === "object" ? managed.capital : {};
   return {
     types: [...FINANCE_TRANSACTION_TYPES],
-    topics: financeUnique([...financeArray(managed?.topics), ...legacyTopics]),
-    categories: financeUnique([...financeArray(managed?.categories), ...legacyCategories]),
-    partners: financeUnique([...financeArray(managed?.partners), ...legacyPartners])
+    operation: {
+      topics: financeUnique([...financeArray(operationManaged.topics), ...financeArray(flatManaged.topics), ...financeArray(options.operationTopics), ...operationRows.map((row) => row[3])]),
+      categories: financeUnique([...financeArray(operationManaged.categories), ...financeArray(flatManaged.categories), ...financeArray(options.operationCategories), ...operationRows.map((row) => row[4])]),
+      partners: financeUnique([...financeArray(operationManaged.partners), ...financeArray(flatManaged.partners), ...financeArray(options.operationPartners), ...operationRows.map((row) => row[5])])
+    },
+    capital: {
+      topics: financeUnique([...financeArray(capitalManaged.topics), ...financeArray(flatManaged.topics), ...financeArray(options.financeTopics), ...capitalRows.map((row) => row[3])]),
+      categories: [...FINANCE_CAPITAL_CATEGORY_OPTIONS],
+      partners: []
+    }
   };
 }
 
@@ -1372,8 +2532,7 @@ function financeOptionLists(data = {}) {
     operationCategories: financeContextOptionList(data, FINANCE_OPERATION_GROUP, "Chi", "categories"),
     operationPartners: financeContextOptionList(data, FINANCE_OPERATION_GROUP, "Chi", "partners"),
     capitalTopics: financeContextOptionList(data, FINANCE_CAPITAL_GROUP, "Chi", "topics"),
-    capitalCategories: financeContextOptionList(data, FINANCE_CAPITAL_GROUP, "Chi", "categories"),
-    capitalPartners: financeContextOptionList(data, FINANCE_CAPITAL_GROUP, "Chi", "partners")
+    capitalCategories: financeContextOptionList(data, FINANCE_CAPITAL_GROUP, "Chi", "categories")
   };
 }
 
@@ -1382,12 +2541,20 @@ function financeDatalist(id, values) {
 }
 
 function financeSelectOptions(values, selected = "", placeholder = "Chọn") {
-  const list = financeUnique([selected, ...values]);
+  const list = financeUnique([...(values || []), selected]);
   return `<option value="">${placeholder}</option>${list.map((value) => `<option value="${escapeHtml(value)}" ${value === selected ? "selected" : ""}>${escapeHtml(value)}</option>`).join("")}`;
 }
 
 function financeSelect(name, values, selected = "", attrs = "") {
   return `<select name="${name}" ${attrs}>${financeSelectOptions(values, selected)}</select>`;
+}
+
+function financePartnerField(flow, selected = "") {
+  if (flow.group === FINANCE_CAPITAL_GROUP) {
+    return `<input name="partner" value="${escapeHtml(selected)}" placeholder="Điền đối tượng" data-finance-partner-manual>`;
+  }
+  const validSelected = flow.partners.includes(selected) ? selected : "";
+  return `<select name="partner" data-finance-partner>${financeSelectOptions(flow.partners, validSelected)}</select>`;
 }
 
 function financeFlowOptions(data, row = []) {
@@ -1451,13 +2618,17 @@ function financeFilterContextRows(data, group = "") {
 
 function financeConfiguredFilterOptions(data, groupContext = "") {
   const filters = financeFilterState();
-  const selectedTypes = (filters.type.length ? filters.type : FINANCE_TRANSACTION_TYPES).filter((type) => FINANCE_TRANSACTION_TYPES.includes(type));
-  const groupOptions = groupContext ? [groupContext] : financeUnique(selectedTypes.flatMap(financeGroupOptionsForType));
-  const selectedGroups = (filters.group.length ? filters.group : groupOptions).map(normalizeFinanceGroup).filter((group) => groupOptions.includes(group));
+  const baseGroupOptions = groupContext ? [groupContext] : FINANCE_GROUPS;
+  const selectedGroupCandidates = (filters.group || []).map(normalizeFinanceGroup).filter((group) => baseGroupOptions.includes(group));
+  const typeOptions = financeTypeOptionsForGroups(selectedGroupCandidates.length ? selectedGroupCandidates : baseGroupOptions);
+  const selectedTypes = (filters.type.length ? filters.type : typeOptions).filter((type) => typeOptions.includes(type));
+  const activeTypes = selectedTypes.length ? selectedTypes : typeOptions;
+  const groupOptions = groupContext ? [groupContext] : financeUnique(activeTypes.flatMap(financeGroupOptionsForType)).filter((group) => baseGroupOptions.includes(group));
+  const selectedGroups = selectedGroupCandidates.filter((group) => groupOptions.includes(group));
   const activeGroups = selectedGroups.length ? selectedGroups : groupOptions;
-  const pairs = selectedTypes.flatMap((type) => activeGroups.filter((group) => financeGroupOptionsForType(type).includes(group)).map((group) => ({ type, group })));
+  const pairs = activeTypes.flatMap((type) => activeGroups.filter((group) => financeGroupOptionsForType(type).includes(group)).map((group) => ({ type, group })));
   return {
-    type: FINANCE_TRANSACTION_TYPES,
+    type: typeOptions,
     group: groupOptions,
     topic: financeUnique(pairs.flatMap(({ type, group }) => financeContextOptionList(data, group, type, "topics"))),
     category: financeUnique(pairs.flatMap(({ type, group }) => financeContextOptionList(data, group, type, "categories"))),
@@ -1489,7 +2660,7 @@ function financeFilterControl(field, values) {
   return `<div class="finance-filter ${open ? "open" : ""}" data-finance-filter="${field.key}">
     <button type="button" class="${selected.size ? "active" : ""}" data-finance-filter-toggle="${field.key}"><span>${field.label}</span>${selected.size ? `<b>${selected.size}</b>` : ""}<i>▾</i></button>
     <div class="finance-filter-panel">
-      <header><strong>${field.label}</strong><button type="button" data-finance-filter-clear="${field.key}">Bỏ chọn</button></header>
+      <header><strong>${field.label}</strong><div><button type="button" data-finance-filter-clear="${field.key}">Bỏ chọn</button><button type="button" data-finance-filter-close aria-label="Đóng bộ lọc">×</button></div></header>
       <div class="finance-filter-list">${values.map((value) => `<label class="finance-filter-option"><input type="checkbox" data-finance-filter-option="${field.key}" value="${escapeHtml(value)}" ${selected.has(value) ? "checked" : ""}><span>${escapeHtml(value)}</span></label>`).join("") || `<em>Không có option.</em>`}</div>
     </div>
   </div>`;
@@ -1500,6 +2671,30 @@ function financeTools(data, group = "") {
   pruneFinanceFilters(options);
   const selectedCount = financeSelectedFilterCount();
   return `<div class="finance-tools"><input id="finance-search" value="${escapeHtml(state.financeQuery)}" placeholder="Tìm theo dự án, nhóm, đối tượng, mô tả"><div class="finance-filter-bar">${FINANCE_FILTER_FIELDS.map((field) => financeFilterControl(field, options[field.key] || [])).join("")}${selectedCount ? `<button type="button" class="finance-clear-filters" data-finance-filter-clear-all>Xóa lọc ${selectedCount}</button>` : ""}</div><button class="btn" data-finance="add-transaction">＋ Thêm giao dịch</button></div>`;
+}
+
+let financeFilterDismissCleanup = null;
+function bindFinanceFilterDismiss(page) {
+  financeFilterDismissCleanup?.();
+  const closeFilter = () => {
+    if (!state.financeFilterOpen) return;
+    state.financeFilterOpen = "";
+    renderFinancePage(page);
+  };
+  const onClick = (event) => {
+    if (!state.financeFilterOpen || event.target.closest(".finance-filter")) return;
+    closeFilter();
+  };
+  const onKeydown = (event) => {
+    if (event.key === "Escape") closeFilter();
+  };
+  document.addEventListener("click", onClick);
+  document.addEventListener("keydown", onKeydown);
+  financeFilterDismissCleanup = () => {
+    document.removeEventListener("click", onClick);
+    document.removeEventListener("keydown", onKeydown);
+    financeFilterDismissCleanup = null;
+  };
 }
 
 function renderFinancePage(page) {
@@ -1519,7 +2714,43 @@ function financeShell(page, title, desc, content, data = {}) {
 }
 
 function financeTransactionLedger(data, rows, title = "Sổ giao dịch thu chi", subtitle = "Sheet Giao dịch", group = "") {
-  return `<section class="finance-section"><header><h3>${title}</h3><span>${subtitle}</span></header>${financeTools(data, group)}<div class="finance-table-wrap"><table class="finance-table finance-transaction-table"><thead><tr><th>Ngày</th><th>Loại</th><th>Nhóm</th><th>Chủ đề</th><th>Hạng mục</th><th>Đối tượng</th><th>Mô tả</th><th>Số tiền</th><th>Tháng</th><th></th></tr></thead><tbody>${rows.map(({row,index}) => financeTransactionRow(data, row, index)).join("") || `<tr><td colspan="10">Không có giao dịch phù hợp.</td></tr>`}</tbody></table></div></section>`;
+  return `<section class="finance-section"><header><h3>${title}</h3><span>${subtitle}</span></header>${financeTools(data, group)}<div class="finance-table-wrap"><table class="finance-table finance-transaction-table"><thead><tr><th>Ngày</th><th>Loại</th><th>Nhóm</th><th>Chủ đề</th><th>Hạng mục</th><th>Đối tượng</th><th>Mô tả</th><th>Số tiền</th><th></th></tr></thead><tbody>${financeTransactionRows(data, rows) || `<tr><td colspan="9">Không có giao dịch phù hợp.</td></tr>`}</tbody></table></div></section>`;
+}
+
+function financeSortedTransactionRows(rows) {
+  return [...rows].sort((a, b) => financeDateSortValue(a.row?.[0]) - financeDateSortValue(b.row?.[0]) || a.index - b.index);
+}
+
+function financeTransactionRows(data, rows) {
+  const sortedRows = financeSortedTransactionRows(rows);
+  const totalsByMonth = new Map();
+  const grandTotals = { totalIn: 0, totalOut: 0, cash: 0, count: 0 };
+  sortedRows.forEach(({ row }) => {
+    const monthKey = financeMonthKey(row[0]);
+    const totals = totalsByMonth.get(monthKey) || { totalIn: 0, totalOut: 0, cash: 0, count: 0 };
+    if (row[1] === "Thu") {
+      totals.totalIn += Number(row[7] || 0);
+      grandTotals.totalIn += Number(row[7] || 0);
+    }
+    if (row[1] === "Chi") {
+      totals.totalOut += Number(row[7] || 0);
+      grandTotals.totalOut += Number(row[7] || 0);
+    }
+    totals.cash = totals.totalIn - totals.totalOut;
+    totals.count += 1;
+    grandTotals.cash = grandTotals.totalIn - grandTotals.totalOut;
+    grandTotals.count += 1;
+    totalsByMonth.set(monthKey, totals);
+  });
+  let currentMonth = "";
+  const totalRow = sortedRows.length ? `<tr class="finance-month-separator finance-total-separator"><td colspan="9"><div class="finance-month-summary"><b>Tổng dòng tiền</b><div><span>${grandTotals.count} giao dịch</span><span>Thu <strong class="positive">+${money(grandTotals.totalIn)} đ</strong></span><span>Chi <strong class="negative">-${money(grandTotals.totalOut)} đ</strong></span><span>Dòng tiền <strong class="${financeAmountClass(grandTotals.cash)}">${financeSignedMoney(grandTotals.cash)} đ</strong></span></div></div></td></tr>` : "";
+  return totalRow + sortedRows.map(({ row, index }) => {
+    const monthKey = financeMonthKey(row[0]);
+    const monthTotals = totalsByMonth.get(monthKey) || { totalIn: 0, totalOut: 0, cash: 0, count: 0 };
+    const separator = monthKey !== currentMonth ? `<tr class="finance-month-separator"><td colspan="9"><div class="finance-month-summary"><b>${financeMonth(row[0]) ? `Tháng ${financeMonth(row[0])}` : "Chưa có ngày"}</b><div><span>${monthTotals.count} giao dịch</span><span>Thu <strong class="positive">+${money(monthTotals.totalIn)} đ</strong></span><span>Chi <strong class="negative">-${money(monthTotals.totalOut)} đ</strong></span><span>Dòng tiền <strong class="${financeAmountClass(monthTotals.cash)}">${financeSignedMoney(monthTotals.cash)} đ</strong></span></div></div></td></tr>` : "";
+    currentMonth = monthKey;
+    return `${separator}${financeTransactionRow(data, row, index)}`;
+  }).join("");
 }
 
 function financeTransactionRow(data, row, index) {
@@ -1532,14 +2763,13 @@ function financeTransactionRow(data, row, index) {
       <td>${financeSelect("group", flow.groups, flow.group, 'data-finance-inline="group"')}</td>
       <td>${financeSelect("topic", flow.topics, draft.topic)}</td>
       <td>${financeSelect("category", flow.categories, draft.category)}</td>
-      <td>${financeSelect("partner", flow.partners, draft.partner)}</td>
-      <td><input name="desc" value="${escapeHtml(draft.desc)}" placeholder="Mô tả"></td>
+      <td>${financePartnerField(flow, draft.partner)}</td>
+      <td><input name="desc" value="${escapeHtml(draft.desc)}" placeholder="Mô tả"><input type="hidden" name="note" value="${escapeHtml(draft.note)}"></td>
       <td><input name="amount" value="${escapeHtml(draft.amount)}" inputmode="numeric" data-money-input></td>
-      <td>${financeMonth(draft.date)}<input type="hidden" name="note" value="${escapeHtml(draft.note)}"></td>
       <td class="finance-actions inline"><button data-finance="save-transaction" data-index="${index}">Lưu</button><button data-finance="cancel-edit" data-index="${index}">Hủy</button></td>
     </tr>`;
   }
-  return `<tr><td>${financeDate(row[0])}</td><td>${financeBadge(row[1])}</td><td><b>${row[2]}</b></td><td>${row[3]}</td><td>${row[4] || ""}</td><td>${row[5] || ""}</td><td>${row[6] || ""}</td><td class="finance-money ${row[1] === "Chi" ? "negative" : "positive"}">${row[1] === "Chi" ? "-" : "+"}${money(row[7])}</td><td>${financeMonth(row[0])}</td><td class="finance-actions"><button data-finance="edit-transaction" data-index="${index}">Sửa</button><button data-finance="delete-transaction" data-index="${index}">×</button></td></tr>`;
+  return `<tr><td>${financeDate(row[0])}</td><td>${financeBadge(row[1])}</td><td><b>${row[2]}</b></td><td>${row[3]}</td><td>${row[4] || ""}</td><td>${row[5] || ""}</td><td>${row[6] || ""}</td><td class="finance-money ${row[1] === "Chi" ? "negative" : "positive"}">${row[1] === "Chi" ? "-" : "+"}${money(row[7])}</td><td class="finance-actions"><button data-finance="edit-transaction" data-index="${index}">Sửa</button><button data-finance="delete-transaction" data-index="${index}">×</button></td></tr>`;
 }
 
 function financeFilteredTransactions(data, group = "") {
@@ -1567,7 +2797,10 @@ async function renderFinanceOverview() {
   const rows = financeFilteredTransactions(data);
   const { totalIn, totalOut, cash } = financeTotals(data.transactions);
   const months = Array.from({length: 12}, (_, i) => {
-    const monthRows = data.transactions.filter((row) => new Date(row[0]).getMonth() === i);
+    const monthRows = data.transactions.filter((row) => {
+      const parts = financeDateParts(row[0]);
+      return parts?.year === 2026 && parts.month === i + 1;
+    });
     const income = monthRows.filter((row) => row[1] === "Thu").reduce((sum,row) => sum + Number(row[7] || 0), 0);
     const expense = monthRows.filter((row) => row[1] === "Chi").reduce((sum,row) => sum + Number(row[7] || 0), 0);
     return [i + 1, 2026, income, expense, income - expense, monthRows.length];
@@ -1582,7 +2815,7 @@ async function renderFinanceOverview() {
     ${financeStats([["Tổng thu",`${money(totalIn)} đ`,"Từ toàn bộ giao dịch","income"],["Tổng chi",`${money(totalOut)} đ`,"Chi dự án, vận hành, lương","expense"],["Dòng tiền",`${money(cash)} đ`,"Thu - chi",financeAmountClass(cash)],["Số giao dịch",data.transactions.length,"Bản ghi trong sổ thu chi"]])}
     <section class="finance-grid-view">
       <article class="finance-panel-card"><header><h3>Tổng hợp theo nhóm</h3><span>Thu / Chi / Dòng tiền</span></header><div class="finance-mini-table">${byGroup.map(([group,income,expense,cash]) => `<p><b>${group}</b><span>${money(income)}</span><span>${money(expense)}</span><strong class="${financeAmountClass(cash)}">${money(cash)}</strong></p>`).join("")}</div></article>
-      <article class="finance-panel-card"><header><h3>Báo cáo tháng</h3><span>12 tháng năm 2026</span></header><div class="finance-bars">${months.map((row) => `<i title="Tháng ${row[0]}: ${money(row[4])}" style="height:${Math.max(8, Math.min(100, Math.abs(row[4]) / 3000000))}px" class="${row[4] < 0 ? "expense" : "income"}"><em>${row[0]}</em></i>`).join("")}</div></article>
+      <article class="finance-panel-card"><header><h3>Báo cáo tháng</h3><span>Thu / Chi / Dòng tiền từng tháng năm 2026</span></header>${financeMonthlyBars(months, 4)}</article>
     </section>
     ${financeTransactionLedger(data, rows, "Tất cả thu chi công ty", "Ghi chép chung toàn công ty")}
   `, data);
@@ -1624,13 +2857,14 @@ async function renderFinanceProjects() {
 }
 
 function financeModal(data = {}) {
-  return `<div class="finance-modal" id="finance-modal"><form id="finance-form"><header><h3 id="finance-modal-title">Thêm giao dịch</h3><button type="button" data-finance="close-modal">×</button></header><input type="hidden" name="index"><label>Ngày<input name="date" type="date" required></label><label>Loại<select name="type">${FINANCE_TRANSACTION_TYPES.map((type) => `<option>${escapeHtml(type)}</option>`).join("")}</select></label><label>Nhóm<select name="group">${FINANCE_GROUPS.map((group) => `<option>${escapeHtml(group)}</option>`).join("")}</select></label><label>Chủ đề<select name="topic" data-finance-topic></select></label><label>Hạng mục<select name="category" data-finance-category></select></label><label>Đối tượng<select name="partner" data-finance-partner></select></label><label class="wide">Mô tả<textarea name="desc" placeholder="Nội dung thu chi"></textarea></label><label>Số tiền<input name="amount" inputmode="numeric" data-money-input required></label><label>Ghi chú<input name="note"></label><footer><button type="button" class="btn secondary" data-finance="close-modal">Đóng</button><button class="btn">Lưu</button></footer></form></div>`;
+  return `<div class="finance-modal" id="finance-modal"><form id="finance-form"><header><h3 id="finance-modal-title">Thêm giao dịch</h3><button type="button" data-finance="close-modal">×</button></header><input type="hidden" name="index"><label>Ngày<input name="date" type="date" required></label><label>Loại<select name="type">${FINANCE_TRANSACTION_TYPES.map((type) => `<option>${escapeHtml(type)}</option>`).join("")}</select></label><label>Nhóm<select name="group">${FINANCE_GROUPS.map((group) => `<option>${escapeHtml(group)}</option>`).join("")}</select></label><label>Chủ đề<select name="topic" data-finance-topic></select></label><label>Hạng mục<select name="category" data-finance-category></select></label><label>Đối tượng<span data-finance-partner-field>${financePartnerField({ group: FINANCE_OPERATION_GROUP, partners: [] }, "")}</span></label><label class="wide">Mô tả<textarea name="desc" placeholder="Nội dung thu chi"></textarea></label><label>Số tiền<input name="amount" inputmode="numeric" data-money-input required></label><label>Ghi chú<input name="note"></label><footer><button type="button" class="btn secondary" data-finance="close-modal">Đóng</button><button class="btn">Lưu</button></footer></form></div>`;
 }
 
 async function bindFinance(page) {
   const data = await loadFinanceData();
   const modal = $("#finance-modal");
   const form = $("#finance-form");
+  bindFinanceFilterDismiss(page);
   $("#finance-search")?.addEventListener("input", (event) => {
     state.financeQuery = event.target.value;
     renderFinancePage(page);
@@ -1697,12 +2931,13 @@ async function bindFinance(page) {
     }
     const topic = form.elements.topic;
     const category = form.elements.category;
-    const partner = form.elements.partner;
-    const current = [form.elements.date.value, type, group, topic.value, category.value, partner.value, form.elements.desc.value, parseMoneyInput(form.elements.amount.value), "", "", form.elements.note.value];
+    const partnerValue = form.elements.partner?.value || "";
+    const current = [form.elements.date.value, type, group, topic.value, category.value, partnerValue, form.elements.desc.value, parseMoneyInput(form.elements.amount.value), "", "", form.elements.note.value];
     const flow = financeFlowOptions(data, current);
     setFinanceSelectOptions(topic, flow.topics, topic.value);
     setFinanceSelectOptions(category, flow.categories, category.value);
-    setFinanceSelectOptions(partner, flow.partners, partner.value);
+    const partnerField = form.querySelector("[data-finance-partner-field]");
+    if (partnerField) partnerField.innerHTML = financePartnerField(flow, partnerValue);
   };
   form?.elements.group?.addEventListener("change", () => {
     form.elements.topic.value = "";
@@ -1726,6 +2961,10 @@ async function bindFinance(page) {
     if (filterToggle) {
       const key = filterToggle.dataset.financeFilterToggle;
       state.financeFilterOpen = state.financeFilterOpen === key ? "" : key;
+      return renderFinancePage(page);
+    }
+    if (event.target.closest("[data-finance-filter-close]")) {
+      state.financeFilterOpen = "";
       return renderFinancePage(page);
     }
     const filterClear = event.target.closest("[data-finance-filter-clear]");
@@ -1914,7 +3153,7 @@ async function renderPersonalFinanceOverview() {
   });
   personalShell("personal-finance-overview", "Tài chính cá nhân", "Dashboard cá nhân theo tháng, ngân sách và dòng tiền. Chỉ account HoangDinh nhìn thấy mục này.", `
     ${financeStats([["Tổng thu tháng",`${money(totals.totalIn)} đ`,`Tháng ${month}/2026`,"income"],["Tổng chi tháng",`${money(totals.totalOut)} đ`,`${monthRows.length} giao dịch`,"expense"],["Dòng tiền tháng",`${money(totals.cash)} đ`,totals.cash >= 0 ? "Dương" : "Âm",financeAmountClass(totals.cash)],["Tỷ lệ dùng ngân sách",`${usedPct}%`,budgetTotal ? `${money(budgetTotal)} đ ngân sách` : "Chưa đặt ngân sách"]])}
-    <section class="finance-grid-view"><article class="finance-panel-card"><header><h3>Dòng tiền 12 tháng</h3><span>Báo cáo tháng</span></header><div class="finance-bars">${reportRows.map((row) => `<i title="Tháng ${row[0]}: ${money(row[3])}" style="height:${Math.max(8, Math.min(120, Math.abs(row[3]) / 50000000))}px" class="${row[3] < 0 ? "expense" : "income"}"><em>${row[0]}</em></i>`).join("")}</div></article><article class="finance-panel-card"><header><h3>Chi phí theo chủ đề</h3><span>Tháng ${month}</span></header><div class="finance-mini-table">${personalByTopic(monthRows).filter((row) => row[2] > 0).map(([topic,,expense]) => `<p><b>${topic}</b><span></span><span>${money(expense)}</span><strong class="negative">-${money(expense)}</strong></p>`).join("")}</div></article></section>
+    <section class="finance-grid-view"><article class="finance-panel-card"><header><h3>Dòng tiền 12 tháng</h3><span>Tổng dòng tiền từng tháng</span></header>${financeMonthlyBars(reportRows, 3)}</article><article class="finance-panel-card"><header><h3>Chi phí theo chủ đề</h3><span>Tháng ${month}</span></header><div class="finance-mini-table">${personalByTopic(monthRows).filter((row) => row[2] > 0).map(([topic,,expense]) => `<p><b>${topic}</b><span></span><span>${money(expense)}</span><strong class="negative">-${money(expense)}</strong></p>`).join("")}</div></article></section>
     ${personalTransactionsTable(personalRows(data).slice(0, 12), "Giao dịch gần đây")}
   `);
   $("#personal-kind").value = state.personalKind;
@@ -2034,9 +3273,9 @@ const ORG_STAFF = [
   ["NS005","Bùi Vũ Kiên","Kiến trúc sư","Phòng thiết kế","0981 156 668","kien@ledome.vn","Đang làm việc","Thiết kế kiến trúc","https://i.pravatar.cc/96?img=44"],
   ["NS006","DINH Công Hoàng","Trưởng phòng thi công","Phòng thi công","0901 234 567","hoang@ledome.vn","Đang làm việc","Quản lý thi công","https://i.pravatar.cc/96?img=12"],
   ["NS007","Hồ Quang Chiến","Giám sát thi công","Phòng thi công","0918 762 901","chien@ledome.vn","Đang làm việc","Giám sát hiện trường","https://i.pravatar.cc/96?img=5"],
-  ["NS008","Hoàng Thu Mai","Hành chính","Khối văn phòng","0934 100 568","mai@ledome.vn","Đang làm việc","Hành chính văn phòng","https://i.pravatar.cc/96?img=45"],
-  ["NS009","Trần Văn Đức","Kế toán","Khối văn phòng","0905 778 812","duc@ledome.vn","Đang làm việc","Tài chính dự án","https://i.pravatar.cc/96?img=15"],
-  ["NS010","Nguyễn Tuấn Anh","Nhân sự","Khối văn phòng","0977 460 222","anh@ledome.vn","Đang làm việc","Tuyển dụng và hồ sơ","https://i.pravatar.cc/96?img=3"],
+  ["NS008","X","Hành chính","Khối văn phòng","0934 100 568","x@ledome.vn","Đang làm việc","Hành chính văn phòng","https://i.pravatar.cc/96?img=45"],
+  ["NS009","Y","Kế toán","Khối văn phòng","0905 778 812","y@ledome.vn","Đang làm việc","Tài chính dự án","https://i.pravatar.cc/96?img=15"],
+  ["NS010","Z","Nhân sự","Khối văn phòng","0977 460 222","z@ledome.vn","Đang làm việc","Tuyển dụng và hồ sơ","https://i.pravatar.cc/96?img=3"],
   ["NS011","Nguyễn Hà Vân","Marketing & Sale","Khối kinh doanh","0911 345 789","van@ledome.vn","Đang làm việc","Phát triển khách hàng","https://i.pravatar.cc/96?img=8"]
 ];
 let selectedOrgStaff = "NS001";
@@ -2070,9 +3309,12 @@ const ACCOUNT_MODULES = [
   ["partners.view","Đối tác: xem"],
   ["partners.edit","Đối tác: sửa"],
   ["partners.delete","Đối tác: xóa"],
+  ["materials.view","Kho: xem"],
+  ["materials.edit","Kho: sửa"],
+  ["materials.delete","Kho: xóa"],
   ["hrm.view","Nhân sự: xem"],
   ["hrm.edit","Nhân sự: sửa"],
-  ["hrm.approve","Chấm công: duyệt"],
+  ["hrm.approve","Bảng chấm công: duyệt"],
   ["finance.view","Tài chính: xem"],
   ["finance.edit","Tài chính: sửa"],
   ["finance.delete","Tài chính: xóa"],
@@ -2105,7 +3347,7 @@ const ACCOUNT_ACCESS_LEVELS = [
     label: "Trưởng phòng",
     scope: "Theo phòng ban / dự án phụ trách",
     description: "Quản lý một phần hệ thống theo phạm vi được giao, không có quyền xóa dữ liệu hệ thống.",
-    permissions: ["projects.view","projects.edit","projects.upload","projects.download","partners.view","partners.edit","hrm.view"]
+    permissions: ["projects.view","projects.edit","projects.upload","projects.download","partners.view","partners.edit","materials.view","materials.edit","hrm.view"]
   },
   {
     key: "staff",
@@ -2113,7 +3355,7 @@ const ACCOUNT_ACCESS_LEVELS = [
     label: "Nhân viên",
     scope: "Theo công việc được giao",
     description: "Xem và cập nhật nội dung giới hạn trong công việc hằng ngày.",
-    permissions: ["projects.view","projects.edit","projects.upload","projects.download","partners.view"]
+    permissions: ["projects.view","projects.edit","projects.upload","projects.download","partners.view","materials.view","materials.edit"]
   },
   {
     key: "guest",
@@ -2165,6 +3407,7 @@ function expandAccountPermissions(permissions = {}) {
   ACCOUNT_PERMISSION_KEYS.forEach((key) => { next[key] = Boolean(source[key]); });
   if (source.projects) ["view","edit","upload","download"].forEach((action) => { next[`projects.${action}`] = true; });
   if (source.partners) ["view","edit"].forEach((action) => { next[`partners.${action}`] = true; });
+  if (source.materials) ["view","edit","delete"].forEach((action) => { next[`materials.${action}`] = true; });
   if (source.hrm) ["view","edit","approve"].forEach((action) => { next[`hrm.${action}`] = true; });
   if (source.finance) ["view","edit","delete"].forEach((action) => { next[`finance.${action}`] = true; });
   if (source.personalFinance) ["view","edit"].forEach((action) => { next[`personalFinance.${action}`] = true; });
@@ -2175,6 +3418,7 @@ function expandAccountPermissions(permissions = {}) {
   }
   next.projects = ["view","edit","upload","download","delete"].some((action) => next[`projects.${action}`]);
   next.partners = ["view","edit","delete"].some((action) => next[`partners.${action}`]);
+  next.materials = ["view","edit","delete"].some((action) => next[`materials.${action}`]);
   next.hrm = ["view","edit","approve"].some((action) => next[`hrm.${action}`]);
   next.finance = ["view","edit","delete"].some((action) => next[`finance.${action}`]);
   next.config = Boolean(next["config.accounts"]);
@@ -2189,13 +3433,24 @@ function permissionsForAccountLevel(accessLevel) {
   ACCOUNT_PERMISSION_KEYS.forEach((key) => { permissions[key] = allowed.has(key); });
   return expandAccountPermissions(permissions);
 }
+function hasExplicitAccountPermissions(permissions = {}) {
+  const source = permissions && typeof permissions === "object" ? permissions : {};
+  const legacyKeys = ["projects","partners","materials","hrm","finance","config","private","personalFinance"];
+  return ACCOUNT_PERMISSION_KEYS.some((key) => Object.prototype.hasOwnProperty.call(source, key)) ||
+    legacyKeys.some((key) => Object.prototype.hasOwnProperty.call(source, key));
+}
+function permissionsForAccount(account, accessLevel) {
+  return hasExplicitAccountPermissions(account.permissions)
+    ? expandAccountPermissions(account.permissions)
+    : permissionsForAccountLevel(accessLevel);
+}
 function normalizeAccountAccess(account = {}) {
   const accessLevel = knownAccountAccessLevel(account.accessLevel) ? account.accessLevel : inferAccountAccessLevel(account);
   return {
     ...account,
     accessLevel,
     accessScope: ACCOUNT_ACCESS_BY_KEY[accessLevel].scope,
-    permissions: permissionsForAccountLevel(accessLevel)
+    permissions: permissionsForAccount(account, accessLevel)
   };
 }
 function staffPeople() {
@@ -2287,12 +3542,19 @@ const STAFF_PRIVATE_INFO = {
   NS012: ["001077001212","0112123344","BHXH-011-212","ACB 1212 3344 5566"]
 };
 const HRM_ATTENDANCE = [
-  ["NV001","Nguyễn Minh Anh","07:42","17:36","Green City - Cổng A","98%","12 m","Hợp lệ"],
-  ["NV002","Trần Thanh Hà","07:55","17:28","Le Dome - Tầng 2","96%","8 m","Hợp lệ"],
-  ["NV003","Lê Hoàng Nam","08:17","17:45","Riverside - Khu M&E","94%","19 m","Đi muộn"],
-  ["NV004","Phạm Thu Trang","07:58","17:31","Văn phòng Le Dome","99%","6 m","Hợp lệ"],
-  ["NV005","Vũ Quốc Bảo","08:05","--","Green City - Cổng A","82%","186 m","Cần duyệt"],
-  ["NV006","Đỗ Mạnh Hùng","07:49","17:22","Riverside - Kho vật tư","97%","14 m","Hợp lệ"]
+  ["NS001","DINH Công Hoàng","08:24","18:08","VP Le Dome","99%","6 m","Hợp lệ"],
+  ["NS002","Bùi Xuân Dũng","08:36","18:18","VP Le Dome","98%","9 m","Hợp lệ"],
+  ["NS004","Nguyễn Hoàng Hải","08:51","18:02","Căn hộ PN An Định","96%","18 m","Đi muộn"],
+  ["NS005","Bùi Vũ Kiên","08:28","17:42","VP Le Dome","97%","7 m","Hợp lệ"],
+  ["NS007","Hồ Quang Chiến","09:07","--","Hoàng Đạo Thúy - 17T5","86%","174 m","Cần duyệt"],
+  ["NS011","Nguyễn Hà Vân","08:19","18:12","VP Le Dome","99%","5 m","Hợp lệ"]
+];
+const HRM_OVERTIME = [
+  ["OT-001","Nguyễn Minh Anh","06/06/2026","Nhà phố 6A Sơn Tây","18:00","21:00",3,"Hoàn thiện hồ sơ phát sinh CDT","Cần duyệt",450000],
+  ["OT-002","Trần Thanh Hà","05/06/2026","Văn phòng Le Dome","18:30","20:30",2,"Tổng hợp bảng chấm công và chứng từ","Hợp lệ",260000],
+  ["OT-003","Lê Hoàng Nam","04/06/2026","Căn hộ PN An Định","19:00","22:00",3,"Kiểm tra xử lý kỹ thuật sau giờ thi công","Hợp lệ",390000],
+  ["OT-004","Vũ Quốc Bảo","03/06/2026","Kho Le Dome","18:00","19:30",1.5,"Sắp xếp vật tư bàn giao công trình","Cần duyệt",180000],
+  ["OT-005","Đỗ Mạnh Hùng","01/06/2026","Căn hộ duplex Mandarine","18:15","20:15",2,"Kiểm kê vật tư phát sinh cuối ngày","Từ chối",0]
 ];
 const HRM_PAYROLL = [
   ["NV001","Nguyễn Minh Anh","Chỉ huy trưởng",26,8,22000000,3500000,1200000,26700000],
@@ -2302,7 +3564,102 @@ const HRM_PAYROLL = [
   ["NV005","Vũ Quốc Bảo","Kỹ thuật thi công",23,10,13000000,900000,650000,13250000],
   ["NV006","Đỗ Mạnh Hùng","Quản lý kho",26,4,12500000,700000,620000,12580000]
 ];
-const hrmStatus = (text) => `<i class="hrm-status ${text === "Hợp lệ" || text === "Đang làm việc" ? "ok" : text === "Cần duyệt" ? "review" : text === "Đi muộn" ? "late" : "off"}">${text}</i>`;
+const ATTENDANCE_RULES = {
+  month: "06 / 2026",
+  workStart: "08:30",
+  workEnd: "18:00",
+  lunch: "12:00 - 13:30",
+  standardDays: 24,
+  annualLeave: 12
+};
+const ATTENDANCE_MONTH_SAMPLES = [
+  { present: 24, leave: 0, lateMinor: 0, lateMajor: 0, earlyMinor: 0, earlyMajor: 0, otHours: 4, otForms: 2, note: "Đủ công, có 2 phiếu OT" },
+  { present: 23, leave: 1, lateMinor: 1, lateMajor: 0, earlyMinor: 0, earlyMajor: 0, otHours: 2, otForms: 1, note: "Có 1 ngày phép hưởng lương" },
+  { present: 24, leave: 0, lateMinor: 0, lateMajor: 1, earlyMinor: 0, earlyMajor: 0, otHours: 0, otForms: 0, note: "Cần rà soát lỗi đi muộn" },
+  { present: 22, leave: 2, lateMinor: 0, lateMajor: 0, earlyMinor: 1, earlyMajor: 0, otHours: 3, otForms: 1, note: "Có hồ sơ phép và OT" },
+  { present: 24, leave: 0, lateMinor: 2, lateMajor: 0, earlyMinor: 1, earlyMajor: 0, otHours: 0, otForms: 0, note: "Bị trừ lỗi 15-30 phút" },
+  { present: 23, leave: 0, lateMinor: 0, lateMajor: 0, earlyMinor: 0, earlyMajor: 1, otHours: 1.5, otForms: 0, note: "OT chưa tính vì chưa có phiếu" },
+  { present: 24, leave: 0, lateMinor: 0, lateMajor: 0, earlyMinor: 0, earlyMajor: 0, otHours: 2, otForms: 1, note: "Đủ công" },
+  { present: 21, leave: 1, lateMinor: 0, lateMajor: 1, earlyMinor: 0, earlyMajor: 1, otHours: 0, otForms: 0, note: "Thiếu công cần bổ sung hồ sơ" },
+  { present: 24, leave: 0, lateMinor: 1, lateMajor: 0, earlyMinor: 0, earlyMajor: 0, otHours: 2.5, otForms: 1, note: "Có OT đã duyệt" },
+  { present: 23, leave: 1, lateMinor: 0, lateMajor: 0, earlyMinor: 0, earlyMajor: 0, otHours: 0, otForms: 0, note: "Đủ hồ sơ phép" }
+];
+function attendanceWork(value) {
+  const rounded = Math.round(Number(value || 0) * 100) / 100;
+  return String(rounded);
+}
+function attendanceMonthlyRows() {
+  return staffPeople().map((person, index) => {
+    const sample = ATTENDANCE_MONTH_SAMPLES[index % ATTENDANCE_MONTH_SAMPLES.length];
+    const minorErrors = sample.lateMinor + sample.earlyMinor;
+    const majorErrors = sample.lateMajor + sample.earlyMajor;
+    const deduction = (minorErrors * 0.3) + (majorErrors * 0.5);
+    const otCountedHours = sample.otForms > 0 ? sample.otHours : 0;
+    const otWork = otCountedHours / 8;
+    const payable = sample.present + sample.leave + otWork - deduction;
+    const status = payable < 23.5 ? "Thiếu công" : deduction > 0 || (sample.otHours > 0 && sample.otForms === 0) ? "Cần kiểm tra" : "Đủ công";
+    return {
+      ...sample,
+      staffCode: person.staffCode,
+      staffName: person.staffName,
+      role: person.titles[0] || person.roles[0] || "",
+      department: person.departments.join(", "),
+      minorErrors,
+      majorErrors,
+      deduction,
+      otCountedHours,
+      otWork,
+      payable,
+      status
+    };
+  });
+}
+function attendancePolicyMarkup() {
+  return `<section class="attendance-policy-panel">
+    <header><div><h3>Quy định chấm công</h3><p>Nội dung này được ghi trực tiếp trong bảng chấm công để nhân sự Le Dome đối chiếu khi tổng hợp lương.</p></div><b>${ATTENDANCE_RULES.month}</b></header>
+    <div class="attendance-rule-grid">
+      <article><small>Ca làm việc</small><b>${ATTENDANCE_RULES.workStart} - ${ATTENDANCE_RULES.workEnd}</b><span>Nghỉ trưa ${ATTENDANCE_RULES.lunch}.</span></article>
+      <article><small>Lịch làm việc</small><b>Thứ 2 - Thứ 6</b><span>Cộng 2 thứ 7 đầu tiên trong tháng.</span></article>
+      <article><small>Công chuẩn</small><b>${ATTENDANCE_RULES.standardDays} công / tháng</b><span>Nghỉ phép năm: ${ATTENDANCE_RULES.annualLeave} ngày / năm.</span></article>
+      <article><small>Đi muộn / về sớm</small><b>15-30': -0.3 công</b><span>Từ 30' trở lên: -0.5 công / lỗi.</span></article>
+      <article><small>Overtime</small><b>OT = số giờ / 8</b><span>Chỉ tính khi nhân sự có phiếu OT.</span></article>
+    </div>
+    <p class="attendance-formula"><b>Công tính lương mẫu</b><span>Có mặt + phép hưởng lương + OT có phiếu / 8 - khấu trừ đi muộn/về sớm.</span></p>
+  </section>`;
+}
+function attendanceSummaryTable(rows) {
+  const totalPresent = rows.reduce((sum, row) => sum + row.present, 0);
+  const totalLeave = rows.reduce((sum, row) => sum + row.leave, 0);
+  const totalDeduction = rows.reduce((sum, row) => sum + row.deduction, 0);
+  const totalOtWork = rows.reduce((sum, row) => sum + row.otWork, 0);
+  const totalPayable = rows.reduce((sum, row) => sum + row.payable, 0);
+  return `<section class="attendance-summary-card">
+    <header><div><h3>Bảng tổng hợp công tháng ${ATTENDANCE_RULES.month}</h3><p>Danh sách lấy từ mục Nhân sự Le Dome, gộp người kiêm nhiệm để chấm công theo từng nhân sự thật.</p></div><button>Xuất bảng công</button></header>
+    <div class="hrm-table-wrap"><table class="hrm-table attendance-summary-table"><thead><tr><th>Nhân sự</th><th>Phòng ban / vai trò</th><th>Công chuẩn</th><th>Có mặt</th><th>Phép</th><th>Đi muộn</th><th>Về sớm</th><th>Trừ công</th><th>OT hợp lệ</th><th>Công tính</th><th>Trạng thái</th><th>Ghi chú</th></tr></thead><tbody>
+      ${rows.map((row) => `<tr>
+        <td class="attendance-person"><b>${escapeHtml(row.staffName)}</b><small>${escapeHtml(row.staffCode)}</small></td>
+        <td><b>${escapeHtml(row.role)}</b><small>${escapeHtml(row.department)}</small></td>
+        <td><strong>${ATTENDANCE_RULES.standardDays}</strong></td>
+        <td>${attendanceWork(row.present)}</td>
+        <td>${attendanceWork(row.leave)}</td>
+        <td>${row.lateMinor + row.lateMajor}<small>15-30': ${row.lateMinor} · 30'+: ${row.lateMajor}</small></td>
+        <td>${row.earlyMinor + row.earlyMajor}<small>15-30': ${row.earlyMinor} · 30'+: ${row.earlyMajor}</small></td>
+        <td class="attendance-negative">-${attendanceWork(row.deduction)}</td>
+        <td>${attendanceWork(row.otCountedHours)} giờ<small>${row.otForms > 0 ? `${row.otForms} phiếu = ${attendanceWork(row.otWork)} công` : row.otHours > 0 ? "Chưa có phiếu OT" : "Không phát sinh"}</small></td>
+        <td><b class="attendance-pay ${row.payable >= ATTENDANCE_RULES.standardDays ? "ok" : row.payable < 23.5 ? "bad" : "warn"}">${attendanceWork(row.payable)}</b></td>
+        <td>${hrmStatus(row.status)}</td>
+        <td class="attendance-note">${escapeHtml(row.note)}</td>
+      </tr>`).join("")}
+    </tbody><tfoot><tr><td colspan="3">Tổng cộng</td><td>${attendanceWork(totalPresent)}</td><td>${attendanceWork(totalLeave)}</td><td colspan="2"></td><td class="attendance-negative">-${attendanceWork(totalDeduction)}</td><td>${attendanceWork(totalOtWork)} công</td><td>${attendanceWork(totalPayable)}</td><td colspan="2"></td></tr></tfoot></table></div>
+  </section>`;
+}
+function attendanceEvidenceTable(rows) {
+  return `<section class="attendance-evidence-card">
+    <header><div><h3>Chứng cứ chấm công điện thoại</h3><p>Dữ liệu check-in/check-out vẫn dùng để duyệt GPS, ảnh xác thực và đối chiếu khi chốt bảng công.</p></div><span>${rows.length} bản ghi</span></header>
+    <div class="hrm-table-wrap"><table class="hrm-table attendance-table"><thead><tr><th>Nhân sự</th><th>Check-in</th><th>Check-out</th><th>Điểm chấm công</th><th>Ảnh xác thực</th><th>GPS</th><th>Trạng thái</th><th></th></tr></thead><tbody>${rows.map((row) => `<tr><td><b>${escapeHtml(row[1])}</b><small>${escapeHtml(row[0])}</small></td><td>${escapeHtml(row[2])}</td><td>${escapeHtml(row[3])}</td><td>${escapeHtml(row[4])}</td><td><b class="face-score">◉ ${escapeHtml(row[5])}</b></td><td>${escapeHtml(row[6])}</td><td>${hrmStatus(row[7])}</td><td><button class="hrm-view" data-hrm="evidence" data-code="${escapeHtml(row[0])}" data-record="${escapeHtml(row[8] || "")}">Xem</button></td></tr>`).join("")}</tbody></table></div>
+  </section>`;
+}
+const hrmStatus = (text) => `<i class="hrm-status ${["Hợp lệ","Đang làm việc","Đủ công"].includes(text) ? "ok" : ["Cần duyệt","Cần kiểm tra"].includes(text) ? "review" : ["Đi muộn","Thiếu công"].includes(text) ? "late" : "off"}">${text}</i>`;
 const hrmHeader = (title, subtitle, action = "") => `<header class="hrm-head"><div><h2>${title}</h2><p>${subtitle}</p></div>${action}</header>`;
 const hrmStats = (items) => `<div class="hrm-stats">${items.map(([label,value,note]) => `<article><small>${label}</small><b>${value}</b><span>${note}</span></article>`).join("")}</div>`;
 
@@ -2330,6 +3687,7 @@ function orgStaffCard(staff) {
 }
 
 async function hrmAttendance() {
+  await loadOrgStaff();
   const runtime = await api("/attendance/records");
   const phoneRows = runtime.data.map((record) => [
     record.employeeId,
@@ -2338,17 +3696,35 @@ async function hrmAttendance() {
     record.type === "check-out" ? new Date(record.capturedAt).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" }) : "--",
     record.siteName,
     record.faceEvidence || "Đã chụp ảnh",
-    `${record.distanceMeters} m`,
+    record.distanceMeters == null ? "Chưa có geofence" : `${record.distanceMeters} m`,
     record.status,
     record.id
   ]);
   const attendanceRows = phoneRows.concat(HRM_ATTENDANCE);
+  const monthlyRows = attendanceMonthlyRows();
+  const totalPayable = monthlyRows.reduce((sum, row) => sum + row.payable, 0);
+  const totalDeduction = monthlyRows.reduce((sum, row) => sum + row.deduction, 0);
+  const totalOtHours = monthlyRows.reduce((sum, row) => sum + row.otCountedHours, 0);
+  const pendingRows = monthlyRows.filter((row) => row.status !== "Đủ công").length;
   setTitle("hrm-attendance", "");
-  $("#app").innerHTML = `<section class="hrm-page">${hrmHeader("▣ Chấm công","Xác thực bằng ảnh và vị trí GPS từ điện thoại",'<a class="btn attendance-mobile-link" href="/attendance/" target="_blank">▣ Mở trang chấm công điện thoại</a>')}${hrmStats([["Bản ghi hôm nay",attendanceRows.length,"Check-in / check-out"],["Từ điện thoại",phoneRows.length,"Đã gửi GPS"],["Cần kiểm tra",attendanceRows.filter((row) => row[7] === "Cần duyệt").length,"GPS ngoài vùng cho phép"],["Đi muộn",attendanceRows.filter((row) => row[7] === "Đi muộn").length,"Sau giờ vào ca"]])}
-  <div class="hrm-tools"><input placeholder="⌕ Tìm theo nhân sự hoặc địa điểm"><input type="date" value="2026-06-01"><select><option>Tất cả trạng thái</option><option>Hợp lệ</option><option>Cần duyệt</option><option>Đi muộn</option></select><button>↻ Tải lại</button></div>
-  <div class="hrm-table-wrap"><table class="hrm-table attendance-table"><thead><tr><th>Nhân sự</th><th>Check-in</th><th>Check-out</th><th>Điểm chấm công</th><th>Ảnh xác thực</th><th>GPS</th><th>Trạng thái</th><th></th></tr></thead><tbody>${attendanceRows.map((row) => `<tr><td><b>${row[1]}</b><small>${row[0]}</small></td><td>${row[2]}</td><td>${row[3]}</td><td>${row[4]}</td><td><b class="face-score">◉ ${row[5]}</b></td><td>${row[6]}</td><td>${hrmStatus(row[7])}</td><td><button class="hrm-view" data-hrm="evidence" data-code="${row[0]}" data-record="${row[8] || ""}">Xem</button></td></tr>`).join("")}</tbody></table></div>
+  $("#app").innerHTML = `<section class="hrm-page attendance-page">${hrmHeader("▣ Bảng chấm công","Tổng hợp kết quả chấm công tháng của nhân sự Le Dome",'<a class="btn attendance-mobile-link" href="/attendance/" target="_blank">▣ Mở trang chấm công điện thoại</a>')}${hrmStats([["Kỳ công",ATTENDANCE_RULES.month,`${ATTENDANCE_RULES.standardDays} công chuẩn / tháng`],["Nhân sự Le Dome",monthlyRows.length,"Lấy từ danh sách Nhân sự"],["Tổng công tính",attendanceWork(totalPayable),"Sau phép, OT và khấu trừ"],["Cần kiểm tra",pendingRows,`Khấu trừ ${attendanceWork(totalDeduction)} công · OT ${attendanceWork(totalOtHours)} giờ`]])}
+  ${attendancePolicyMarkup()}
+  <div class="hrm-tools attendance-tools"><input placeholder="⌕ Tìm nhân sự, phòng ban hoặc ghi chú"><input type="month" value="2026-06"><select><option>Tất cả trạng thái</option><option>Đủ công</option><option>Cần kiểm tra</option><option>Thiếu công</option></select><button>↻ Tính lại</button><button>▣ Xuất Excel</button></div>
+  ${attendanceSummaryTable(monthlyRows)}
+  ${attendanceEvidenceTable(attendanceRows)}
   <aside class="hrm-evidence" id="hrm-evidence"><header><b>Chi tiết xác thực</b><button data-hrm="close-evidence">×</button></header><div class="face-preview"><i>◎</i><span>Face ID</span></div><div class="gps-preview"><b>⌖</b><span>Vị trí GPS từ điện thoại</span></div><p><span>Nhân sự</span><b id="evidence-name"></b></p><p><span>Thiết bị</span><b>Điện thoại cá nhân</b></p><p><span>Độ khớp Face ID</span><b id="evidence-face"></b></p><p><span>Khoảng cách GPS</span><b id="evidence-gps"></b></p><footer><button class="btn secondary" data-hrm="close-evidence">Đóng</button><button class="btn" data-hrm="approve-attendance">Duyệt bản ghi</button></footer></aside></section>`;
   bindHrm("attendance", attendanceRows);
+}
+
+function hrmOvertime() {
+  setTitle("hrm-overtime", "");
+  const totalHours = HRM_OVERTIME.reduce((sum, row) => sum + row[6], 0);
+  const totalCost = HRM_OVERTIME.reduce((sum, row) => sum + row[9], 0);
+  const pending = HRM_OVERTIME.filter((row) => row[8] === "Cần duyệt").length;
+  $("#app").innerHTML = `<section class="hrm-page">${hrmHeader("▤ Phiếu Overtime","Quản lý phiếu tăng ca, lý do phát sinh và trạng thái duyệt",'<button class="btn" data-hrm="add-overtime">＋ Thêm phiếu</button>')}${hrmStats([["Tổng phiếu",HRM_OVERTIME.length,"Trong tháng 06 / 2026"],["Tổng giờ",`${totalHours} giờ`,"Đã ghi nhận"],["Cần duyệt",pending,"Chờ xác nhận"],["Chi phí tạm tính",`${money(totalCost)} đ`,"Theo phiếu đã nhập"]])}
+  <div class="hrm-tools"><input placeholder="⌕ Tìm nhân sự, dự án hoặc lý do"><input type="month" value="2026-06"><select><option>Tất cả trạng thái</option><option>Cần duyệt</option><option>Hợp lệ</option><option>Từ chối</option></select><button>↻ Tải lại</button></div>
+  <div class="hrm-table-wrap"><table class="hrm-table payroll-table"><thead><tr><th>Mã phiếu</th><th>Nhân sự</th><th>Ngày</th><th>Vị trí / dự án</th><th>Giờ bắt đầu</th><th>Giờ kết thúc</th><th>Tổng giờ</th><th>Lý do</th><th>Trạng thái</th><th>Chi phí</th><th></th></tr></thead><tbody>${HRM_OVERTIME.map((row) => `<tr><td><b>${escapeHtml(row[0])}</b></td><td>${escapeHtml(row[1])}</td><td>${escapeHtml(row[2])}</td><td>${escapeHtml(row[3])}</td><td>${escapeHtml(row[4])}</td><td>${escapeHtml(row[5])}</td><td><strong>${row[6]} giờ</strong></td><td>${escapeHtml(row[7])}</td><td>${hrmStatus(row[8])}</td><td class="${row[9] > 0 ? "payroll-bonus" : ""}">${row[9] > 0 ? `+ ${money(row[9])}` : money(row[9])} đ</td><td><button class="hrm-view">Chi tiết</button></td></tr>`).join("")}</tbody><tfoot><tr><td colspan="6">Tổng overtime</td><td>${totalHours} giờ</td><td colspan="2">${HRM_OVERTIME.length} phiếu</td><td colspan="2">${money(totalCost)} đ</td></tr></tfoot></table></div></section>`;
+  bindHrm("overtime");
 }
 
 function hrmPayroll() {
@@ -2409,6 +3785,7 @@ function bindHrm(type, attendanceRows = HRM_ATTENDANCE) {
     if (action === "evidence") {
       const trigger = event.target.closest("[data-code]");
       const row = attendanceRows.find((item) => item[0] === trigger.dataset.code && (item[8] || "") === trigger.dataset.record);
+      if (!row) return;
       $("#evidence-name").textContent = row[1];
       $("#evidence-face").textContent = row[5];
       $("#evidence-gps").textContent = row[6];
@@ -2425,6 +3802,9 @@ function bindHrm(type, attendanceRows = HRM_ATTENDANCE) {
       }
       return hrmAttendance();
     }
+    if (action === "add-overtime") {
+      return alert("Form thêm phiếu Overtime sẽ được kết nối với workflow duyệt tăng ca.");
+    }
   };
   if (type === "staff") $("#hrm-staff-form").onsubmit = async (event) => {
     event.preventDefault();
@@ -2440,8 +3820,54 @@ function bindHrm(type, attendanceRows = HRM_ATTENDANCE) {
 }
 
 function accountPermissionBadges(permissions) {
-  const active = ACCOUNT_MODULES.filter(([key]) => permissions?.[key]);
+  const expanded = expandAccountPermissions(permissions);
+  const active = ACCOUNT_MODULES.filter(([key]) => expanded?.[key]);
   return active.length ? active.map(([, label]) => `<i>${label}</i>`).join("") : `<em>Không có quyền</em>`;
+}
+
+function accountPermissionsDifferFromLevel(permissions, accessLevel) {
+  const expanded = expandAccountPermissions(permissions);
+  const defaults = permissionsForAccountLevel(accessLevel);
+  return ACCOUNT_PERMISSION_KEYS.some((key) => Boolean(expanded[key]) !== Boolean(defaults[key]));
+}
+
+function accountPermissionEditor(permissions) {
+  const expanded = expandAccountPermissions(permissions);
+  return `<div class="account-permission-control">
+    <div class="account-permission-actions">
+      <button type="button" data-account-permission-action="preset">Theo cấp</button>
+      <button type="button" data-account-permission-action="all">Chọn hết</button>
+      <button type="button" data-account-permission-action="none">Bỏ hết</button>
+    </div>
+    <div class="account-permission-editor" data-account-permission-editor>${ACCOUNT_MODULES.map(([key, label]) => `<label class="${expanded[key] ? "checked" : ""}"><input type="checkbox" data-account-permission="${escapeHtml(key)}" ${expanded[key] ? "checked" : ""}><span>${escapeHtml(label)}</span></label>`).join("")}</div>
+  </div>`;
+}
+
+function accountPermissionsFromRow(row) {
+  const permissions = {};
+  row.querySelectorAll("[data-account-permission]").forEach((input) => {
+    permissions[input.dataset.accountPermission] = input.checked;
+  });
+  return expandAccountPermissions(permissions);
+}
+
+function updateAccountPermissionSummary(row, permissions = accountPermissionsFromRow(row)) {
+  const accessLevel = row.querySelector("[data-account-level]")?.value || "staff";
+  const customized = accountPermissionsDifferFromLevel(permissions, accessLevel);
+  row.classList.toggle("account-custom-permissions", customized);
+  const customMarker = row.querySelector("[data-account-custom]");
+  if (customMarker) customMarker.textContent = customized ? "Tùy chỉnh" : "Theo cấp";
+  const badges = row.querySelector("[data-account-badges]");
+  if (badges) badges.innerHTML = accountPermissionBadges(permissions);
+}
+
+function setAccountPermissionEditor(row, permissions) {
+  const expanded = expandAccountPermissions(permissions);
+  row.querySelectorAll("[data-account-permission]").forEach((input) => {
+    input.checked = Boolean(expanded[input.dataset.accountPermission]);
+    input.closest("label")?.classList.toggle("checked", input.checked);
+  });
+  updateAccountPermissionSummary(row, expanded);
 }
 
 function accountAccessOptions(current) {
@@ -2456,7 +3882,9 @@ function accountRow(account) {
   const safe = normalizeAccountAccess(account);
   const level = ACCOUNT_ACCESS_BY_KEY[safe.accessLevel];
   const positions = safe.positions || [`${safe.role} - ${safe.department}`];
-  return `<tr data-staff="${safe.staffCode}"><td><div class="account-person"><b>${escapeHtml(safe.staffName)}</b><span><em>Chức danh:</em> ${escapeHtml(safe.title || safe.role || "Chưa cập nhật")}<br><em>Vị trí:</em> ${positions.map(escapeHtml).join("<br>")}</span></div></td><td><input name="loginId" value="${escapeHtml(safe.loginId)}"></td><td><input name="newPassword" type="password" placeholder="Để trống nếu không đổi"></td><td><label class="account-active"><input type="checkbox" name="active" ${safe.active ? "checked" : ""}> Hoạt động</label></td><td><div class="account-level-picker"><select name="accessLevel" data-account-level>${accountAccessOptions(safe.accessLevel)}</select><small data-account-level-desc>${escapeHtml(level.description)}</small></div></td><td><div class="account-scope"><b data-account-scope>${escapeHtml(level.scope)}</b><span>Cấp ${level.rank}: ${escapeHtml(level.label)}</span></div><div class="account-badges" data-account-badges>${accountPermissionBadges(safe.permissions || {})}</div></td></tr>`;
+  const permissions = expandAccountPermissions(safe.permissions || {});
+  const customState = accountPermissionsDifferFromLevel(permissions, safe.accessLevel) ? "Tùy chỉnh" : "Theo cấp";
+  return `<tr data-staff="${safe.staffCode}" class="${customState === "Tùy chỉnh" ? "account-custom-permissions" : ""}"><td><div class="account-person"><b>${escapeHtml(safe.staffName)}</b><span><em>Chức danh:</em> ${escapeHtml(safe.title || safe.role || "Chưa cập nhật")}<br><em>Vị trí:</em> ${positions.map(escapeHtml).join("<br>")}</span></div></td><td><input name="loginId" value="${escapeHtml(safe.loginId)}"></td><td><input name="newPassword" type="password" placeholder="Để trống nếu không đổi"></td><td><label class="account-active"><input type="checkbox" name="active" ${safe.active ? "checked" : ""}> Hoạt động</label></td><td><div class="account-level-picker"><select name="accessLevel" data-account-level>${accountAccessOptions(safe.accessLevel)}</select><small data-account-level-desc>${escapeHtml(level.description)}</small></div></td><td><div class="account-scope"><b data-account-scope>${escapeHtml(level.scope)}</b><span>Cấp ${level.rank}: ${escapeHtml(level.label)}</span><small data-account-custom>${customState}</small></div><div class="account-badges" data-account-badges>${accountPermissionBadges(permissions)}</div>${accountPermissionEditor(permissions)}</td></tr>`;
 }
 
 function updateAccountRowAccess(row) {
@@ -2466,7 +3894,7 @@ function updateAccountRowAccess(row) {
   row.querySelector("[data-account-level-desc]").textContent = level.description;
   row.querySelector("[data-account-scope]").textContent = level.scope;
   row.querySelector(".account-scope span").textContent = `Cấp ${level.rank}: ${level.label}`;
-  row.querySelector("[data-account-badges]").innerHTML = accountPermissionBadges(permissions);
+  setAccountPermissionEditor(row, permissions);
 }
 
 async function configAccounts() {
@@ -2477,8 +3905,8 @@ async function configAccounts() {
     <header class="account-head"><div><h2>▣ Tài khoản</h2><p>Quản lý tài khoản đăng nhập và phân quyền cho nhân sự Le Dome</p></div><button class="btn" data-account="save">Lưu thay đổi</button></header>
     <div class="account-summary"><article><small>Tổng tài khoản</small><b>${LEDOME_ACCOUNTS.length}</b><span>Theo nhân sự thật, không theo số vị trí kiêm nhiệm</span></article><article><small>Đang hoạt động</small><b>${activeCount}</b><span>Có thể đăng nhập</span></article><article><small>Cấp quyền</small><b>5</b><span>Admin, Lãnh đạo, Trưởng phòng, Nhân viên, Guest</span></article></div>
     ${accountAccessCards()}
-    <div class="account-tools"><span>RBAC theo cấp: quyền chi tiết và phạm vi dữ liệu được chuẩn hóa theo chính sách quản trị.</span><button data-account="reset">Tạo lại mặc định</button></div>
-    <div class="account-table-wrap"><table class="account-table"><thead><tr><th>Nhân sự thật</th><th>ID đăng nhập</th><th>Đặt mật khẩu mới</th><th>Trạng thái</th><th>Cấp quyền</th><th>Phạm vi & quyền đang bật</th></tr></thead><tbody>${LEDOME_ACCOUNTS.map(accountRow).join("")}</tbody></table></div>
+    <div class="account-tools"><span>RBAC theo cấp và quyền chi tiết theo từng tài khoản.</span><button data-account="reset">Tạo lại mặc định</button></div>
+    <div class="account-table-wrap"><table class="account-table"><thead><tr><th>Nhân sự thật</th><th>ID đăng nhập</th><th>Đặt mật khẩu mới</th><th>Trạng thái</th><th>Cấp quyền</th><th>Phạm vi & quyền chi tiết</th></tr></thead><tbody>${LEDOME_ACCOUNTS.map(accountRow).join("")}</tbody></table></div>
   </section>`;
   bindAccounts();
 }
@@ -2486,8 +3914,30 @@ async function configAccounts() {
 function bindAccounts() {
   $("#app").onchange = (event) => {
     if (event.target.matches("[data-account-level]")) updateAccountRowAccess(event.target.closest("tr"));
+    if (event.target.matches("[data-account-permission]")) {
+      const row = event.target.closest("tr");
+      event.target.closest("label")?.classList.toggle("checked", event.target.checked);
+      updateAccountPermissionSummary(row);
+    }
   };
   $("#app").onclick = async (event) => {
+    const permissionAction = event.target.closest("[data-account-permission-action]")?.dataset.accountPermissionAction;
+    if (permissionAction) {
+      const row = event.target.closest("tr");
+      const accessLevel = row.querySelector("[data-account-level]").value;
+      if (permissionAction === "preset") setAccountPermissionEditor(row, permissionsForAccountLevel(accessLevel));
+      if (permissionAction === "all") {
+        const permissions = {};
+        ACCOUNT_PERMISSION_KEYS.forEach((key) => { permissions[key] = true; });
+        setAccountPermissionEditor(row, permissions);
+      }
+      if (permissionAction === "none") {
+        const permissions = {};
+        ACCOUNT_PERMISSION_KEYS.forEach((key) => { permissions[key] = false; });
+        setAccountPermissionEditor(row, permissions);
+      }
+      return;
+    }
     const action = event.target.closest("[data-account]")?.dataset.account;
     if (action === "save") {
       LEDOME_ACCOUNTS = [...document.querySelectorAll(".account-table tbody tr")].map((row) => {
@@ -2500,7 +3950,7 @@ function bindAccounts() {
           active: row.querySelector('[name="active"]').checked,
           accessLevel,
           accessScope: ACCOUNT_ACCESS_BY_KEY[accessLevel].scope,
-          permissions: permissionsForAccountLevel(accessLevel)
+          permissions: accountPermissionsFromRow(row)
         };
       });
       await saveAccounts();
@@ -2520,15 +3970,40 @@ function catalogConfigForType(type) {
   return CATALOG_LIST_CONFIG[type] || TRANSACTION_FLOW_LIST_CONFIG[type];
 }
 
+function catalogCollapsed(key) {
+  return Boolean(state.catalogCollapsed?.[key]);
+}
+
+function persistCatalogCollapsed() {
+  try {
+    localStorage.setItem(CATALOG_COLLAPSE_STORAGE, JSON.stringify(state.catalogCollapsed || {}));
+  } catch {}
+}
+
+function catalogToggleButton(key, collapsed = catalogCollapsed(key)) {
+  return `<button type="button" class="catalog-toggle" data-catalog-toggle="${escapeHtml(key)}" aria-expanded="${collapsed ? "false" : "true"}">${collapsed ? "Unhide" : "Hide"}</button>`;
+}
+
 function catalogValuesForType(type) {
+  const partnerType = CATALOG_LIST_CONFIG[type]?.partnerType;
+  if (partnerType) return financePartnerNames(partnerType);
   const flowConfig = TRANSACTION_FLOW_LIST_CONFIG[type];
+  if (flowConfig?.scope) return catalogTransactionFlow[flowConfig.scope]?.[flowConfig.field] || [];
   if (flowConfig) return catalogTransactionFlow[flowConfig.field] || [];
   return catalogData[type] || [];
 }
 
 function setCatalogValuesForType(type, values) {
+  const partnerType = CATALOG_LIST_CONFIG[type]?.partnerType;
+  if (partnerType) {
+    syncPartnerRowsFromNames(partnerType, values);
+    return;
+  }
   const flowConfig = TRANSACTION_FLOW_LIST_CONFIG[type];
-  if (flowConfig) catalogTransactionFlow[flowConfig.field] = values;
+  if (flowConfig?.scope) {
+    if (!catalogTransactionFlow[flowConfig.scope]) catalogTransactionFlow[flowConfig.scope] = {};
+    catalogTransactionFlow[flowConfig.scope][flowConfig.field] = values;
+  } else if (flowConfig) catalogTransactionFlow[flowConfig.field] = values;
   else catalogData[type] = values;
 }
 
@@ -2540,23 +4015,60 @@ function catalogInputValueForType(type, value) {
 function catalogEditorRows(type) {
   const query = state.catalogQuery.toLocaleLowerCase("vi");
   return catalogValuesForType(type).map((item, index) => ({ item, index }))
-    .filter(({ item }) => !query || item.toLocaleLowerCase("vi").includes(query));
+    .filter(({ item }) => {
+      if (!query) return true;
+      const text = type === "projectList" ? `${item} ${catalogProjectName(item)} ${catalogProjectDisplayCode(item)}` : item;
+      return text.toLocaleLowerCase("vi").includes(query);
+    });
+}
+
+function catalogProjectRecord(code) {
+  const key = catalogProjectLookupKey(code);
+  if (!key) return null;
+  return (catalogProjectRows || []).find((project) => catalogProjectLookupKey(project?.code) === key || catalogProjectLookupKey(project?.name) === key) || null;
+}
+
+function catalogFinanceProjectRow(code) {
+  const key = catalogProjectLookupKey(code);
+  if (!key) return null;
+  return (catalogFinanceData?.projects || []).find((project) => catalogProjectLookupKey(project?.[0]) === key) || null;
+}
+
+function catalogProjectName(code) {
+  const project = catalogProjectRecord(code);
+  if (project?.name) return String(project.name).trim();
+  const row = catalogFinanceProjectRow(code);
+  return String(row?.[1] || code || "").trim();
+}
+
+function catalogProjectDisplayCode(code) {
+  const project = catalogProjectRecord(code);
+  return String(project?.code || code || "").trim();
 }
 
 function catalogChipMarkup(type, item, index) {
   const config = catalogConfigForType(type);
   const readOnly = config?.readOnly;
+  if (type === "projectList") {
+    const projectName = catalogProjectName(item);
+    const projectCode = catalogProjectDisplayCode(item);
+    return `<div class="catalog-chip catalog-project-chip" data-catalog-row="${index}"><span>${index + 1}</span><div class="catalog-project-label"><b>${escapeHtml(projectName)}</b><small>Mã dự án: ${escapeHtml(projectCode)}</small><input type="hidden" value="${escapeHtml(item)}" data-catalog-input="${type}" data-index="${index}"></div><button type="button" aria-label="Xóa ${escapeHtml(item)}" data-catalog-delete="${type}" data-index="${index}">×</button></div>`;
+  }
   return `<label class="catalog-chip ${readOnly ? "readonly" : ""}" data-catalog-row="${index}"><span>${index + 1}</span><input value="${escapeHtml(item)}" data-catalog-input="${type}" data-index="${index}" ${readOnly ? "readonly" : ""}>${readOnly ? "" : `<button type="button" aria-label="Xóa ${escapeHtml(item)}" data-catalog-delete="${type}" data-index="${index}">×</button>`}</label>`;
 }
 
 function catalogEditorList(type) {
   const config = CATALOG_LIST_CONFIG[type];
   const rows = catalogEditorRows(type);
-  return `<section class="catalog-panel ${config.preserveCase ? "preserve-case" : ""}" data-catalog-panel="${type}">
-    <header><div><h3>${escapeHtml(config.title)}</h3><span>${catalogValuesForType(type).length} mục đang lưu</span></div></header>
-    <p>${escapeHtml(config.note)}</p>
-    <div class="catalog-add-row"><input data-catalog-new="${type}" placeholder="${escapeHtml(config.placeholder)}"><button data-catalog-add="${type}">Thêm</button></div>
-    <div class="catalog-list">${rows.map(({ item, index }) => catalogChipMarkup(type, item, index)).join("") || `<em>Không có hạng mục phù hợp.</em>`}</div>
+  const collapsed = catalogCollapsed(type);
+  const projectList = type === "projectList";
+  return `<section class="catalog-panel ${projectList ? "catalog-project-panel" : ""} ${collapsed ? "collapsed" : ""} ${config.preserveCase ? "preserve-case" : ""}" data-catalog-panel="${type}">
+    <header><div><h3>${escapeHtml(config.title)}</h3><span>${catalogValuesForType(type).length} mục đang lưu</span></div>${catalogToggleButton(type, collapsed)}</header>
+    ${collapsed ? "" : `<div class="catalog-panel-body">
+      <p>${escapeHtml(config.note)}</p>
+      ${projectList ? "" : `<div class="catalog-add-row"><input data-catalog-new="${type}" placeholder="${escapeHtml(config.placeholder)}"><button data-catalog-add="${type}">Thêm</button></div>`}
+      <div class="catalog-list ${projectList ? "catalog-project-list" : ""}">${rows.map(({ item, index }) => catalogChipMarkup(type, item, index)).join("") || `<em>${projectList ? "Không có dự án phù hợp." : "Không có hạng mục phù hợp."}</em>`}</div>
+    </div>`}
   </section>`;
 }
 
@@ -2564,10 +4076,13 @@ function catalogFlowList(type) {
   const config = TRANSACTION_FLOW_LIST_CONFIG[type];
   const rows = catalogEditorRows(type);
   const readOnly = config.readOnly;
-  return `<div class="catalog-flow-list ${config.preserveCase ? "preserve-case" : ""}" data-catalog-panel="${type}">
-    <header><strong>${escapeHtml(config.title)}</strong><span>${catalogValuesForType(type).length} mục</span></header>
-    ${readOnly ? "" : `<div class="catalog-add-row"><input data-catalog-new="${type}" placeholder="${escapeHtml(config.placeholder)}"><button data-catalog-add="${type}">Thêm</button></div>`}
-    <div class="catalog-list">${rows.map(({ item, index }) => catalogChipMarkup(type, item, index)).join("") || `<em>Không có mục phù hợp.</em>`}</div>
+  const collapsed = catalogCollapsed(type);
+  return `<div class="catalog-flow-list ${collapsed ? "collapsed" : ""} ${config.preserveCase ? "preserve-case" : ""}" data-catalog-panel="${type}">
+    <header><div><strong>${escapeHtml(config.title)}</strong><span>${catalogValuesForType(type).length} mục</span></div>${catalogToggleButton(type, collapsed)}</header>
+    ${collapsed ? "" : `<div class="catalog-flow-body">
+      ${readOnly ? "" : `<div class="catalog-add-row"><input data-catalog-new="${type}" placeholder="${escapeHtml(config.placeholder)}"><button data-catalog-add="${type}">Thêm</button></div>`}
+      <div class="catalog-list">${rows.map(({ item, index }) => catalogChipMarkup(type, item, index)).join("") || `<em>Không có mục phù hợp.</em>`}</div>
+    </div>`}
   </div>`;
 }
 
@@ -2598,33 +4113,108 @@ function catalogDependencyGrid() {
     ])}
     ${catalogDependencyCard("Nhóm Tài chính", [
       ["Loại hợp lệ", "Thu, Chi"],
-      ["Chủ đề/Hạng mục/Đối tượng", "Danh sách tài chính tùy chỉnh"]
+      ["Chủ đề", "Danh sách tài chính tùy chỉnh"],
+      ["Hạng mục", FINANCE_CAPITAL_CATEGORY_OPTIONS.join(", ")],
+      ["Đối tượng", "Điền tay khi nhập giao dịch"]
     ])}
   </div>`;
 }
 
 function catalogFlowPanel() {
   const total = TRANSACTION_FLOW_LIST_TYPES.reduce((sum, type) => sum + catalogValuesForType(type).length, 0);
-  return `<section class="catalog-panel catalog-flow-panel">
-    <header><div><h3>Phân luồng giao dịch</h3><span>${total} mục đang lưu</span></div></header>
-    <p>Dùng cho bộ lọc và form giao dịch tài chính theo cấu trúc phụ thuộc Loại -> Nhóm -> Chủ đề -> Hạng mục -> Đối tượng.</p>
-    ${catalogDependencyGrid()}
-    <div class="catalog-flow-grid">${TRANSACTION_FLOW_LIST_TYPES.map(catalogFlowList).join("")}</div>
+  const collapsed = catalogCollapsed("transactionFlow");
+  return `<section class="catalog-panel catalog-flow-panel ${collapsed ? "collapsed" : ""}">
+    <header><div><h3>Phân luồng giao dịch</h3><span>${total} mục đang lưu</span></div>${catalogToggleButton("transactionFlow", collapsed)}</header>
+    ${collapsed ? "" : `<div class="catalog-panel-body">
+      <p>Dùng cho bộ lọc và form giao dịch tài chính theo cấu trúc phụ thuộc Loại -> Nhóm -> Chủ đề -> Hạng mục -> Đối tượng.</p>
+      ${catalogDependencyGrid()}
+      <div class="catalog-flow-grid">${TRANSACTION_FLOW_LIST_TYPES.map(catalogFlowList).join("")}</div>
+    </div>`}
   </section>`;
 }
 
+function inventoryProcessPanel() {
+  const steps = [
+    ["1", "NCC giao hàng", "NCC vận chuyển Thiết bị Vật tư đến Kho VP hoặc Kho dự án theo nhu cầu nhận hàng."],
+    ["2", "Lập Phiếu nhập kho", "Người nhận tạo Phiếu nhập kho để xác nhận số lượng, hạng mục, NCC, vị trí lưu và dự án liên quan."],
+    ["3", "Bảo quản vật tư", "Người làm phiếu chịu trách nhiệm bảo quản Thiết bị Vật tư mình đã nhận cho tới khi bàn giao hoặc đưa vào sử dụng."],
+    ["4", "Ghi nhận sử dụng", "Khi cần sử dụng, người dùng ghi chú Vật tư thiết bị đã dùng trong Phiếu Nhật ký thi công."]
+  ];
+  return `<section class="catalog-panel inventory-process-panel">
+    <header><div><h3>Quy trình Xuất nhập kho</h3><span>Áp dụng cho Thiết bị Vật tư nhận từ NCC</span></div></header>
+    <div class="catalog-panel-body">
+      <div class="inventory-process-flow">${steps.map(([index, title, text]) => `<article><b>${index}</b><strong>${escapeHtml(title)}</strong><p>${escapeHtml(text)}</p></article>`).join("")}</div>
+      <div class="inventory-process-note"><b>Nguyên tắc trách nhiệm</b><span>Phiếu nhập kho là căn cứ xác nhận người nhận và nơi lưu. Phiếu Nhật ký thi công là căn cứ ghi nhận vật tư thiết bị đã được đưa vào sử dụng.</span></div>
+    </div>
+  </section>`;
+}
+
+function cdtVariationRequestProcessPanel() {
+  const steps = [
+    ["1", "Tiếp nhận thông tin CDT", "Người nhận thông tin từ CDT lập Phiếu yêu cầu Phát sinh của CDT ngay khi có yêu cầu hoặc thay đổi cần ghi nhận."],
+    ["2", "Lập phiếu yêu cầu", "Phiếu phải có nội dung yêu cầu, dự án liên quan, hạng mục thi công dự kiến, chi phí dự kiến và ảnh hoặc hồ sơ xác thực ban đầu."],
+    ["3", "Xác nhận nội bộ", "Giám đốc, chủ trì hoặc chỉ huy dự án kiểm tra nội dung, phạm vi ảnh hưởng, chi phí và tiến độ trước khi gửi xác nhận với CDT."],
+    ["4", "Xác nhận với CDT", "Bắt buộc có ảnh xác thực hai bên xác nhận. Nếu tài khoản cấp 3 trở lên dùng nút Xác nhận cá nhân, chỉ cần ảnh xác nhận phía CDT."],
+    ["5", "Chọn loại xác nhận", "Người xử lý chọn một trong ba loại: Xác nhận Phát sinh, Xác nhận thay đổi giải quyết phương án hoặc Xác nhận đóng."],
+    ["6", "Cập nhật dữ liệu dự án", "Kết quả xác nhận được liên kết vào Danh sách Phát sinh, hồ sơ điều chỉnh và bảng tiến độ theo đúng loại xác nhận."]
+  ];
+  const outcomes = [
+    ["Xác nhận Phát sinh", "Đưa phiếu vào Danh sách Phát sinh, bắt buộc phân rõ hạng mục thi công, chi phí, người phụ trách và tự tạo nhiệm vụ trong bảng tiến độ."],
+    ["Xác nhận thay đổi giải quyết phương án", "Ghi chú rõ phương án thay đổi, đính kèm hồ sơ điều chỉnh nếu có và cập nhật lại bảng tiến độ theo phương án mới."],
+    ["Xác nhận đóng", "Đóng phiếu sau khi đủ xác nhận, ảnh xác thực và hồ sơ liên quan; giữ toàn bộ lịch sử để đối chiếu sau này."]
+  ];
+  const rules = [
+    ["Người lập phiếu", "Người nhận thông tin từ CDT chịu trách nhiệm tạo phiếu và bổ sung hồ sơ ban đầu."],
+    ["Ảnh xác thực", "Mặc định cần ảnh xác nhận của hai bên. Tài khoản cấp 3 trở lên có thể xác nhận cá nhân, khi đó vẫn bắt buộc có ảnh xác nhận phía CDT."],
+    ["Liên kết tiến độ", "Mọi phát sinh hoặc thay đổi phương án phải liên kết hạng mục thi công và cập nhật đúng trên bảng tiến độ."]
+  ];
+  return `<section class="catalog-panel inventory-process-panel cdt-process-panel">
+    <header><div><h3>Quy trình Phiếu yêu cầu Phát sinh của CDT</h3><span>Áp dụng cho yêu cầu phát sinh, thay đổi phương án và xác nhận đóng từ CDT</span></div></header>
+    <div class="catalog-panel-body">
+      <div class="inventory-process-flow cdt-process-flow">${steps.map(([index, title, text]) => `<article><b>${index}</b><strong>${escapeHtml(title)}</strong><p>${escapeHtml(text)}</p></article>`).join("")}</div>
+      <div class="cdt-process-section">
+        <h4>Loại xác nhận và xử lý sau xác nhận</h4>
+        <div class="cdt-process-outcomes">${outcomes.map(([title, text]) => `<article><strong>${escapeHtml(title)}</strong><p>${escapeHtml(text)}</p></article>`).join("")}</div>
+      </div>
+      <div class="inventory-process-note cdt-process-rules"><b>Nguyên tắc trách nhiệm</b><span>${rules.map(([title, text]) => `<strong>${escapeHtml(title)}:</strong> ${escapeHtml(text)}`).join("<br>")}</span></div>
+    </div>
+  </section>`;
+}
+
+async function loadCatalogManagementData() {
+  catalogProjectDefaults = await loadCatalogProjectDefaults();
+  await loadCatalogData();
+  if (!catalogData.projectList.length && catalogProjectDefaults.length) catalogData.projectList = [...catalogProjectDefaults];
+  await Promise.all(["customers", "contractors", "suppliers"].map(loadPartnerRows));
+  await loadCatalogProjects();
+  catalogFinanceData = await loadFinanceData();
+  await ensureCustomerPartnersFromProjects(catalogFinanceData);
+  catalogTransactionFlow = financeTransactionFlowOptions(catalogFinanceData);
+}
+
+function renderCatalogManagement(reload = false) {
+  return state.page === "processes" ? configProcesses(reload) : configCatalog(reload);
+}
+
 async function configCatalog(reload = true) {
-  if (reload) {
-    await loadCatalogData();
-    await Promise.all(["customers", "contractors", "suppliers"].map(loadPartnerRows));
-    catalogFinanceData = await loadFinanceData();
-    catalogTransactionFlow = financeTransactionFlowOptions(catalogFinanceData);
-  }
+  if (reload) await loadCatalogManagementData();
   setTitle("catalog", "Quản lý danh sách dùng chung cho các module");
   $("#app").innerHTML = `<section class="catalog-page">
     <header class="catalog-head"><div><h2>▰ Cơ sở dữ liệu</h2><p>Nguồn dữ liệu chuẩn cho Hợp đồng, Nhà thầu, Nhà cung cấp và các màn dự án.</p></div><button class="btn" data-catalog-save>Lưu cơ sở dữ liệu</button></header>
     <div class="catalog-tools"><input data-catalog-search value="${escapeHtml(state.catalogQuery)}" placeholder="⌕ Tìm danh mục"><button data-catalog-reset>Khôi phục mặc định</button></div>
-    <div class="catalog-grid">${catalogEditorList("constructionCategories")}${catalogEditorList("materialCategories")}${catalogEditorList("contractTypes")}</div>
+    <div class="catalog-grid">${catalogEditorList("projectList")}${catalogEditorList("partnerCustomers")}${catalogEditorList("partnerContractors")}${catalogEditorList("partnerSuppliers")}${catalogEditorList("constructionCategories")}${catalogEditorList("materialCategories")}${catalogEditorList("contractTypes")}</div>
+  </section>`;
+  bindCatalog();
+}
+
+async function configProcesses(reload = true) {
+  if (reload) await loadCatalogManagementData();
+  setTitle("processes", "Quản lý quy trình và phân luồng giao dịch");
+  $("#app").innerHTML = `<section class="catalog-page process-page">
+    <header class="catalog-head"><div><h2>▰ Quy trình</h2><p>Thiết lập quy trình vận hành và luồng chọn Loại → Nhóm → Chủ đề → Hạng mục → Đối tượng.</p></div><button class="btn" data-catalog-save>Lưu quy trình</button></header>
+    <div class="catalog-tools"><input data-catalog-search value="${escapeHtml(state.catalogQuery)}" placeholder="⌕ Tìm quy trình"><button data-catalog-reset>Khôi phục phân luồng</button></div>
+    ${inventoryProcessPanel()}
+    ${cdtVariationRequestProcessPanel()}
     ${catalogFlowPanel()}
   </section>`;
   bindCatalog();
@@ -2649,6 +4239,14 @@ function refreshCatalogFromDom() {
 
 function bindCatalog() {
   $("#app").onclick = async (event) => {
+    const toggle = event.target.closest("[data-catalog-toggle]");
+    if (toggle) {
+      refreshCatalogFromDom();
+      const key = toggle.dataset.catalogToggle;
+      state.catalogCollapsed[key] = !catalogCollapsed(key);
+      persistCatalogCollapsed();
+      return renderCatalogManagement(false);
+    }
     const addType = event.target.closest("[data-catalog-add]")?.dataset.catalogAdd;
     if (addType) {
       refreshCatalogFromDom();
@@ -2659,7 +4257,8 @@ function bindCatalog() {
         return;
       }
       setCatalogValuesForType(addType, [...catalogValuesForType(addType), value]);
-      return configCatalog(false);
+      await saveCurrentCatalogScope();
+      return renderCatalogManagement(false);
     }
     const deleteButton = event.target.closest("[data-catalog-delete]");
     if (deleteButton) {
@@ -2669,30 +4268,38 @@ function bindCatalog() {
       const values = [...catalogValuesForType(type)];
       values.splice(index, 1);
       setCatalogValuesForType(type, values);
-      return configCatalog(false);
+      await saveCurrentCatalogScope();
+      return renderCatalogManagement(false);
     }
-    if (event.target.closest("[data-catalog-reset]") && confirm("Khôi phục cơ sở dữ liệu mặc định?")) {
-      catalogData = normalizeCatalogData(CATALOG_FALLBACK);
-      catalogTransactionFlow = emptyFinanceTransactionFlow();
-      catalogFinanceData = catalogFinanceData || await loadFinanceData();
-      catalogFinanceData.options = { ...(catalogFinanceData.options || {}), transactionFlow: catalogTransactionFlow };
+    if (event.target.closest("[data-catalog-reset]") && confirm(state.page === "processes" ? "Khôi phục phân luồng giao dịch mặc định?" : "Khôi phục cơ sở dữ liệu mặc định?")) {
+      if (state.page === "processes") {
+        catalogTransactionFlow = emptyFinanceTransactionFlow();
+        catalogFinanceData = catalogFinanceData || await loadFinanceData();
+        catalogFinanceData.options = { ...(catalogFinanceData.options || {}), transactionFlow: catalogTransactionFlow };
+        await saveFinanceData(catalogFinanceData);
+        return configProcesses();
+      }
+      catalogData = normalizeCatalogData({ ...CATALOG_FALLBACK, projectList: catalogProjectDefaults });
       await saveCatalogData(catalogData);
-      await saveFinanceData(catalogFinanceData);
       return configCatalog();
     }
     if (event.target.closest("[data-catalog-save]")) {
+      await flushCatalogAutosave();
       refreshCatalogFromDom();
-      catalogFinanceData = catalogFinanceData || await loadFinanceData();
-      catalogFinanceData.options = { ...(catalogFinanceData.options || {}), transactionFlow: catalogTransactionFlow };
-      await saveCatalogData(catalogData);
-      await saveFinanceData(catalogFinanceData);
-      return configCatalog();
+      if (state.page === "processes") {
+        catalogFinanceData = catalogFinanceData || await loadFinanceData();
+        catalogFinanceData.options = { ...(catalogFinanceData.options || {}), transactionFlow: catalogTransactionFlow };
+        await saveFinanceData(catalogFinanceData);
+      } else {
+        await saveCurrentCatalogScope();
+      }
+      return renderCatalogManagement(true);
     }
   };
   $("#app").oninput = (event) => {
     if (event.target.matches("[data-catalog-search]")) {
       state.catalogQuery = event.target.value;
-      return configCatalog(false);
+      return renderCatalogManagement(false);
     }
     if (event.target.matches("[data-catalog-input]")) {
       const type = event.target.dataset.catalogInput;
@@ -2700,6 +4307,7 @@ function bindCatalog() {
       const values = [...catalogValuesForType(type)];
       values[index] = event.target.value;
       setCatalogValuesForType(type, values);
+      scheduleCatalogAutosave();
     }
   };
 }
@@ -2721,7 +4329,7 @@ function renderLogin(message = "") {
   try {
     remembered = JSON.parse(localStorage.getItem(LOGIN_REMEMBER_STORAGE) || "{}") || {};
   } catch {}
-  $("#app").innerHTML = `<section class="login-page"><form id="login-form" class="login-card"><div class="brand-mark">LD</div><h2>LE DOME</h2><p>Đăng nhập hệ thống quản lý dự án</p>${message ? `<strong>${message}</strong>` : ""}<label>ID đăng nhập<input name="loginId" autocomplete="username" autofocus value="${escapeHtml(remembered.loginId || "")}"></label><label>Mật khẩu<input name="password" type="password" autocomplete="current-password" value="${escapeHtml(remembered.password || "")}"></label><div class="login-options"><label><input type="checkbox" name="rememberId" ${remembered.rememberId || remembered.rememberPassword ? "checked" : ""}> Lưu ID</label><label><input type="checkbox" name="rememberPassword" ${remembered.rememberPassword ? "checked" : ""}> Lưu mật khẩu</label></div><button class="btn">Đăng nhập</button><small>Liên hệ quản trị viên nếu cần cấp lại mật khẩu.</small></form></section>`;
+  $("#app").innerHTML = `<section class="login-page"><form id="login-form" class="login-card"><img class="login-logo" src="/assets/ledome-logo-dark.png" alt="LE DOME"><p>Đăng nhập hệ thống quản lý dự án</p>${message ? `<strong>${message}</strong>` : ""}<label>ID đăng nhập<input name="loginId" autocomplete="username" autofocus value="${escapeHtml(remembered.loginId || "")}"></label><label>Mật khẩu<input name="password" type="password" autocomplete="current-password" value="${escapeHtml(remembered.password || "")}"></label><div class="login-options"><label><input type="checkbox" name="rememberId" ${remembered.rememberId || remembered.rememberPassword ? "checked" : ""}> Lưu ID</label><label><input type="checkbox" name="rememberPassword" ${remembered.rememberPassword ? "checked" : ""}> Lưu mật khẩu</label></div><button class="btn">Đăng nhập</button><small>Liên hệ quản trị viên nếu cần cấp lại mật khẩu.</small></form></section>`;
   const form = $("#login-form");
   form.elements.rememberPassword.onchange = () => {
     if (form.elements.rememberPassword.checked) form.elements.rememberId.checked = true;
@@ -2822,19 +4430,27 @@ async function projectsOverview() {
 async function partnersOverview() {
   const types = ["customers", "contractors", "suppliers"];
   await Promise.all(types.map(loadPartnerRows));
+  await loadMaterialsRows();
+  const financeData = await loadFinanceData();
   const groups = types.map((type) => ({ type, ...CRM_DIRECTORY[type] }));
   const allRows = groups.flatMap((group) => group.rows);
-  const totalReceivable = allRows.reduce((sum, row) => sum + Number(row[6] || 0), 0);
-  const totalPayable = allRows.reduce((sum, row) => sum + Number(row[7] || 0), 0);
+  const projectOrder = directoryProjectOrderMap(financeData);
+  const profileFor = (type, row) => directorySystemProfile(type, row, financeData);
+  const allProfiles = groups.flatMap((group) => group.rows.map((row) => profileFor(group.type, row)));
+  const totalReceivable = allProfiles.reduce((sum, profile) => sum + Number(profile.receivable || 0), 0);
+  const totalPayable = allProfiles.reduce((sum, profile) => sum + Number(profile.payable || 0), 0);
   const activeCount = allRows.filter((row) => row[4] === "Đang hợp tác").length;
   setTitle("partners-overview", "Hiển thị nhanh khách hàng, nhà thầu và nhà cung cấp");
   $("#app").innerHTML = `<section class="overview-page">
     <header class="overview-head"><div><h2>▣ Tổng quan đối tác</h2><p>Tóm tắt các nhóm Khách hàng, Nhà thầu và Nhà cung cấp để vào chi tiết nhanh.</p></div><button data-page-link="customers">Mở khách hàng</button></header>
-    ${overviewKpis([["Tổng đối tác", allRows.length, "Tất cả khách hàng, nhà thầu, NCC"], ["Đang hợp tác", activeCount, "Đối tác còn hoạt động"], ["Công nợ phải thu", `${money(totalReceivable)} đ`, "Tổng từ các hồ sơ đối tác", "positive"], ["Công nợ phải trả", `${money(totalPayable)} đ`, "Cần theo dõi thanh toán", "negative"]])}
+    ${overviewKpis([["Tổng đối tác", allRows.length, "Tất cả khách hàng, nhà thầu, NCC"], ["Đang hợp tác", activeCount, "Đối tác còn hoạt động"], ["Công nợ phải thu", `${money(totalReceivable)} đ`, "Tự động từ tài chính dự án", "positive"], ["Công nợ phải trả", `${money(totalPayable)} đ`, "Tự động từ ngân sách/giao dịch", "negative"]])}
     <div class="overview-card-grid">${groups.map((group) => {
-      const receivable = group.rows.reduce((sum, row) => sum + Number(row[6] || 0), 0);
-      const payable = group.rows.reduce((sum, row) => sum + Number(row[7] || 0), 0);
-      return `<article class="overview-panel"><header><h3>${group.icon} ${group.title}</h3><button data-page-link="${group.type}">Chi tiết</button></header><div class="overview-mini-list"><p><span>Tổng số</span><b>${group.rows.length}</b></p><p><span>Đang hợp tác</span><b>${group.rows.filter((row) => row[4] === "Đang hợp tác").length}</b></p><p><span>Phải thu</span><b>${money(receivable)} đ</b></p><p><span>Phải trả</span><b>${money(payable)} đ</b></p></div><div class="overview-feed">${group.rows.slice(0, 4).map((row) => `<p><b>${escapeHtml(row[1])}</b><small>${escapeHtml(row[2])} · ${escapeHtml(row[4])}</small></p>`).join("")}</div></article>`;
+      const profiles = group.rows.map((row) => profileFor(group.type, row));
+      const receivable = profiles.reduce((sum, profile) => sum + Number(profile.receivable || 0), 0);
+      const payable = profiles.reduce((sum, profile) => sum + Number(profile.payable || 0), 0);
+      const profileByCode = new Map(group.rows.map((row) => [row[0], profileFor(group.type, row)]));
+      const sortedRows = [...group.rows].sort(directoryCompareRows(group.type, profileByCode, projectOrder));
+      return `<article class="overview-panel"><header><h3>${group.icon} ${group.title}</h3><button data-page-link="${group.type}">Chi tiết</button></header><div class="overview-mini-list"><p><span>Tổng số</span><b>${group.rows.length}</b></p><p><span>Đang hợp tác</span><b>${group.rows.filter((row) => row[4] === "Đang hợp tác").length}</b></p><p><span>Phải thu</span><b>${money(receivable)} đ</b></p><p><span>Phải trả</span><b>${money(payable)} đ</b></p></div><div class="overview-feed">${sortedRows.slice(0, 4).map((row) => `<p><b>${escapeHtml(row[1])}</b><small>${escapeHtml(row[2])} · ${escapeHtml(row[4])}</small></p>`).join("")}</div></article>`;
     }).join("")}</div>
   </section>`;
   bindOverviewActions();
@@ -2848,16 +4464,16 @@ async function hrmOverview() {
     phoneRows = Array.isArray(runtime.data) ? runtime.data : [];
   } catch {}
   const people = staffPeople();
-  const attendanceRows = phoneRows.map((record) => [record.employeeId, record.employeeName, record.type === "check-in" ? new Date(record.capturedAt).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" }) : "--", record.type === "check-out" ? new Date(record.capturedAt).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" }) : "--", record.siteName, record.faceEvidence || "Đã chụp ảnh", `${record.distanceMeters} m`, record.status]).concat(HRM_ATTENDANCE);
+  const attendanceRows = phoneRows.map((record) => [record.employeeId, record.employeeName, record.type === "check-in" ? new Date(record.capturedAt).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" }) : "--", record.type === "check-out" ? new Date(record.capturedAt).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" }) : "--", record.siteName, record.faceEvidence || "Đã chụp ảnh", record.distanceMeters == null ? "Chưa có geofence" : `${record.distanceMeters} m`, record.status]).concat(HRM_ATTENDANCE);
   const payrollTotal = HRM_PAYROLL.reduce((sum, row) => sum + Number(row[8] || 0), 0);
   const departmentGroups = [...new Set(ORG_STAFF.map((staff) => staff[3]))].map((department) => [department, ORG_STAFF.filter((staff) => staff[3] === department).length]);
   setTitle("hrm-overview", "Hiển thị nhanh nhân sự, chấm công và lương");
   $("#app").innerHTML = `<section class="overview-page">
-    <header class="overview-head"><div><h2>▣ Tổng quan nhân sự</h2><p>Tổng hợp nhanh dữ liệu Nhân sự, Chấm công và Lương của Le Dome.</p></div><button data-page-link="hrm-staff">Mở nhân sự</button></header>
-    ${overviewKpis([["Nhân sự thật", people.length, `${ORG_STAFF.length} vị trí đang đảm nhiệm`], ["Chấm công", attendanceRows.length, "Bản ghi hôm nay / mẫu"], ["Cần kiểm tra", attendanceRows.filter((row) => row[7] === "Cần duyệt" || row[7] === "Đi muộn").length, "Bản ghi chưa ổn", "negative"], ["Quỹ lương mẫu", `${money(payrollTotal)} đ`, `${HRM_PAYROLL.length} nhân sự trong bảng`, "positive"]])}
+    <header class="overview-head"><div><h2>▣ Tổng quan nhân sự</h2><p>Tổng hợp nhanh dữ liệu Nhân sự, Bảng chấm công và Lương của Le Dome.</p></div><button data-page-link="hrm-staff">Mở nhân sự</button></header>
+    ${overviewKpis([["Nhân sự thật", people.length, `${ORG_STAFF.length} vị trí đang đảm nhiệm`], ["Bảng chấm công", attendanceRows.length, "Bản ghi hôm nay / mẫu"], ["Cần kiểm tra", attendanceRows.filter((row) => row[7] === "Cần duyệt" || row[7] === "Đi muộn").length, "Bản ghi chưa ổn", "negative"], ["Quỹ lương mẫu", `${money(payrollTotal)} đ`, `${HRM_PAYROLL.length} nhân sự trong bảng`, "positive"]])}
     <div class="overview-card-grid">
       <article class="overview-panel"><header><h3>♟ Nhân sự theo phòng ban</h3><button data-page-link="hrm-staff">Chi tiết</button></header><div class="overview-mini-list">${departmentGroups.map(([department, count]) => `<p><span>${escapeHtml(department)}</span><b>${count}</b></p>`).join("")}</div></article>
-      <article class="overview-panel"><header><h3>▣ Chấm công gần nhất</h3><button data-page-link="hrm-attendance">Chi tiết</button></header><div class="overview-feed">${attendanceRows.slice(0, 6).map((row) => `<p><b>${escapeHtml(row[1])}</b><small>${escapeHtml(row[4])} · ${escapeHtml(row[7])}</small></p>`).join("")}</div></article>
+      <article class="overview-panel"><header><h3>▣ Bảng chấm công gần nhất</h3><button data-page-link="hrm-attendance">Chi tiết</button></header><div class="overview-feed">${attendanceRows.slice(0, 6).map((row) => `<p><b>${escapeHtml(row[1])}</b><small>${escapeHtml(row[4])} · ${escapeHtml(row[7])}</small></p>`).join("")}</div></article>
       <article class="overview-panel"><header><h3>$ Bảng lương</h3><button data-page-link="hrm-payroll">Chi tiết</button></header><div class="overview-feed">${HRM_PAYROLL.slice(0, 6).map((row) => `<p><b>${escapeHtml(row[1])}</b><small>${escapeHtml(row[2])} · ${money(row[8])} đ</small></p>`).join("")}</div></article>
     </div>
   </section>`;
@@ -2918,6 +4534,7 @@ async function route() {
     if (state.page === "projects") return await projectLanding();
     if (state.page === "insight") return await insight();
     if (state.page === "drive") return renderDrive();
+    if (state.page === "materials") return renderMaterials();
     if (state.page === "partners-overview") return partnersOverview();
     if (state.page === "customers") return crmDirectory("customers");
     if (state.page === "contractors") return crmDirectory("contractors");
@@ -2929,8 +4546,11 @@ async function route() {
     if (state.page === "hrm-overview") return hrmOverview();
     if (state.page === "hrm-staff") return hrmStaff();
     if (state.page === "hrm-attendance") return hrmAttendance();
+    if (state.page === "hrm-overtime") return hrmOvertime();
     if (state.page === "hrm-payroll") return hrmPayroll();
     if (state.page === "catalog") return configCatalog();
+    if (state.page === "processes") return configProcesses();
+    if (state.page === "standards") return renderStandards();
     if (state.page === "accounts") return configAccounts();
     return placeholder(state.page);
   } catch (error) {
@@ -2944,7 +4564,15 @@ async function init() {
   } catch {
     state.navCollapsed = {};
   }
-  $("#menu").onclick = () => $(".sidebar").classList.toggle("open");
+  try {
+    state.catalogCollapsed = JSON.parse(localStorage.getItem(CATALOG_COLLAPSE_STORAGE) || "{}");
+  } catch {
+    state.catalogCollapsed = {};
+  }
+  sidebarHidden = localStorage.getItem(SIDEBAR_VISIBILITY_STORAGE) === "1";
+  setSidebarHidden(sidebarHidden, false);
+  $("#menu").onclick = toggleSidebar;
+  addEventListener("resize", syncSidebarToggle);
   document.body.onclick = async (event) => {
     const notificationWrap = event.target.closest(".notification-wrap");
     if (event.target.closest("[data-notifications-toggle]")) {
