@@ -25,6 +25,33 @@ const api = (url, options = {}) => fetch(`/api/v1${url}`, { credentials: "same-o
   return body;
 });
 const escapeHtml = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;" }[char]));
+function projectDateInputValue(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+  const match = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (!match) return "";
+  return `${match[3]}-${match[2].padStart(2, "0")}-${match[1].padStart(2, "0")}`;
+}
+function projectDateDisplayValue(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  if (/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(raw)) return raw;
+  const match = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  return match ? `${match[3]}/${match[2]}/${match[1]}` : raw;
+}
+function projectDateObject(value) {
+  const input = projectDateInputValue(value);
+  const match = input.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return null;
+  return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+}
+function projectDurationValue(startDate, endDate) {
+  const start = projectDateObject(startDate);
+  const end = projectDateObject(endDate);
+  if (!start || !end || end < start) return "";
+  return `${Math.round((end - start) / 86400000) + 1} ngày`;
+}
 const NOTIFICATIONS = [
   { audience: ["all"], title: "Họp giao ban Le Dome sẽ bắt đầu lúc 14:00 hôm nay.", time: "13 giờ trước", unread: true, avatar: "LD" },
   { audience: ["projects"], title: "Cập nhật tiến độ [Mẫu] Nội thất cần kiểm tra trước khi chốt ngày.", time: "1 ngày trước", unread: true, avatar: "DA" },
@@ -235,7 +262,7 @@ function projectModal() {
     <fieldset class="identity"><legend>Nhận diện dự án</legend><label class="wide">Tên dự án<input name="name" id="nameProject" required placeholder="Nhập tên dự án"></label><label>Mã dự án<input name="code" value="DA-${String(Date.now()).slice(-4)}"></label><label>Chủ đầu tư<input name="owner" placeholder="Nhập chủ đầu tư"></label><label class="wide">Địa điểm<input name="location" placeholder="Nhập địa điểm dự án"></label></fieldset>
     <fieldset class="classification"><legend>Phân loại</legend><label>Phạm vi<select name="type" id="scopeProject">${optionTags(["Nội thất", "Kiến trúc", "Nội thất kiến trúc", "Khác"], "Nội thất")}</select></label><label>Loại hình<select name="buildingType">${optionTags(["Căn hộ", "Nhà phố", "Biệt thự", "Homestay", "Nhà hàng", "Quán cafe", "Bar", "Văn phòng", "Khác"], "Căn hộ")}</select></label><label>Nhóm dự án<select name="group">${optionTags(["Thiết kế", "Thi công", "Thiết kế Thi công"], "Thi công")}</select></label><label>Trạng thái<select name="status" id="statusProject">${optionTags(["Kế hoạch", "Đang thực hiện", "Tạm dừng", "Hoàn thành", "Đóng"], "Kế hoạch")}</select></label><label>Tình trạng<select name="health">${optionTags(["Bình thường", "Theo dõi", "Rủi ro", "Chậm tiến độ"], "Bình thường")}</select></label></fieldset>
     <fieldset class="people"><legend>Nhân sự phụ trách</legend><label>Giám đốc dự án<select name="manager">${optionTags(people, "")}</select></label><label>Chỉ huy trưởng<select name="commander">${optionTags(people, "")}</select></label><label>Giám sát dự án<select name="qs">${optionTags(people, "")}</select></label><label>Kế toán dự án<select name="accountant">${optionTags(people, "")}</select></label></fieldset>
-    <fieldset class="timeline"><legend>Thời gian</legend><label>Ngày bắt đầu<input name="startDate" placeholder="dd/mm/yyyy"></label><label>Ngày kết thúc<input name="endDate" placeholder="dd/mm/yyyy"></label><label>Thời gian<input name="duration" placeholder="VD: 161 ngày"></label></fieldset>
+    <fieldset class="timeline"><legend>Thời gian</legend><label>Ngày bắt đầu<input name="startDate" type="date"></label><label>Ngày kết thúc<input name="endDate" type="date"></label><label>Thời gian<input name="duration" placeholder="VD: 161 ngày"></label></fieldset>
     <footer><button type="button" class="btn secondary" data-action="close-modal">Đóng</button><button class="btn">Tạo và mở chi tiết</button></footer></form></section></div>`;
 }
 
@@ -273,10 +300,20 @@ function bindLanding() {
     ui.dateRange = button.innerText;
     projectLanding();
   };
-  $("#project-form").onsubmit = async (event) => {
+  const projectForm = $("#project-form");
+  const syncProjectDuration = () => {
+    const duration = projectDurationValue(projectForm.elements.startDate.value, projectForm.elements.endDate.value);
+    if (duration) projectForm.elements.duration.value = duration;
+  };
+  projectForm.elements.startDate.addEventListener("change", syncProjectDuration);
+  projectForm.elements.endDate.addEventListener("change", syncProjectDuration);
+  projectForm.onsubmit = async (event) => {
     event.preventDefault();
-    const form = new FormData(event.currentTarget);
-    const response = await fetch("/api/v1/projects", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(Object.fromEntries(form)) });
+    const payload = Object.fromEntries(new FormData(event.currentTarget));
+    payload.startDate = projectDateDisplayValue(payload.startDate);
+    payload.endDate = projectDateDisplayValue(payload.endDate);
+    if (!String(payload.duration || "").trim()) payload.duration = projectDurationValue(payload.startDate, payload.endDate);
+    const response = await fetch("/api/v1/projects", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload) });
     const project = await response.json();
     if (!response.ok) return alert(project.error || "Không thể tạo dự án");
     location.href = `/constructions/detail/${project.id}/`;
@@ -1644,7 +1681,7 @@ function materialForm(row = {}) {
 function materialTableRows(rows) {
   const canEdit = Boolean(state.account?.permissions?.["materials.edit"]);
   const canDelete = Boolean(state.account?.permissions?.["materials.delete"]);
-  return rows.map(({ row, index }) => `<tr>
+  return rows.map(({ row, index }) => `<tr class="${String(row.status || "").trim() === "Đã xuất dùng" ? "material-used-row" : ""}">
     <td>${financeDate(row.date)}</td>
     <td><b>${escapeHtml(row.item)}</b><small>${escapeHtml(row.id)}</small></td>
     <td>${escapeHtml(row.category || "")}</td>
@@ -3556,13 +3593,16 @@ const HRM_OVERTIME = [
   ["OT-004","Vũ Quốc Bảo","03/06/2026","Kho Le Dome","18:00","19:30",1.5,"Sắp xếp vật tư bàn giao công trình","Cần duyệt",180000],
   ["OT-005","Đỗ Mạnh Hùng","01/06/2026","Căn hộ duplex Mandarine","18:15","20:15",2,"Kiểm kê vật tư phát sinh cuối ngày","Từ chối",0]
 ];
+const HRM_OVERTIME_STORAGE = "ledome.hrmOvertime.v1";
+const OVERTIME_RATE_PER_HOUR = 130000;
 const HRM_PAYROLL = [
-  ["NV001","Nguyễn Minh Anh","Chỉ huy trưởng",26,8,22000000,3500000,1200000,26700000],
-  ["NV002","Trần Thanh Hà","K? sư hiện trường",25,12,14500000,1800000,860000,16160000],
-  ["NV003","Lê Hoàng Nam","Giám sát M&E",24.5,16,16500000,2200000,1040000,17660000],
-  ["NV004","Phạm Thu Trang","Kế toán dự án",26,0,15000000,1200000,780000,15420000],
-  ["NV005","Vũ Quốc Bảo","Kỹ thuật thi công",23,10,13000000,900000,650000,13250000],
-  ["NV006","Đỗ Mạnh Hùng","Quản lý kho",26,4,12500000,700000,620000,12580000]
+  { department: "BAN LÃNH ĐẠO", order: 1, staffCode: "NS001", name: "DINH Công Hoàng", title: "Giám đốc", agreedSalary: 15000000, workDays: 23, project: "", contract: "", rate: "", revenue: 0, projectBonus: 0, transportAllowance: 0, tax: 0 },
+  { department: "BP KINH DOANH", order: 2, staffCode: "NS011", name: "Nguyễn Hà Vân", title: "Marketing & Sale", agreedSalary: 15000000, workDays: 23, project: "", contract: "", rate: "", revenue: 0, projectBonus: 0, transportAllowance: 0, tax: 0 },
+  { department: "BP THIẾT KẾ", order: 3, staffCode: "NS002", name: "Bùi Xuân Dũng", title: "Phó giám đốc", agreedSalary: 19000000, workDays: 23, project: "6ATS", contract: "Thiết kế", rate: "", revenue: 0, projectBonus: 0, transportAllowance: 160000, tax: 0 },
+  { department: "BP THIẾT KẾ", order: 5, staffCode: "NS004", name: "Nguyễn Hoàng Hải", title: "Kiến trúc sư", agreedSalary: 15000000, workDays: 23, project: "PN ADINH", contract: "Thiết kế", rate: "", revenue: 0, projectBonus: 0, transportAllowance: 160000, tax: 0 },
+  { department: "BP THIẾT KẾ", order: 9, staffCode: "NS010", name: "Phí Việt Dũng", title: "Thiết kế", agreedSalary: 12000000, workDays: 13, project: "", contract: "", rate: "", revenue: 0, projectBonus: 0, transportAllowance: 160000, tax: 0 },
+  { department: "BP THIẾT KẾ", order: 10, staffCode: "NS005", name: "Bùi Vũ Kiên", title: "Kiến trúc sư", agreedSalary: 8000000, workDays: 24.5, project: "VPH", contract: "Thi công", rate: "", revenue: 0, projectBonus: 0, transportAllowance: 160000, tax: 0 },
+  { department: "BP HCNS", order: 11, staffCode: "NS012", name: "Hoàng Thu Mai", title: "Hành chính", agreedSalary: 10000000, workDays: 24, project: "", contract: "", rate: "", revenue: 0, projectBonus: 0, transportAllowance: 0, tax: 0 }
 ];
 const ATTENDANCE_RULES = {
   month: "06 / 2026",
@@ -3575,9 +3615,9 @@ const ATTENDANCE_RULES = {
 const ATTENDANCE_MONTH_SAMPLES = [
   { present: 24, leave: 0, lateMinor: 0, lateMajor: 0, earlyMinor: 0, earlyMajor: 0, otHours: 4, otForms: 2, note: "Đủ công, có 2 phiếu OT" },
   { present: 23, leave: 1, lateMinor: 1, lateMajor: 0, earlyMinor: 0, earlyMajor: 0, otHours: 2, otForms: 1, note: "Có 1 ngày phép hưởng lương" },
-  { present: 24, leave: 0, lateMinor: 0, lateMajor: 1, earlyMinor: 0, earlyMajor: 0, otHours: 0, otForms: 0, note: "Cần rà soát lỗi đi muộn" },
+  { present: 24, leave: 0, lateMinor: 0, lateMajor: 1, earlyMinor: 0, earlyMajor: 0, otHours: 0, otForms: 0, note: "Cần rà soát giờ đi muộn" },
   { present: 22, leave: 2, lateMinor: 0, lateMajor: 0, earlyMinor: 1, earlyMajor: 0, otHours: 3, otForms: 1, note: "Có hồ sơ phép và OT" },
-  { present: 24, leave: 0, lateMinor: 2, lateMajor: 0, earlyMinor: 1, earlyMajor: 0, otHours: 0, otForms: 0, note: "Bị trừ lỗi 15-30 phút" },
+  { present: 24, leave: 0, lateMinor: 2, lateMajor: 0, earlyMinor: 1, earlyMajor: 0, otHours: 0, otForms: 0, note: "Bị trừ công 15-30 phút" },
   { present: 23, leave: 0, lateMinor: 0, lateMajor: 0, earlyMinor: 0, earlyMajor: 1, otHours: 1.5, otForms: 0, note: "OT chưa tính vì chưa có phiếu" },
   { present: 24, leave: 0, lateMinor: 0, lateMajor: 0, earlyMinor: 0, earlyMajor: 0, otHours: 2, otForms: 1, note: "Đủ công" },
   { present: 21, leave: 1, lateMinor: 0, lateMajor: 1, earlyMinor: 0, earlyMajor: 1, otHours: 0, otForms: 0, note: "Thiếu công cần bổ sung hồ sơ" },
@@ -3621,10 +3661,41 @@ function attendancePolicyMarkup() {
       <article><small>Ca làm việc</small><b>${ATTENDANCE_RULES.workStart} - ${ATTENDANCE_RULES.workEnd}</b><span>Nghỉ trưa ${ATTENDANCE_RULES.lunch}.</span></article>
       <article><small>Lịch làm việc</small><b>Thứ 2 - Thứ 6</b><span>Cộng 2 thứ 7 đầu tiên trong tháng.</span></article>
       <article><small>Công chuẩn</small><b>${ATTENDANCE_RULES.standardDays} công / tháng</b><span>Nghỉ phép năm: ${ATTENDANCE_RULES.annualLeave} ngày / năm.</span></article>
-      <article><small>Đi muộn / về sớm</small><b>15-30': -0.3 công</b><span>Từ 30' trở lên: -0.5 công / lỗi.</span></article>
-      <article><small>Overtime</small><b>OT = số giờ / 8</b><span>Chỉ tính khi nhân sự có phiếu OT.</span></article>
+      <article><small>Đi muộn / về sớm</small><b>15-30': -0.3 công</b><span>Từ 30' trở lên: -0.5 công.</span></article>
+      <article class="attendance-ot-rule"><small>Overtime</small><b>Ngày thường = Số giờ / 8 x 150%</b><b>Cuối tuần = Số giờ / 8 x 200%</b><b>Ngày lễ = Số giờ / 8 x 300%</b><span>Chỉ tính khi nhân sự có phiếu OT.</span></article>
     </div>
     <p class="attendance-formula"><b>Công tính lương mẫu</b><span>Có mặt + phép hưởng lương + OT có phiếu / 8 - khấu trừ đi muộn/về sớm.</span></p>
+  </section>`;
+}
+function attendanceDailyTimeRows(rows) {
+  const days = [1,2,3,4,5,6,8,9,10,11,12,13];
+  return rows.flatMap((row, staffIndex) => days.map((day, dayIndex) => {
+    const lateMinor = dayIndex < row.lateMinor;
+    const lateMajor = dayIndex >= row.lateMinor && dayIndex < row.lateMinor + row.lateMajor;
+    const earlyMinor = dayIndex < row.earlyMinor;
+    const earlyMajor = dayIndex >= row.earlyMinor && dayIndex < row.earlyMinor + row.earlyMajor;
+    const leave = dayIndex >= row.present && dayIndex < row.present + row.leave;
+    const checkIn = leave ? "--" : lateMajor ? "09:12" : lateMinor ? "08:47" : ["08:21","08:26","08:30","08:24"][(staffIndex + dayIndex) % 4];
+    const checkOut = leave ? "--" : earlyMajor ? "16:58" : earlyMinor ? "17:42" : ["18:02","18:08","18:12","18:18"][(staffIndex + dayIndex) % 4];
+    const issue = lateMajor ? "Đi muộn trên 30 phút" : lateMinor ? "Đi muộn 15-30 phút" : earlyMajor ? "Về sớm trên 30 phút" : earlyMinor ? "Về sớm 15-30 phút" : leave ? "Nghỉ phép hưởng lương" : "Đủ giờ";
+    return {
+      date: `${String(day).padStart(2,"0")}/06/2026`,
+      staffCode: row.staffCode,
+      staffName: row.staffName,
+      role: row.role,
+      checkIn,
+      checkOut,
+      site: ["VP Le Dome","Căn hộ PN An Định","Hoàng Đạo Thúy - 17T5"][(staffIndex + dayIndex) % 3],
+      status: leave ? "Phép" : issue === "Đủ giờ" ? "Hợp lệ" : "Cần kiểm tra",
+      note: issue
+    };
+  }));
+}
+function attendanceDailyTimeTable(rows) {
+  const dailyRows = attendanceDailyTimeRows(rows);
+  return `<section class="attendance-daily-card">
+    <header><div><h3>Bảng giờ chấm công theo ngày</h3><p>Chi tiết giờ vào/ra từng ngày để đối chiếu khi chốt công tháng. Đi muộn/về sớm chỉ thể hiện ở ghi chú và được tính vào công thức khấu trừ.</p></div><span>${dailyRows.length} dòng</span></header>
+    <div class="hrm-table-wrap"><table class="hrm-table attendance-daily-table"><thead><tr><th>Ngày</th><th>Nhân sự</th><th>Vai trò</th><th>Check-in</th><th>Check-out</th><th>Điểm chấm công</th><th>Trạng thái</th><th>Ghi chú</th></tr></thead><tbody>${dailyRows.map((row) => `<tr><td><b>${escapeHtml(row.date)}</b></td><td class="attendance-person"><b>${escapeHtml(row.staffName)}</b><small>${escapeHtml(row.staffCode)}</small></td><td>${escapeHtml(row.role)}</td><td><strong>${escapeHtml(row.checkIn)}</strong></td><td><strong>${escapeHtml(row.checkOut)}</strong></td><td>${escapeHtml(row.site)}</td><td>${hrmStatus(row.status)}</td><td class="attendance-note">${escapeHtml(row.note)}</td></tr>`).join("")}</tbody></table></div>
   </section>`;
 }
 function attendanceSummaryTable(rows) {
@@ -3635,22 +3706,20 @@ function attendanceSummaryTable(rows) {
   const totalPayable = rows.reduce((sum, row) => sum + row.payable, 0);
   return `<section class="attendance-summary-card">
     <header><div><h3>Bảng tổng hợp công tháng ${ATTENDANCE_RULES.month}</h3><p>Danh sách lấy từ mục Nhân sự Le Dome, gộp người kiêm nhiệm để chấm công theo từng nhân sự thật.</p></div><button>Xuất bảng công</button></header>
-    <div class="hrm-table-wrap"><table class="hrm-table attendance-summary-table"><thead><tr><th>Nhân sự</th><th>Phòng ban / vai trò</th><th>Công chuẩn</th><th>Có mặt</th><th>Phép</th><th>Đi muộn</th><th>Về sớm</th><th>Trừ công</th><th>OT hợp lệ</th><th>Công tính</th><th>Trạng thái</th><th>Ghi chú</th></tr></thead><tbody>
+    <div class="hrm-table-wrap"><table class="hrm-table attendance-summary-table"><thead><tr><th>Nhân sự</th><th>Phòng ban / vai trò</th><th>Công chuẩn</th><th>Có mặt</th><th>Phép</th><th>Trừ công</th><th>OT hợp lệ</th><th>Công tính</th><th>Trạng thái</th><th>Ghi chú</th></tr></thead><tbody>
       ${rows.map((row) => `<tr>
         <td class="attendance-person"><b>${escapeHtml(row.staffName)}</b><small>${escapeHtml(row.staffCode)}</small></td>
         <td><b>${escapeHtml(row.role)}</b><small>${escapeHtml(row.department)}</small></td>
         <td><strong>${ATTENDANCE_RULES.standardDays}</strong></td>
         <td>${attendanceWork(row.present)}</td>
         <td>${attendanceWork(row.leave)}</td>
-        <td>${row.lateMinor + row.lateMajor}<small>15-30': ${row.lateMinor} · 30'+: ${row.lateMajor}</small></td>
-        <td>${row.earlyMinor + row.earlyMajor}<small>15-30': ${row.earlyMinor} · 30'+: ${row.earlyMajor}</small></td>
         <td class="attendance-negative">-${attendanceWork(row.deduction)}</td>
         <td>${attendanceWork(row.otCountedHours)} giờ<small>${row.otForms > 0 ? `${row.otForms} phiếu = ${attendanceWork(row.otWork)} công` : row.otHours > 0 ? "Chưa có phiếu OT" : "Không phát sinh"}</small></td>
         <td><b class="attendance-pay ${row.payable >= ATTENDANCE_RULES.standardDays ? "ok" : row.payable < 23.5 ? "bad" : "warn"}">${attendanceWork(row.payable)}</b></td>
         <td>${hrmStatus(row.status)}</td>
         <td class="attendance-note">${escapeHtml(row.note)}</td>
       </tr>`).join("")}
-    </tbody><tfoot><tr><td colspan="3">Tổng cộng</td><td>${attendanceWork(totalPresent)}</td><td>${attendanceWork(totalLeave)}</td><td colspan="2"></td><td class="attendance-negative">-${attendanceWork(totalDeduction)}</td><td>${attendanceWork(totalOtWork)} công</td><td>${attendanceWork(totalPayable)}</td><td colspan="2"></td></tr></tfoot></table></div>
+    </tbody><tfoot><tr><td colspan="3">Tổng cộng</td><td>${attendanceWork(totalPresent)}</td><td>${attendanceWork(totalLeave)}</td><td class="attendance-negative">-${attendanceWork(totalDeduction)}</td><td>${attendanceWork(totalOtWork)} công</td><td>${attendanceWork(totalPayable)}</td><td colspan="2"></td></tr></tfoot></table></div>
   </section>`;
 }
 function attendanceEvidenceTable(rows) {
@@ -3710,6 +3779,7 @@ async function hrmAttendance() {
   $("#app").innerHTML = `<section class="hrm-page attendance-page">${hrmHeader("▣ Bảng chấm công","Tổng hợp kết quả chấm công tháng của nhân sự Le Dome",'<a class="btn attendance-mobile-link" href="/attendance/" target="_blank">▣ Mở trang chấm công điện thoại</a>')}${hrmStats([["Kỳ công",ATTENDANCE_RULES.month,`${ATTENDANCE_RULES.standardDays} công chuẩn / tháng`],["Nhân sự Le Dome",monthlyRows.length,"Lấy từ danh sách Nhân sự"],["Tổng công tính",attendanceWork(totalPayable),"Sau phép, OT và khấu trừ"],["Cần kiểm tra",pendingRows,`Khấu trừ ${attendanceWork(totalDeduction)} công · OT ${attendanceWork(totalOtHours)} giờ`]])}
   ${attendancePolicyMarkup()}
   <div class="hrm-tools attendance-tools"><input placeholder="⌕ Tìm nhân sự, phòng ban hoặc ghi chú"><input type="month" value="2026-06"><select><option>Tất cả trạng thái</option><option>Đủ công</option><option>Cần kiểm tra</option><option>Thiếu công</option></select><button>↻ Tính lại</button><button>▣ Xuất Excel</button></div>
+  ${attendanceDailyTimeTable(monthlyRows)}
   ${attendanceSummaryTable(monthlyRows)}
   ${attendanceEvidenceTable(attendanceRows)}
   <aside class="hrm-evidence" id="hrm-evidence"><header><b>Chi tiết xác thực</b><button data-hrm="close-evidence">×</button></header><div class="face-preview"><i>◎</i><span>Face ID</span></div><div class="gps-preview"><b>⌖</b><span>Vị trí GPS từ điện thoại</span></div><p><span>Nhân sự</span><b id="evidence-name"></b></p><p><span>Thiết bị</span><b>Điện thoại cá nhân</b></p><p><span>Độ khớp Face ID</span><b id="evidence-face"></b></p><p><span>Khoảng cách GPS</span><b id="evidence-gps"></b></p><footer><button class="btn secondary" data-hrm="close-evidence">Đóng</button><button class="btn" data-hrm="approve-attendance">Duyệt bản ghi</button></footer></aside></section>`;
@@ -3717,23 +3787,124 @@ async function hrmAttendance() {
 }
 
 function hrmOvertime() {
+  loadHrmOvertime();
   setTitle("hrm-overtime", "");
-  const totalHours = HRM_OVERTIME.reduce((sum, row) => sum + row[6], 0);
-  const totalCost = HRM_OVERTIME.reduce((sum, row) => sum + row[9], 0);
+  const approvedRows = HRM_OVERTIME.filter((row) => row[8] === "Hợp lệ");
+  const totalHours = approvedRows.reduce((sum, row) => sum + row[6], 0);
+  const totalCost = approvedRows.reduce((sum, row) => sum + row[9], 0);
   const pending = HRM_OVERTIME.filter((row) => row[8] === "Cần duyệt").length;
-  $("#app").innerHTML = `<section class="hrm-page">${hrmHeader("▤ Phiếu Overtime","Quản lý phiếu tăng ca, lý do phát sinh và trạng thái duyệt",'<button class="btn" data-hrm="add-overtime">＋ Thêm phiếu</button>')}${hrmStats([["Tổng phiếu",HRM_OVERTIME.length,"Trong tháng 06 / 2026"],["Tổng giờ",`${totalHours} giờ`,"Đã ghi nhận"],["Cần duyệt",pending,"Chờ xác nhận"],["Chi phí tạm tính",`${money(totalCost)} đ`,"Theo phiếu đã nhập"]])}
+  $("#app").innerHTML = `<section class="hrm-page">${hrmHeader("▤ Phiếu Overtime","Phiếu xin phép làm thêm giờ. Chỉ phiếu đã được cấp trên xét duyệt mới tính vào công và chi phí.",'<button class="btn" data-hrm="add-overtime">＋ Tạo phiếu</button>')}${hrmStats([["Tổng phiếu",HRM_OVERTIME.length,"Trong tháng 06 / 2026"],["Giờ được tính",`${totalHours} giờ`,"Chỉ tính phiếu Hợp lệ"],["Cần duyệt",pending,"Chờ cấp trên xác nhận"],["Chi phí được tính",`${money(totalCost)} đ`,"Theo phiếu đã duyệt"]])}
   <div class="hrm-tools"><input placeholder="⌕ Tìm nhân sự, dự án hoặc lý do"><input type="month" value="2026-06"><select><option>Tất cả trạng thái</option><option>Cần duyệt</option><option>Hợp lệ</option><option>Từ chối</option></select><button>↻ Tải lại</button></div>
-  <div class="hrm-table-wrap"><table class="hrm-table payroll-table"><thead><tr><th>Mã phiếu</th><th>Nhân sự</th><th>Ngày</th><th>Vị trí / dự án</th><th>Giờ bắt đầu</th><th>Giờ kết thúc</th><th>Tổng giờ</th><th>Lý do</th><th>Trạng thái</th><th>Chi phí</th><th></th></tr></thead><tbody>${HRM_OVERTIME.map((row) => `<tr><td><b>${escapeHtml(row[0])}</b></td><td>${escapeHtml(row[1])}</td><td>${escapeHtml(row[2])}</td><td>${escapeHtml(row[3])}</td><td>${escapeHtml(row[4])}</td><td>${escapeHtml(row[5])}</td><td><strong>${row[6]} giờ</strong></td><td>${escapeHtml(row[7])}</td><td>${hrmStatus(row[8])}</td><td class="${row[9] > 0 ? "payroll-bonus" : ""}">${row[9] > 0 ? `+ ${money(row[9])}` : money(row[9])} đ</td><td><button class="hrm-view">Chi tiết</button></td></tr>`).join("")}</tbody><tfoot><tr><td colspan="6">Tổng overtime</td><td>${totalHours} giờ</td><td colspan="2">${HRM_OVERTIME.length} phiếu</td><td colspan="2">${money(totalCost)} đ</td></tr></tfoot></table></div></section>`;
+  <div class="hrm-table-wrap"><table class="hrm-table payroll-table overtime-table"><thead><tr><th>Mã phiếu</th><th>Nhân sự</th><th>Ngày</th><th>Vị trí / dự án</th><th>Giờ bắt đầu</th><th>Giờ kết thúc</th><th>Tổng giờ</th><th>Lý do xin OT</th><th>Trạng thái</th><th>Chi phí tính</th><th></th></tr></thead><tbody>${HRM_OVERTIME.map((row) => hrmOvertimeRow(row)).join("")}</tbody><tfoot><tr><td colspan="6">Tổng overtime được tính</td><td>${totalHours} giờ</td><td colspan="2">${approvedRows.length} phiếu đã duyệt</td><td colspan="2">${money(totalCost)} đ</td></tr></tfoot></table></div>${hrmOvertimeModal()}</section>`;
   bindHrm("overtime");
+}
+
+function loadHrmOvertime() {
+  if (HRM_OVERTIME.loaded) return;
+  HRM_OVERTIME.loaded = true;
+  try {
+    const saved = JSON.parse(localStorage.getItem(HRM_OVERTIME_STORAGE) || "[]");
+    if (Array.isArray(saved) && saved.length) HRM_OVERTIME.splice(0, HRM_OVERTIME.length, ...saved);
+  } catch {}
+}
+
+function saveHrmOvertime() {
+  localStorage.setItem(HRM_OVERTIME_STORAGE, JSON.stringify(HRM_OVERTIME));
+}
+
+function hrmOvertimeRow(row) {
+  const approved = row[8] === "Hợp lệ";
+  const cost = approved ? row[9] : 0;
+  return `<tr><td><b>${escapeHtml(row[0])}</b></td><td>${escapeHtml(row[1])}</td><td>${escapeHtml(row[2])}</td><td>${escapeHtml(row[3])}</td><td>${escapeHtml(row[4])}</td><td>${escapeHtml(row[5])}</td><td><strong>${row[6]} giờ</strong></td><td class="overtime-reason">${escapeHtml(row[7])}</td><td>${hrmStatus(row[8])}${!approved && row[8] === "Cần duyệt" ? "<small>Chưa tính công</small>" : ""}</td><td class="${cost > 0 ? "payroll-bonus" : ""}">${cost > 0 ? `+ ${money(cost)}` : money(cost)} đ</td><td class="overtime-actions">${row[8] === "Cần duyệt" ? `<button class="hrm-view approve" data-hrm="approve-overtime" data-code="${escapeHtml(row[0])}">Xét duyệt</button><button class="hrm-view reject" data-hrm="reject-overtime" data-code="${escapeHtml(row[0])}">Từ chối</button>` : `<button class="hrm-view" data-hrm="view-overtime" data-code="${escapeHtml(row[0])}">Chi tiết</button>`}</td></tr>`;
+}
+
+function hrmOvertimeModal() {
+  const staffOptions = staffPeople().map((person) => `<option value="${escapeHtml(person.staffName)}">${escapeHtml(person.staffCode)} · ${escapeHtml(person.staffName)}</option>`).join("");
+  const projectOptions = financeUnique([...projectListOptions(), "Văn phòng Le Dome", "Kho Le Dome", "Khác"]).map((project) => `<option>${escapeHtml(project)}</option>`).join("");
+  const today = new Date().toISOString().slice(0, 10);
+  return `<div class="directory-modal overtime-modal" id="hrm-overtime-modal"><form id="hrm-overtime-form"><header><h3>Tạo phiếu xin overtime</h3><button type="button" data-hrm="close-overtime">×</button></header>
+    <label>Nhân sự<select name="staff" required>${staffOptions}</select></label>
+    <label>Ngày overtime<input name="date" type="date" value="${today}" required></label>
+    <label>Vị trí / dự án<select name="project" required>${projectOptions}</select></label>
+    <label>Cấp trên duyệt<select name="approver"><option>DINH Công Hoàng</option><option>Bùi Xuân Dũng</option><option>Hoàng Thu Mai</option></select></label>
+    <label>Giờ bắt đầu<input name="start" type="time" value="18:00" required></label>
+    <label>Giờ kết thúc<input name="end" type="time" value="20:00" required></label>
+    <label class="directory-form-wide">Lý do xin overtime<textarea name="reason" required placeholder="Nêu rõ việc cần hoàn thành, deadline, ảnh hưởng nếu không làm thêm"></textarea></label>
+    <label class="directory-form-wide">Kết quả dự kiến<textarea name="expected" placeholder="VD: hoàn thành hồ sơ gửi CDT, kiểm kê xong vật tư, xử lý lỗi kỹ thuật..."></textarea></label>
+    <section class="overtime-form-note directory-form-wide"><b>Luồng tính công</b><span>Sau khi bấm Gửi, phiếu vào danh sách với trạng thái Cần duyệt. Chỉ khi cấp trên bấm Xét duyệt, giờ OT và chi phí mới được tính.</span></section>
+    <footer><button type="button" class="btn secondary" data-hrm="close-overtime">Đóng</button><button class="btn">Gửi phiếu</button></footer></form></div>`;
+}
+
+function overtimeHours(start, end) {
+  const [sh, sm] = String(start || "00:00").split(":").map(Number);
+  const [eh, em] = String(end || "00:00").split(":").map(Number);
+  let minutes = (eh * 60 + em) - (sh * 60 + sm);
+  if (minutes < 0) minutes += 24 * 60;
+  return Math.round((minutes / 60) * 100) / 100;
+}
+
+function overtimeDisplayDate(value) {
+  const [year, month, day] = String(value || "").split("-");
+  return year && month && day ? `${day}/${month}/${year}` : value;
+}
+
+function payrollWorkSalary(row) {
+  return Math.round((Number(row.agreedSalary || 0) * Number(row.workDays || 0)) / 24);
+}
+
+function payrollNetSalary(row) {
+  return payrollWorkSalary(row);
+}
+
+function payrollFormat(value) {
+  return value ? `${money(value)} đ` : "";
+}
+
+function payrollDepartmentRows(rows) {
+  const groups = [];
+  rows.forEach((row) => {
+    const current = groups.find((group) => group.department === row.department);
+    if (current) current.rows.push(row);
+    else groups.push({ department: row.department, rows: [row] });
+  });
+  return groups;
+}
+
+function payrollRow(row, showDepartment) {
+  const workSalary = payrollWorkSalary(row);
+  const netSalary = payrollNetSalary(row);
+  return `<tr>
+    <td class="payroll-department">${showDepartment ? escapeHtml(row.department) : ""}</td>
+    <td class="payroll-center">${row.order || ""}</td>
+    <td><b>${escapeHtml(row.name)}</b><small>${escapeHtml(row.staffCode)} · ${escapeHtml(row.title || "")}</small></td>
+    <td class="payroll-money">${money(row.agreedSalary)} đ</td>
+    <td class="payroll-center">${attendanceWork(row.workDays)}</td>
+    <td class="payroll-money"><strong>${money(workSalary)} đ</strong></td>
+    <td>${escapeHtml(row.project || "")}</td>
+    <td>${escapeHtml(row.contract || "")}</td>
+    <td class="payroll-center">${escapeHtml(row.rate || "")}</td>
+    <td class="payroll-money">${payrollFormat(row.revenue)}</td>
+    <td class="payroll-money">${payrollFormat(row.projectBonus)}</td>
+    <td class="payroll-money">${payrollFormat(row.transportAllowance)}</td>
+    <td class="payroll-money">${payrollFormat(row.tax)}</td>
+    <td class="payroll-money payroll-total"><strong>${money(netSalary)} đ</strong></td>
+  </tr>`;
+}
+
+function payrollDepartmentSubtotal(group) {
+  const total = group.rows.reduce((sum, row) => sum + payrollNetSalary(row), 0);
+  return `<tr class="payroll-subtotal"><td colspan="13">Tạm tính ${escapeHtml(group.department)}</td><td class="payroll-money">${money(total)} đ</td></tr>`;
 }
 
 function hrmPayroll() {
   setTitle("hrm-payroll", "");
-  const total = HRM_PAYROLL.reduce((sum,row) => sum + row[8], 0);
-  $("#app").innerHTML = `<section class="hrm-page">${hrmHeader("$ Lương","Tổng hợp tự động từ bảng chấm công và thưởng theo dự án",'<button class="btn">▣ Chốt bảng lương</button>')}${hrmStats([["Kỳ lương","06 / 2026","Đang tổng hợp"],["Tổng thực nhận",`${money(total)} đ`,"6 nhân sự"],["Thưởng dự án",`${money(HRM_PAYROLL.reduce((sum,row) => sum + row[6],0))} đ`,"Theo phân bổ dự án"],["Bản ghi cần kiểm tra","1","Liên quan bảng chấm công"]])}
-  <div class="payroll-note"><b>Nguyên tắc tính tạm thời</b><span>Thực nhận = Lương cơ bản theo ngày công + tăng ca + thưởng dự án - khấu trừ. Công thức chi tiết sẽ cập nhật theo quy định của Le Dome.</span><button>⚙ Cấu hình công thức</button></div>
-  <div class="hrm-tools"><input placeholder="⌕ Tìm nhân sự hoặc chức vụ"><input type="month" value="2026-06"><button>↻ Tính lại từ bảng công</button><button class="btn secondary">▣ Xuất bảng lương</button></div>
-  <div class="hrm-table-wrap"><table class="hrm-table payroll-table"><thead><tr><th>Nhân sự</th><th>Chức vụ</th><th>Ngày công</th><th>Tăng ca</th><th>Lương cơ bản</th><th>Thưởng dự án</th><th>Khấu trừ</th><th>Thực nhận</th><th></th></tr></thead><tbody>${HRM_PAYROLL.map((row) => `<tr><td><b>${row[1]}</b><small>${row[0]}</small></td><td>${row[2]}</td><td>${row[3]}</td><td>${row[4]} giờ</td><td>${money(row[5])}</td><td class="payroll-bonus">+ ${money(row[6])}</td><td class="payroll-deduct">- ${money(row[7])}</td><td><strong>${money(row[8])} đ</strong></td><td><button class="hrm-view">Chi tiết</button></td></tr>`).join("")}</tbody><tfoot><tr><td colspan="7">Tổng thực nhận</td><td colspan="2">${money(total)} đ</td></tr></tfoot></table></div></section>`;
+  const total = HRM_PAYROLL.reduce((sum, row) => sum + payrollNetSalary(row), 0);
+  const totalWorkDays = HRM_PAYROLL.reduce((sum, row) => sum + Number(row.workDays || 0), 0);
+  const grouped = payrollDepartmentRows(HRM_PAYROLL);
+  $("#app").innerHTML = `<section class="hrm-page payroll-page">${hrmHeader("$ Lương","Bảng tính lương theo bộ phận, ngày công tích lũy và công thức chuẩn.",'<button class="btn">▣ Chốt bảng lương</button>')}${hrmStats([["Kỳ lương","06 / 2026","Đang tổng hợp"],["Tổng lương sau thuế",`${money(total)} đ`,`${HRM_PAYROLL.length} nhân sự`],["Tổng công tích lũy",attendanceWork(totalWorkDays),"Theo bảng chấm công tháng"],["Công chuẩn","24","Công thức tính lương"]])}
+  <div class="payroll-note"><b>Công thức tính lương</b><span>Lương thực nhận = Lương thỏa thuận × Số công tích lũy trong tháng / 24.</span><button>⚙ Cấu hình công thức</button></div>
+  <div class="hrm-tools"><input placeholder="⌕ Tìm bộ phận, nhân sự hoặc chức vụ"><input type="month" value="2026-06"><button>↻ Tính lại từ bảng công</button><button class="btn secondary">▣ Xuất bảng lương</button></div>
+  <div class="hrm-table-wrap"><table class="hrm-table payroll-table payroll-sheet"><thead><tr><th>Bộ phận</th><th>STT</th><th>Họ tên</th><th>Mức lương CĐ</th><th>Số ngày công</th><th>Lương chấm công</th><th>Dự án</th><th>Hợp đồng</th><th>Tỉ lệ %</th><th>Doanh thu tính</th><th>Thành tiền</th><th>Phụ cấp gửi xe</th><th>Thuế TNCN</th><th>Lương sau thuế</th></tr></thead><tbody>${grouped.map((group) => `${group.rows.map((row, index) => payrollRow(row, index === 0)).join("")}${payrollDepartmentSubtotal(group)}`).join("")}</tbody><tfoot><tr><td colspan="13">TỔNG LƯƠNG THÁNG 06/2026</td><td class="payroll-money">${money(total)} đ</td></tr></tfoot></table></div></section>`;
   bindHrm("payroll");
 }
 
@@ -3747,6 +3918,7 @@ function bindHrm(type, attendanceRows = HRM_ATTENDANCE) {
       return $("#hrm-staff-modal").classList.add("open");
     }
     if (action === "close") return $("#hrm-staff-modal").classList.remove("open");
+    if (action === "close-overtime") return $("#hrm-overtime-modal")?.classList.remove("open");
     if (action === "close-evidence") return $("#hrm-evidence").classList.remove("open");
     if (action === "close-private") return $("#staff-private-modal")?.remove();
     if (action === "staff-private") {
@@ -3803,7 +3975,32 @@ function bindHrm(type, attendanceRows = HRM_ATTENDANCE) {
       return hrmAttendance();
     }
     if (action === "add-overtime") {
-      return alert("Form thêm phiếu Overtime sẽ được kết nối với workflow duyệt tăng ca.");
+      $("#hrm-overtime-form")?.reset();
+      const date = $("#hrm-overtime-form")?.elements.date;
+      if (date) date.value = new Date().toISOString().slice(0, 10);
+      return $("#hrm-overtime-modal")?.classList.add("open");
+    }
+    if (action === "approve-overtime") {
+      const row = HRM_OVERTIME.find((item) => item[0] === event.target.closest("[data-code]").dataset.code);
+      if (row) {
+        row[8] = "Hợp lệ";
+        row[9] = Math.round(Number(row[6] || 0) * OVERTIME_RATE_PER_HOUR);
+        saveHrmOvertime();
+      }
+      return hrmOvertime();
+    }
+    if (action === "reject-overtime") {
+      const row = HRM_OVERTIME.find((item) => item[0] === event.target.closest("[data-code]").dataset.code);
+      if (row) {
+        row[8] = "Từ chối";
+        row[9] = 0;
+        saveHrmOvertime();
+      }
+      return hrmOvertime();
+    }
+    if (action === "view-overtime") {
+      const row = HRM_OVERTIME.find((item) => item[0] === event.target.closest("[data-code]").dataset.code);
+      if (row) alert(`${row[0]} - ${row[1]}\n${row[2]} · ${row[3]}\n${row[4]} - ${row[5]} (${row[6]} giờ)\nTrạng thái: ${row[8]}\nLý do: ${row[7]}`);
     }
   };
   if (type === "staff") $("#hrm-staff-form").onsubmit = async (event) => {
@@ -3816,6 +4013,16 @@ function bindHrm(type, attendanceRows = HRM_ATTENDANCE) {
     await saveOrgStaff();
     selectedOrgStaff = row[0];
     hrmStaff();
+  };
+  if (type === "overtime") $("#hrm-overtime-form").onsubmit = (event) => {
+    event.preventDefault();
+    const data = Object.fromEntries(new FormData(event.currentTarget));
+    const hours = overtimeHours(data.start, data.end);
+    if (hours <= 0) return alert("Giờ kết thúc phải sau giờ bắt đầu.");
+    const code = `OT-${String(HRM_OVERTIME.length + 1).padStart(3, "0")}`;
+    HRM_OVERTIME.unshift([code, data.staff, overtimeDisplayDate(data.date), data.project, data.start, data.end, hours, data.reason, "Cần duyệt", Math.round(hours * OVERTIME_RATE_PER_HOUR)]);
+    saveHrmOvertime();
+    hrmOvertime();
   };
 }
 
@@ -4465,16 +4672,16 @@ async function hrmOverview() {
   } catch {}
   const people = staffPeople();
   const attendanceRows = phoneRows.map((record) => [record.employeeId, record.employeeName, record.type === "check-in" ? new Date(record.capturedAt).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" }) : "--", record.type === "check-out" ? new Date(record.capturedAt).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" }) : "--", record.siteName, record.faceEvidence || "Đã chụp ảnh", record.distanceMeters == null ? "Chưa có geofence" : `${record.distanceMeters} m`, record.status]).concat(HRM_ATTENDANCE);
-  const payrollTotal = HRM_PAYROLL.reduce((sum, row) => sum + Number(row[8] || 0), 0);
+  const payrollTotal = HRM_PAYROLL.reduce((sum, row) => sum + payrollNetSalary(row), 0);
   const departmentGroups = [...new Set(ORG_STAFF.map((staff) => staff[3]))].map((department) => [department, ORG_STAFF.filter((staff) => staff[3] === department).length]);
   setTitle("hrm-overview", "Hiển thị nhanh nhân sự, chấm công và lương");
   $("#app").innerHTML = `<section class="overview-page">
     <header class="overview-head"><div><h2>▣ Tổng quan nhân sự</h2><p>Tổng hợp nhanh dữ liệu Nhân sự, Bảng chấm công và Lương của Le Dome.</p></div><button data-page-link="hrm-staff">Mở nhân sự</button></header>
-    ${overviewKpis([["Nhân sự thật", people.length, `${ORG_STAFF.length} vị trí đang đảm nhiệm`], ["Bảng chấm công", attendanceRows.length, "Bản ghi hôm nay / mẫu"], ["Cần kiểm tra", attendanceRows.filter((row) => row[7] === "Cần duyệt" || row[7] === "Đi muộn").length, "Bản ghi chưa ổn", "negative"], ["Quỹ lương mẫu", `${money(payrollTotal)} đ`, `${HRM_PAYROLL.length} nhân sự trong bảng`, "positive"]])}
+    ${overviewKpis([["Nhân sự thật", people.length, `${ORG_STAFF.length} vị trí đang đảm nhiệm`], ["Bảng chấm công", attendanceRows.length, "Bản ghi hôm nay / mẫu"], ["Cần kiểm tra", attendanceRows.filter((row) => row[7] === "Cần duyệt" || row[7] === "Đi muộn").length, "Bản ghi chưa ổn", "negative"], ["Quỹ lương tháng", `${money(payrollTotal)} đ`, `${HRM_PAYROLL.length} nhân sự trong bảng`, "positive"]])}
     <div class="overview-card-grid">
       <article class="overview-panel"><header><h3>♟ Nhân sự theo phòng ban</h3><button data-page-link="hrm-staff">Chi tiết</button></header><div class="overview-mini-list">${departmentGroups.map(([department, count]) => `<p><span>${escapeHtml(department)}</span><b>${count}</b></p>`).join("")}</div></article>
       <article class="overview-panel"><header><h3>▣ Bảng chấm công gần nhất</h3><button data-page-link="hrm-attendance">Chi tiết</button></header><div class="overview-feed">${attendanceRows.slice(0, 6).map((row) => `<p><b>${escapeHtml(row[1])}</b><small>${escapeHtml(row[4])} · ${escapeHtml(row[7])}</small></p>`).join("")}</div></article>
-      <article class="overview-panel"><header><h3>$ Bảng lương</h3><button data-page-link="hrm-payroll">Chi tiết</button></header><div class="overview-feed">${HRM_PAYROLL.slice(0, 6).map((row) => `<p><b>${escapeHtml(row[1])}</b><small>${escapeHtml(row[2])} · ${money(row[8])} đ</small></p>`).join("")}</div></article>
+      <article class="overview-panel"><header><h3>$ Bảng lương</h3><button data-page-link="hrm-payroll">Chi tiết</button></header><div class="overview-feed">${HRM_PAYROLL.slice(0, 6).map((row) => `<p><b>${escapeHtml(row.name)}</b><small>${escapeHtml(row.department)} · ${money(payrollNetSalary(row))} đ</small></p>`).join("")}</div></article>
     </div>
   </section>`;
   bindOverviewActions();
