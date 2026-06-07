@@ -10,6 +10,7 @@ const SIDEBAR_VISIBILITY_STORAGE = "ledome.sidebarHidden.v1";
 const CATALOG_COLLAPSE_STORAGE = "ledome.catalogCollapsed.v1";
 const FINANCE_STORAGE = "ledome.finance.v1";
 const PERSONAL_FINANCE_STORAGE = "ledome.personalFinance.v1";
+const ATTENDANCE_SUBMIT_STORAGE = "ledome.attendance.submitted";
 const MODULE_PERMISSION = {
   projects: "projects", "projects-overview": "projects", insight: "projects", drive: "projects", tasks: "projects", approval: "projects", fleet: "projects",
   "partners-overview": "partners", customers: "partners", contractors: "partners", suppliers: "partners",
@@ -25,6 +26,25 @@ const api = (url, options = {}) => fetch(`/api/v1${url}`, { credentials: "same-o
   return body;
 });
 const escapeHtml = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;" }[char]));
+function openAttendanceForm(event) {
+  event?.preventDefault();
+  const popup = window.open("/attendance/", "ledomeAttendanceForm", "width=520,height=760");
+  if (popup) {
+    popup.focus();
+    return;
+  }
+  location.href = "/attendance/";
+}
+function refreshAttendanceAfterSubmit() {
+  if (state.page === "hrm-attendance") hrmAttendance();
+}
+function handleAttendanceSubmitted(event) {
+  if (event.origin !== location.origin || event.data?.type !== "ledome.attendance.submitted") return;
+  refreshAttendanceAfterSubmit();
+}
+function handleAttendanceSubmittedStorage(event) {
+  if (event.key === ATTENDANCE_SUBMIT_STORAGE && event.newValue) refreshAttendanceAfterSubmit();
+}
 function projectDateInputValue(value) {
   const raw = String(value || "").trim();
   if (!raw) return "";
@@ -59,7 +79,7 @@ const NOTIFICATIONS = [
   { audience: ["hrm"], title: "Bản ghi chấm công GPS cần duyệt trong hôm nay.", time: "2 ngày trước", unread: false, avatar: "NS" },
   { audience: ["config"], title: "Danh sách tài khoản đã được cập nhật theo nhân sự thật và vị trí kiêm nhiệm.", time: "3 ngày trước", unread: true, avatar: "CH" }
 ];
-const ui = { sortBy: "updated", sortDir: "desc", dateType: "all", dateRange: "Mọi lúc", hiddenWelcome: false };
+const ui = { sortBy: "updated", sortDir: "desc", dateType: "all", dateRange: "Mọi lúc", hiddenWelcome: false, myTaskView: "week" };
 const isFinalSettlementProject = (project) => String(project?.projectStage || "").trim() === "final-settlement";
 const activeProjectsOnly = (items = []) => items.filter((project) => !isFinalSettlementProject(project));
 const DEMO_PROJECT_IDS = new Set(["p1", "p2"]);
@@ -222,40 +242,483 @@ const stat = ([label, value, hint, color = "teal"]) => `<article class="stat"><s
 const progress = (value) => `<div class="progress"><i style="width:${value}%"></i></div>`;
 const badge = (text) => `<span class="badge ${text.includes("Chậm") ? "danger" : text.includes("chú ý") || text.includes("Sắp") ? "warning" : ""}">${text}</span>`;
 
-async function projectLanding() {
-  const data = await api("/dashboard");
-  setTitle("projects", "");
-  const sourceProjects = activeProjectsOnly((await api("/projects")).data);
-  const sortedProjects = [...sourceProjects].sort((a, b) => {
-    const field = ui.sortBy === "code" ? "code" : ui.sortBy === "name" ? "name" : ui.sortBy === "status" ? "status" : "id";
-    return String(a[field]).localeCompare(String(b[field]), "vi") * (ui.sortDir === "asc" ? 1 : -1);
+function dashboardLookupKey(value) {
+  return plainVietnamese(value).replace(/[^a-z0-9]/g, "");
+}
+function dashboardPercent(count, total) {
+  return total ? `${Math.round((Number(count || 0) * 100) / total)}%` : "0%";
+}
+function dashboardTextHas(value, needles) {
+  const text = plainVietnamese(value);
+  return needles.some((needle) => text.includes(plainVietnamese(needle)));
+}
+function dashboardGoodStatus(value) {
+  const text = plainVietnamese(value);
+  return ["", "on", "binh thuong", "hop le", "du cong", "hoan thanh", "da xong"].some((item) => text === item);
+}
+function dashboardRiskStatus(value) {
+  return dashboardTextHas(value, ["Chậm", "Rủi ro", "Không", "Vượt", "Cần", "Thiếu", "Đến hạn", "Chưa"]);
+}
+function dashboardToneRank(tone) {
+  return ({ danger: 0, warning: 1, info: 2 }[tone] ?? 3);
+}
+function dashboardDaysUntil(value) {
+  const due = financeDateSortValue(value);
+  if (!Number.isFinite(due) || due === Number.MAX_SAFE_INTEGER) return null;
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  return Math.ceil((due - today) / 86400000);
+}
+function dashboardDueLabel(value, fallback = "") {
+  const days = dashboardDaysUntil(value);
+  if (days === null) return fallback || "Chưa có hạn";
+  if (days < 0) return `Quá hạn ${Math.abs(days)} ngày`;
+  if (days === 0) return "Đến hạn hôm nay";
+  return `Còn ${days} ngày`;
+}
+function dashboardProjectIndex(projects = []) {
+  const map = new Map();
+  projects.forEach((project) => {
+    [project.id, project.code, project.name].forEach((value) => {
+      const key = dashboardLookupKey(value);
+      if (key && !map.has(key)) map.set(key, project);
+    });
   });
+  return map;
+}
+function dashboardProjectFor(index, ...values) {
+  for (const value of values) {
+    const project = index.get(dashboardLookupKey(value));
+    if (project) return project;
+  }
+  return null;
+}
+function dashboardLinkAttr(item = {}) {
+  if (item.link && canAccess(item.link)) return `data-dashboard-link="${escapeHtml(item.link)}"`;
+  if (item.projectId) return `data-project="${escapeHtml(item.projectId)}"`;
+  return "";
+}
+function dashboardSourceButton(item = {}, label = "Mở nguồn") {
+  const attr = dashboardLinkAttr(item);
+  return attr ? `<button type="button" ${attr}>${label}</button>` : "";
+}
+function dashboardKpi(label, value, note, link, tone = "") {
+  const attr = link && canAccess(link) ? ` data-dashboard-link="${escapeHtml(link)}"` : "";
+  return `<button type="button" class="dashboard-kpi ${tone}"${attr}><small>${escapeHtml(label)}</small><b>${escapeHtml(value)}</b><span>${escapeHtml(note || "")}</span></button>`;
+}
+function dashboardStatusBreakdown(title, rows, total) {
+  return `<section class="dashboard-panel dashboard-breakdown"><header><h3>${escapeHtml(title)}</h3></header><div>${rows.map(([label, count, tone = ""]) => `<p class="${tone}"><span>${escapeHtml(label)}</span><b>${count}</b><em>${dashboardPercent(count, total)}</em></p>`).join("")}</div></section>`;
+}
+function dashboardActionRows(items) {
+  return items.length ? items.map((item) => `<tr class="${escapeHtml(item.tone || "")}" ${dashboardLinkAttr(item)}><td><b>${escapeHtml(item.title)}</b><small>${escapeHtml(item.detail || "")}</small></td><td>${escapeHtml(item.source || "")}</td><td><i class="dashboard-priority ${escapeHtml(item.tone || "")}">${escapeHtml(item.priority || "Theo dõi")}</i></td><td>${escapeHtml(item.due || "")}</td><td>${dashboardSourceButton(item, "Mở")}</td></tr>`).join("") : `<tr><td colspan="5" class="dashboard-empty">Chưa có dữ liệu cần xử lý.</td></tr>`;
+}
+function dashboardApprovalRows(items) {
+  return items.length ? items.map((item) => `<tr class="${escapeHtml(item.tone || "")}" ${dashboardLinkAttr(item)}><td><b>${escapeHtml(item.type)}</b><small>${escapeHtml(item.code || "")}</small></td><td>${escapeHtml(item.title)}</td><td>${escapeHtml(item.detail || "")}</td><td><i class="dashboard-priority ${escapeHtml(item.tone || "")}">${escapeHtml(item.status || "Cần duyệt")}</i></td><td>${dashboardSourceButton(item, "Xét duyệt")}</td></tr>`).join("") : `<tr><td colspan="5" class="dashboard-empty">Không có phiếu đang chờ duyệt.</td></tr>`;
+}
+function dashboardWarningRows(items) {
+  return items.length ? items.map((item) => `<tr class="${escapeHtml(item.tone || "")}" ${dashboardLinkAttr(item)}><td><i class="dashboard-dot ${escapeHtml(item.tone || "")}"></i></td><td><b>${escapeHtml(item.title)}</b><small>${escapeHtml(item.detail || "")}</small></td><td>${escapeHtml(item.source || "")}</td><td>${dashboardSourceButton(item, "Kiểm tra")}</td></tr>`).join("") : `<tr><td colspan="4" class="dashboard-empty">Không có cảnh báo nổi bật.</td></tr>`;
+}
+function dashboardTodayDate() {
+  const now = new Date();
+  return new Date(now.getFullYear(), now.getMonth(), now.getDate());
+}
+function dashboardAddDays(date, days) {
+  const next = new Date(date);
+  next.setDate(next.getDate() + days);
+  return next;
+}
+function dashboardDateKey(date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+function dashboardDisplayDate(date) {
+  return `${String(date.getDate()).padStart(2, "0")}/${String(date.getMonth() + 1).padStart(2, "0")}/${date.getFullYear()}`;
+}
+function dashboardParseTaskDate(value) {
+  const parts = String(value || "").trim().split("/").map(Number);
+  const today = dashboardTodayDate();
+  if (parts.length >= 3 && parts[0] && parts[1] && parts[2]) return new Date(parts[2], parts[1] - 1, parts[0]);
+  if (parts.length >= 2 && parts[0] && parts[1]) return new Date(today.getFullYear(), parts[1] - 1, parts[0]);
+  return new Date(today);
+}
+function dashboardWeekStart(date) {
+  const start = new Date(date);
+  start.setDate(start.getDate() - ((start.getDay() + 6) % 7));
+  return start;
+}
+function dashboardTaskPeriod(mode = ui.myTaskView) {
+  const today = dashboardTodayDate();
+  if (mode === "month") {
+    const start = new Date(today.getFullYear(), today.getMonth(), 1);
+    const end = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+    return { start, end, days: Array.from({ length: end.getDate() }, (_, index) => new Date(today.getFullYear(), today.getMonth(), index + 1)) };
+  }
+  const start = dashboardWeekStart(today);
+  return { start, end: dashboardAddDays(start, 6), days: Array.from({ length: 7 }, (_, index) => dashboardAddDays(start, index)) };
+}
+function dashboardTaskOverlaps(task, date) {
+  const start = task.startDate || task.dueDate;
+  const end = task.endDate || task.dueDate || start;
+  return start && end && start.getTime() <= date.getTime() && date.getTime() <= end.getTime();
+}
+function dashboardAccountAliases(account = state.account) {
+  const source = [
+    account?.staffName,
+    account?.loginId,
+    account?.staffCode,
+    account?.role,
+    account?.department,
+    account?.title,
+    ...(account?.roles || []),
+    ...(account?.departments || []),
+    ...(account?.positions || [])
+  ];
+  const text = plainVietnamese(source.join(" "));
+  const aliases = new Set(source.map(dashboardLookupKey).filter(Boolean));
+  if (dashboardLookupKey(account?.loginId) === "hoangdinh" || account?.staffCode === "NS001") aliases.add(dashboardLookupKey("TÀI KHOẢN TRẢI NGHIỆM"));
+  if (text.includes("giam doc") || text.includes("truong phong thi cong") || text.includes("quan ly")) {
+    ["chu tri", "chu tri du an", "giam doc du an", "chi huy truong", "quan ly du an", "quan ly thi cong"].forEach((alias) => aliases.add(dashboardLookupKey(alias)));
+  }
+  if (text.includes("giam sat")) ["giam sat du an", "giam sat thi cong"].forEach((alias) => aliases.add(dashboardLookupKey(alias)));
+  if (text.includes("ke toan")) aliases.add(dashboardLookupKey("ke toan du an"));
+  return aliases;
+}
+function dashboardProjectRoleAliases(project, account = state.account) {
+  const aliases = new Set();
+  const accountKey = dashboardLookupKey(account?.staffName);
+  const projectRoles = [
+    [project?.manager, ["chu tri", "chu tri du an", "giam doc du an", "quan ly du an"]],
+    [project?.commander, ["chu tri", "chu tri du an", "chi huy truong", "quan ly thi cong"]],
+    [project?.qs, ["giam sat du an", "giam sat thi cong"]],
+    [project?.accountant, ["ke toan du an"]]
+  ];
+  projectRoles.forEach(([name, names]) => {
+    if (accountKey && dashboardLookupKey(name) === accountKey) names.forEach((alias) => aliases.add(dashboardLookupKey(alias)));
+  });
+  return aliases;
+}
+function dashboardTaskAssignedToAccount(task, account = state.account) {
+  if (!account) return false;
+  const unassignedKey = dashboardLookupKey("Chưa phân công");
+  const ownerKeys = String(task.assignee || task.owner || "")
+    .split(/[\/,;|·-]+/)
+    .map(dashboardLookupKey)
+    .filter((ownerKey) => ownerKey && ownerKey !== unassignedKey);
+  if (!ownerKeys.length) return false;
+  const aliases = new Set([...dashboardAccountAliases(account), ...dashboardProjectRoleAliases(task.project, account)]);
+  return ownerKeys.some((ownerKey) => [...aliases].some((alias) => ownerKey === alias || ownerKey.includes(alias) || alias.includes(ownerKey)));
+}
+const DASHBOARD_GANTT_STAGE_TEMPLATES = {
+  design: [
+    ["design-survey", "Khảo sát hiện trạng", "stage-design"],
+    ["design-concept", "Lên phương án mặt bằng / concept", "stage-design"],
+    ["design-3d", "Thiết kế 3D", "stage-design"],
+    ["design-technical", "Hồ sơ kỹ thuật thi công", "stage-design"],
+    ["design-approval", "Trình CDT phê duyệt hồ sơ thiết kế", "stage-design"]
+  ],
+  construction: [
+    ["construction-prepare", "Chuẩn bị mặt bằng và nhân lực", "stage-construction"],
+    ["construction-rough", "Thi công phần thô / hạng mục chính", "stage-construction"],
+    ["construction-me", "Thi công điện nước / M&E", "stage-construction"],
+    ["construction-finish", "Hoàn thiện nội thất", "stage-construction"],
+    ["construction-inspection", "Nghiệm thu và bàn giao", "stage-construction"]
+  ]
+};
+function dashboardProjectStages(project) {
+  const group = plainVietnamese(project?.group || project?.type || "Thi công");
+  const hasDesign = group.includes("thiet ke") || group.includes("kien truc");
+  const hasConstruction = group.includes("thi cong") || !hasDesign;
+  return hasDesign && hasConstruction ? ["design", "construction"] : hasDesign ? ["design"] : ["construction"];
+}
+function dashboardGanttStateStorageKey(projectId) {
+  return `ledome.gantt.state.${projectId || "project"}.v1`;
+}
+function dashboardReadGanttState(projectId) {
+  try {
+    const value = JSON.parse(localStorage.getItem(dashboardGanttStateStorageKey(projectId)) || "{}");
+    return value && typeof value === "object" ? value : {};
+  } catch {
+    return {};
+  }
+}
+function dashboardGanttTaskDefault(row = {}) {
+  const baseIndex = Number(row.baseIndex || 0);
+  const group = Boolean(row.isGroup);
+  const progressValue = group ? 64 : baseIndex < 3 ? 100 : baseIndex === 3 ? 85 : baseIndex === 4 ? 45 : 0;
+  return {
+    name: row.name || "Công việc",
+    assignee: group ? "TÀI KHOẢN TRẢI NGHIỆM" : baseIndex % 3 ? "Chưa phân công" : "TÀI KHOẢN TRẢI NGHIỆM",
+    planStart: baseIndex % 2 ? "28/05" : "29/05",
+    planEnd: baseIndex % 3 ? "03/06" : "11/06",
+    progress: progressValue,
+    status: progressValue >= 100 ? "Hoàn thành" : progressValue > 0 ? "Đang làm" : "Chưa làm"
+  };
+}
+function dashboardStoredGanttTasks(project) {
+  const state = dashboardReadGanttState(project?.id);
+  if (!Array.isArray(state.tasks)) return [];
+  const edits = state.edits && typeof state.edits === "object" ? state.edits : {};
+  return state.tasks
+    .map((row, index) => ({ row, index, task: { ...dashboardGanttTaskDefault(row), ...(edits[row.id] || {}) } }))
+    .filter(({ row }) => !row?.isGroup)
+    .map(({ row, index, task }) => {
+      const startDate = dashboardParseTaskDate(task.planStart);
+      const endDate = dashboardParseTaskDate(task.planEnd || task.planStart);
+      const progressValue = Number(task.progress || 0);
+      return {
+        id: `${project.id}-${row.id || index}`,
+        title: task.name || row.name || "Công việc",
+        source: "Bảng tiến độ",
+        type: "main",
+        project,
+        projectId: project.id,
+        projectName: project.name,
+        assignee: task.assignee || "Chưa phân công",
+        startDate,
+        endDate: endDate < startDate ? startDate : endDate,
+        status: task.status || (progressValue >= 100 ? "Hoàn thành" : progressValue > 0 ? "Đang làm" : "Chưa làm"),
+        progress: progressValue,
+        view: "gantt"
+      };
+    });
+}
+function dashboardMainProjectTasks(project) {
+  const storedTasks = dashboardStoredGanttTasks(project);
+  if (storedTasks.length) return storedTasks;
+  if (!DEMO_PROJECT_IDS.has(String(project?.id || ""))) return [];
+  let index = 0;
+  return dashboardProjectStages(project).flatMap((stage) => DASHBOARD_GANTT_STAGE_TEMPLATES[stage].map(([id, title]) => {
+    const baseIndex = index++;
+    const progressValue = baseIndex < 3 ? 100 : baseIndex === 3 ? 85 : baseIndex === 4 ? 45 : 0;
+    return {
+      id: `${project.id}-${id}`,
+      title,
+      source: "Bảng tiến độ",
+      type: "main",
+      project,
+      projectId: project.id,
+      projectName: project.name,
+      assignee: baseIndex % 3 ? "Chưa phân công" : project.manager || "TÀI KHOẢN TRẢI NGHIỆM",
+      startDate: dashboardParseTaskDate(baseIndex % 2 ? "28/05" : "29/05"),
+      endDate: dashboardParseTaskDate(baseIndex % 3 ? "03/06" : "11/06"),
+      status: progressValue >= 100 ? "Hoàn thành" : progressValue > 0 ? "Đang làm" : "Chưa làm",
+      progress: progressValue,
+      view: "gantt"
+    };
+  }));
+}
+function dashboardSupplementalProjectTasks(project) {
+  if (!DEMO_PROJECT_IDS.has(String(project?.id || ""))) return [];
+  const today = dashboardTodayDate();
+  return [
+    { title: "Kiểm tra nhiệm vụ phát sinh trong ngày và cập nhật người phụ trách", source: "Nhiệm vụ được giao thêm", owner: "Chủ trì dự án", status: "Mới", offset: 0, view: "diary" },
+    { title: "Rà soát ghi chú CDT, phản hồi và tạo đầu việc xử lý", source: "Yêu cầu ghi chú của CDT", owner: "CDT / Chủ trì", status: "Chờ xử lý", offset: 1, view: "owner-request" },
+    { title: "Chốt deadline, ảnh xác nhận và người chịu trách nhiệm", source: "Chủ trì dự án", owner: "Chủ trì dự án", status: "Theo dõi", offset: 2, view: "diary" }
+  ].map((task, index) => {
+    const dueDate = dashboardAddDays(today, task.offset);
+    return {
+      ...task,
+      id: `${project.id}-supplemental-${index}`,
+      type: "supplemental",
+      project,
+      projectId: project.id,
+      projectName: project.name,
+      assignee: task.owner,
+      dueDate,
+      startDate: dueDate,
+      endDate: dueDate
+    };
+  });
+}
+function dashboardMyTasks(projects = []) {
+  return projects.flatMap((project) => [...dashboardMainProjectTasks(project), ...dashboardSupplementalProjectTasks(project)])
+    .filter((task) => dashboardTaskAssignedToAccount(task))
+    .sort((a, b) => (a.startDate || a.dueDate) - (b.startDate || b.dueDate) || String(a.title).localeCompare(String(b.title), "vi"));
+}
+function dashboardMyTaskCard(task) {
+  const dateLabel = task.type === "main"
+    ? `${dashboardDisplayDate(task.startDate)} - ${dashboardDisplayDate(task.endDate)}`
+    : dashboardDisplayDate(task.dueDate);
+  const tone = task.type === "supplemental" ? "warning" : task.progress >= 100 ? "ok" : "";
+  return `<article class="dashboard-my-task-card ${escapeHtml(task.type)} ${escapeHtml(tone)}" data-project="${escapeHtml(task.projectId)}" data-project-view="${escapeHtml(task.view || "gantt")}"><b>${escapeHtml(task.title)}</b><small>${escapeHtml(task.projectName)} · ${escapeHtml(task.source)}</small><footer><span>${escapeHtml(dateLabel)}</span><i>${escapeHtml(task.status || "Theo dõi")}</i></footer></article>`;
+}
+function dashboardMyTasksPanel(tasks) {
+  const period = dashboardTaskPeriod(ui.myTaskView);
+  const visibleTasks = tasks.filter((task) => period.days.some((day) => dashboardTaskOverlaps(task, day)));
+  const weekdays = ["CN", "T2", "T3", "T4", "T5", "T6", "T7"];
+  const todayKey = dashboardDateKey(dashboardTodayDate());
+  const dayCards = period.days.map((day) => {
+    const dayTasks = visibleTasks.filter((task) => dashboardTaskOverlaps(task, day));
+    const classes = [dashboardDateKey(day) === todayKey ? "today" : "", day.getDay() === 0 || day.getDay() === 6 ? "weekend" : ""].filter(Boolean).join(" ");
+    return `<article class="dashboard-my-task-day ${classes}"><header><b>${weekdays[day.getDay()]}</b><span>${String(day.getDate()).padStart(2, "0")}/${String(day.getMonth() + 1).padStart(2, "0")}</span></header><div>${dayTasks.map(dashboardMyTaskCard).join("") || "<p>Không có nhiệm vụ</p>"}</div></article>`;
+  }).join("");
+  return `<section class="dashboard-panel dashboard-my-tasks-panel"><header><div><h3>Nhiệm vụ của tôi</h3><p>Nhiệm vụ chính từ bảng tiến độ và nhiệm vụ bổ sung được giao thêm cho account hiện tại.</p></div><div class="dashboard-task-controls"><button type="button" class="${ui.myTaskView === "week" ? "active" : ""}" data-my-task-view="week">Tuần</button><button type="button" class="${ui.myTaskView === "month" ? "active" : ""}" data-my-task-view="month">Tháng</button><span>${visibleTasks.length} việc</span></div></header><div class="dashboard-task-scroll"><div class="dashboard-my-task-grid ${ui.myTaskView === "month" ? "month" : "week"}">${dayCards}</div></div></section>`;
+}
+function dashboardMoney(value) {
+  return `${money(Number(value || 0))} đ`;
+}
+function dashboardCompactMoney(value) {
+  return `${financeCompactMoney(Number(value || 0))} đ`;
+}
+
+async function projectLanding() {
+  setTitle("projects", "");
+  const projectBody = await api("/projects");
+  const sourceProjects = activeProjectsOnly(projectBody.data || []);
+  const projectIndex = dashboardProjectIndex(sourceProjects);
+  const [financeData, materialsRows, attendanceRuntime] = await Promise.all([
+    hasClientPermission("finance.view") ? loadFinanceData() : normalizeFinanceData({}),
+    hasClientPermission("materials.view") ? loadMaterialsRows() : Promise.resolve([]),
+    hasClientPermission("hrm.view") ? api("/attendance/records").catch(() => ({ data: [] })) : Promise.resolve({ data: [] })
+  ]);
+  if (hasClientPermission("hrm.view")) loadHrmOvertime();
+
+  const totalProjects = sourceProjects.length;
+  const statusRows = ["Kế hoạch", "Đang thực hiện", "Tạm dừng", "Hoàn thành"]
+    .map((label) => [label, sourceProjects.filter((project) => plainVietnamese(project.status) === plainVietnamese(label)).length, label === "Hoàn thành" ? "ok" : label === "Tạm dừng" ? "warning" : ""])
+    .filter(([, count]) => count > 0);
+  const extraStatuses = [...new Set(sourceProjects.map((project) => project.status || "Chưa cập nhật"))]
+    .filter((status) => !statusRows.some(([label]) => plainVietnamese(label) === plainVietnamese(status)))
+    .map((label) => [label, sourceProjects.filter((project) => (project.status || "Chưa cập nhật") === label).length, dashboardRiskStatus(label) ? "danger" : ""]);
+  const healthRows = [...new Set(sourceProjects.map((project) => project.health || "Chưa cập nhật"))]
+    .map((label) => [label, sourceProjects.filter((project) => (project.health || "Chưa cập nhật") === label).length, dashboardRiskStatus(label) ? "danger" : dashboardGoodStatus(label) ? "ok" : "warning"]);
+  const activeCount = sourceProjects.filter((project) => dashboardTextHas(project.status, ["Đang thực hiện", "Đang thi công", "Đang thiết kế"])).length;
+  const riskProjects = sourceProjects.filter((project) => dashboardRiskStatus(project.health) || projectPlanProgress(project) - Number(project.progress || 0) >= 10);
+  const averageProgress = totalProjects ? Math.round(sourceProjects.reduce((sum, project) => sum + Number(project.progress || 0), 0) / totalProjects) : 0;
+
+  const financeProjects = Array.isArray(financeData.projects) ? financeData.projects : [];
+  const financeRefs = financeProjects.map((row) => ({ row, project: dashboardProjectFor(projectIndex, row[0], row[1]) }));
+  const financeIncome = financeProjects.reduce((sum, row) => sum + Number(row[8] || 0), 0);
+  const financeExpense = financeProjects.reduce((sum, row) => sum + Number(row[9] || 0), 0);
+  const financeProfit = financeProjects.reduce((sum, row) => sum + Number(row[10] || 0), 0);
+  const financeReceivable = financeProjects.reduce((sum, row) => sum + Number(row[11] || 0), 0);
+  const financePayable = financeProjects.reduce((sum, row) => sum + Number(row[12] || 0), 0);
+  const financeIssueRows = financeRefs.filter(({ row }) => Number(row[10] || 0) < 0 || (row[13] && !dashboardGoodStatus(row[13])));
+
+  const debtRows = (Array.isArray(financeData.debts) ? financeData.debts : []).filter((row) => Number(row[8] || 0) > 0 && !dashboardGoodStatus(row[10]));
+  const dueDebtRows = debtRows.filter((row) => {
+    const days = dashboardDaysUntil(row[9]);
+    return days === null || days <= 7 || dashboardTextHas(row[10], ["Đến hạn", "Chưa thu"]);
+  });
+  const materialIssues = (materialsRows || []).filter((row) => dashboardRiskStatus(row.status));
+  const attendanceRecords = Array.isArray(attendanceRuntime.data) ? attendanceRuntime.data : [];
+  const pendingAttendance = attendanceRecords.filter((record) => dashboardTextHas(record.status, ["Cần duyệt", "Cần kiểm tra"]));
+  const pendingOvertime = hasClientPermission("hrm.view") ? HRM_OVERTIME.filter((row) => dashboardTextHas(row[8], ["Cần duyệt"])) : [];
+  const pendingApprovals = [
+    ...pendingAttendance.map((record) => ({
+      type: "Chấm công",
+      code: record.id,
+      title: record.employeeName,
+      detail: `${record.type === "check-out" ? "Check-out" : "Check-in"} · ${record.siteName || ""}`,
+      status: record.status,
+      tone: "warning",
+      link: "hrm-attendance"
+    })),
+    ...pendingOvertime.map((row) => ({
+      type: "Overtime",
+      code: row[0],
+      title: row[1],
+      detail: `${row[3]} · ${row[2]} · ${row[6]} giờ`,
+      status: row[8],
+      tone: "warning",
+      link: "hrm-overtime"
+    }))
+  ];
+
+  const warningItems = [
+    ...riskProjects.map((project) => ({
+      title: project.name,
+      detail: `${project.health || "Theo dõi"} · thực tế ${Number(project.progress || 0)}% / kế hoạch ${projectPlanProgress(project)}%`,
+      source: "Dự án",
+      tone: dashboardTextHas(project.health, ["Chậm", "Rủi ro"]) ? "danger" : "warning",
+      projectId: project.id
+    })),
+    ...financeIssueRows.map(({ row, project }) => ({
+      title: row[1] || row[0],
+      detail: `${row[13] || "Cần rà soát"} · lợi nhuận ${dashboardCompactMoney(row[10])}`,
+      source: "Tài chính dự án",
+      tone: Number(row[10] || 0) < 0 ? "danger" : "warning",
+      projectId: project?.id,
+      link: "finance-projects"
+    })),
+    ...dueDebtRows.map((row) => {
+      const project = dashboardProjectFor(projectIndex, row[2]);
+      return {
+        title: `${row[1]} · ${row[2]}`,
+        detail: `${row[5]} · còn ${dashboardMoney(row[8])} · ${dashboardDueLabel(row[9], row[10])}`,
+        source: "Công nợ dự án",
+        tone: dashboardDaysUntil(row[9]) !== null && dashboardDaysUntil(row[9]) < 0 ? "danger" : "warning",
+        projectId: project?.id,
+        link: "finance-projects"
+      };
+    }),
+    ...materialIssues.map((row) => ({
+      title: row.item || row.id,
+      detail: `${row.project || row.location || "Kho"} · ${row.note || row.status}`,
+      source: "Kho vật tư",
+      tone: "warning",
+      link: "materials"
+    }))
+  ].sort((a, b) => dashboardToneRank(a.tone) - dashboardToneRank(b.tone));
+
+  const taskItems = [
+    ...pendingApprovals.map((item) => ({ title: item.title, detail: item.detail, source: item.type, priority: "Cần duyệt", due: "Hôm nay", tone: "warning", link: item.link })),
+    ...dueDebtRows.map((row) => {
+      const project = dashboardProjectFor(projectIndex, row[2]);
+      return { title: `${row[1]} ${row[2]}`, detail: `${row[5]} · còn ${dashboardMoney(row[8])}`, source: "Tài chính", priority: "Cao", due: dashboardDueLabel(row[9], row[10]), tone: dashboardDaysUntil(row[9]) !== null && dashboardDaysUntil(row[9]) < 0 ? "danger" : "warning", projectId: project?.id, link: "finance-projects" };
+    }),
+    ...materialIssues.map((row) => ({ title: row.item || row.id, detail: `${row.project || row.location || "Kho"} · ${row.note || row.status}`, source: "Kho", priority: "Kiểm tra", due: "Hôm nay", tone: "warning", link: "materials" })),
+    ...riskProjects.map((project) => ({ title: project.name, detail: `${project.health || "Theo dõi"} · tiến độ ${project.progress || 0}%`, source: "Dự án", priority: dashboardTextHas(project.health, ["Chậm", "Rủi ro"]) ? "Cao" : "Theo dõi", due: "Trong tuần", tone: dashboardTextHas(project.health, ["Chậm", "Rủi ro"]) ? "danger" : "warning", projectId: project.id }))
+  ].slice(0, 12);
+  const myTasks = dashboardMyTasks(sourceProjects);
+
+  const todayLabel = new Date().toLocaleDateString("vi-VN", { weekday: "long", day: "2-digit", month: "2-digit", year: "numeric" });
   $("#app").innerHTML = `
+    <section class="dashboard-page">
     <div class="project-toolbar">
-      <div class="menu-wrap"><button class="btn quick" data-action="toggle-quick">♟ Xem nhanh⌄</button><div class="tool-menu" id="quick-menu"><button>▦ DASHBOARD</button><button>▤ Dự án theo nhóm</button><button>◉ Tổng quan nhanh</button></div></div>
+      <div class="menu-wrap"><button class="btn quick" data-action="toggle-quick">♟ Xem nhanh⌄</button><div class="tool-menu" id="quick-menu"><button data-dashboard-link="projects-overview">▦ Tổng quan dự án</button><button data-dashboard-link="finance-projects">▤ Tài chính dự án</button><button data-dashboard-link="hrm-attendance">◉ Chấm công</button></div></div>
       <button class="btn quick" data-action="reload">⟳ Tải lại</button>
-      <select class="toolbar-select sort-select" aria-label="Sắp xếp"><option value="code">Mã dự án</option><option value="name">Tên dự án</option><option value="created">Ngày tạo</option><option value="updated" selected>Ngày cập nhật</option><option value="status">Trạng thái</option><option value="health">Tình trạng</option></select>
-      <button class="sort-dir" data-action="sort-dir" aria-label="Sắp xếp giảm dần">${ui.sortDir === "desc" ? "⇣" : "⇡"}</button>
-      <div class="date-wrap"><button class="date-trigger" data-action="toggle-date">${ui.dateRange}　▣</button><div class="date-menu" id="date-menu"><select aria-label="Loại ngày"><option value="all">Tất cả</option><option value="created">Ngày tạo</option><option value="start">Ngày bắt đầu</option><option value="end">Ngày kết thúc</option></select><div class="date-grid"><button>7 ngày qua</button><button>30 ngày qua</button><button>Quý này</button><button>Mọi lúc</button></div></div></div>
       <button class="btn" data-action="create-project">+ Dự án</button>
-      <div class="menu-wrap"><button class="btn" data-action="toggle-utility">Tiện ích⌄</button><div class="tool-menu right" id="utility-menu"><button>Nhập dữ liệu Excel</button><button>Xuất danh sách dự án</button><button>Cấu hình hiển thị</button></div></div>
+      <div class="menu-wrap"><button class="btn" data-action="toggle-utility">Tiện ích⌄</button><div class="tool-menu right" id="utility-menu"><button data-dashboard-link="catalog">Cấu hình dữ liệu</button><button data-dashboard-link="drive">Mở Drive</button><button data-dashboard-link="standards">Quy chuẩn</button></div></div>
     </div>
-    <div class="workspace">
-    <div class="project-feed">
-    <div class="summary-strip">
-      <article class="donut-card teal-bg"><div class="donut"><b>40</b></div><div><p><i class="sq blue"></i>Kế hoạch　 <b>2</b>　(5%)</p><p><i class="sq cyan"></i>Đang làm? <b>37</b>　(93%)</p><p><i class="sq orange"></i>Tạm dừng　 <b>0</b>　(0%)</p><p><i class="sq green"></i>Hoàn thành? <b>1</b>　(3%)</p></div></article>
-      <article class="donut-card teal-bg"><div class="donut"><b>40</b></div><div><p><i class="sq blue"></i>Bình thường　 <b>30</b>　(75%)</p><p><i class="sq green"></i>Tăng tốc　 <b>0</b>　(0%)</p><p><i class="sq orange"></i>Lưu ý　 <b>0</b>　(0%)</p><p><i class="sq red"></i>Rủi ro　 <b>0</b>　(0%)</p><p><i class="sq red"></i>Chậm trễ　 <b>10</b>　(25%)</p></div></article>
-      <article class="member-card"><b>DỰ ÁN TÔI THAM GIA: 25</b><div><span>Giám đốc <b>18</b></span><span>Thành viên <b>2</b></span><span>Chỉ huy <b>5</b></span><span>Theo dõi <b>0</b></span></div></article>
+    <header class="dashboard-head"><div><h2>Dashboard điều hành</h2><p>Tổng hợp từ Dự án, Tài chính, Nhân sự, Kho và Phiếu chấm công. Bấm vào từng số hoặc dòng để mở đúng nguồn dữ liệu.</p></div><time>${escapeHtml(todayLabel)}</time></header>
+    <div class="dashboard-kpis">
+      ${dashboardKpi("Tổng dự án", String(totalProjects), `${activeCount} đang triển khai · ${averageProgress}% tiến độ TB`, "projects-overview")}
+      ${dashboardKpi("Dự án cần chú ý", String(riskProjects.length), `${dashboardPercent(riskProjects.length, totalProjects)} tổng dự án`, "projects-overview", riskProjects.length ? "warning" : "")}
+      ${dashboardKpi("Chấm công cần duyệt", String(pendingAttendance.length), "Phiếu điện thoại chưa hợp lệ", "hrm-attendance", pendingAttendance.length ? "warning" : "")}
+      ${dashboardKpi("OT cần duyệt", String(pendingOvertime.length), "Phiếu overtime chờ xác nhận", "hrm-overtime", pendingOvertime.length ? "warning" : "")}
+      ${dashboardKpi("Công nợ đến hạn", String(dueDebtRows.length), `Phải thu/trả còn ${dashboardCompactMoney(debtRows.reduce((sum, row) => sum + Number(row[8] || 0), 0))}`, "finance-projects", dueDebtRows.length ? "danger" : "")}
+      ${dashboardKpi("Vật tư cần kiểm tra", String(materialIssues.length), `${materialsRows.length || 0} dòng vật tư đang ghi nhận`, "materials", materialIssues.length ? "warning" : "")}
     </div>
-    <div class="finance-strip">
-      <article class="finance-box owner"><h3>CHỦ ĐẦU TƯ (CĐT)</h3>${data.finance.map(([x,y]) => `<div><span>${x}</span><b>${money(y)}</b></div>`).join("")}<strong>CĐT còn nợ <b>61.600.000.000</b></strong></article>
-      <article class="finance-box contractor"><h3>NHÀ THẦU (NT)</h3><div><span>Hợp đồng</span><b>186.420.000.000</b></div><div><span>Đã thực hiện</span><b>92.610.000.000</b></div><div><span>Đề nghị thanh toán</span><b>54.880.000.000</b></div><div><span>Trả thực tế</span><b>42.300.000.000</b></div><strong>Còn nợ NT <b>12.580.000.000</b></strong></article>
-      <article class="finance-box supplier"><h3>NHÀ CUNG CẤP (NCC)</h3><div><span>Hợp đồng</span><b>72.840.000.000</b></div><div><span>Đề nghị thanh toán</span><b>31.600.000.000</b></div><div><span>Trả thực tế</span><b>26.240.000.000</b></div><strong>Còn nợ NCC <b>5.360.000.000</b></strong></article>
+    ${dashboardMyTasksPanel(myTasks)}
+    <div class="dashboard-layout">
+      <section class="dashboard-panel dashboard-wide">
+        <header><div><h3>Việc cần làm</h3><p>Các việc phát sinh từ phiếu chờ duyệt, công nợ đến hạn, vật tư cần kiểm tra và dự án có rủi ro.</p></div><span>${taskItems.length} việc</span></header>
+        <div class="dashboard-table-wrap"><table class="dashboard-table"><thead><tr><th>Nội dung</th><th>Nguồn</th><th>Ưu tiên</th><th>Hạn</th><th></th></tr></thead><tbody>${dashboardActionRows(taskItems)}</tbody></table></div>
+      </section>
+      <section class="dashboard-panel">
+        <header><div><h3>Phiếu cần duyệt</h3><p>Không trộn số liệu demo. Danh sách lấy từ Chấm công và Overtime.</p></div><span>${pendingApprovals.length} phiếu</span></header>
+        <div class="dashboard-table-wrap"><table class="dashboard-table"><thead><tr><th>Loại phiếu</th><th>Người gửi</th><th>Nội dung</th><th>Trạng thái</th><th></th></tr></thead><tbody>${dashboardApprovalRows(pendingApprovals)}</tbody></table></div>
+      </section>
+      <section class="dashboard-panel dashboard-alert-panel">
+        <header><div><h3>Cảnh báo lưu ý</h3><p>Rủi ro tiến độ, tài chính, công nợ và vật tư được gom về đây để xử lý nhanh.</p></div><span>${warningItems.length} cảnh báo</span></header>
+        <div class="dashboard-table-wrap"><table class="dashboard-table"><thead><tr><th></th><th>Cảnh báo</th><th>Nguồn</th><th></th></tr></thead><tbody>${dashboardWarningRows(warningItems.slice(0, 12))}</tbody></table></div>
+      </section>
+      <section class="dashboard-panel dashboard-finance-panel">
+        <header><div><h3>Tài chính dự án</h3><p>Số liệu lấy từ module Tài chính > Dự án.</p></div><button type="button" data-dashboard-link="finance-projects">Mở chi tiết</button></header>
+        <div class="dashboard-money-grid">
+          <p><span>Thu dự án</span><b class="positive">${dashboardMoney(financeIncome)}</b></p>
+          <p><span>Chi dự án</span><b class="negative">${dashboardMoney(financeExpense)}</b></p>
+          <p><span>Lợi nhuận</span><b class="${financeProfit < 0 ? "negative" : "positive"}">${dashboardMoney(financeProfit)}</b></p>
+          <p><span>Phải thu</span><b>${dashboardMoney(financeReceivable)}</b></p>
+          <p><span>Phải trả</span><b>${dashboardMoney(financePayable)}</b></p>
+          <p><span>Dự án có cảnh báo</span><b>${financeIssueRows.length}</b></p>
+        </div>
+      </section>
+      ${dashboardStatusBreakdown("Trạng thái dự án", statusRows.concat(extraStatuses), totalProjects)}
+      ${dashboardStatusBreakdown("Tình trạng dự án", healthRows, totalProjects)}
     </div>
-    <div class="project-cards">${sortedProjects.map((p) => `<article class="project-compact" data-project="${p.id}"><h2>${p.name}</h2><p><i class="dot blue"></i>${p.status}　 Mã dự án: ${p.code}　 Giám đốc: ${p.manager}</p><div class="project-metrics"><div><small>Tình trạng</small>${badge(p.health)}</div><div class="ring"><b>${p.progress}%</b><small>Công việc</small></div><div><small>Tiến độ kế hoạch</small>${progress(projectPlanProgress(p))}<small>Tiến độ thực tế</small>${progress(p.progress)}</div></div><footer><span>◌ Ngân sách <b>${money(p.budget)}</b></span><span>♧ Thu <b>${money(Math.round(p.spent*.72))}</b></span><span>❉ Chi <b>${money(p.spent)}</b></span></footer></article>`).join("")}</div>
-    </div>
-    <aside class="activity-rail"><div class="rail-date">Chủ nhật, ngày 31/05/2026</div><article><h3>Công việc hôm nay <b>−</b></h3>${data.tasks.concat([["Kiểm tra vật tư nhập kho","02/06","Trung bình"]]).map(([a,b]) => `<div class="rail-row"><small>${b}<br>17:00</small><span>${a}<em>Quá hạn</em></span></div>`).join("")}</article><article><h3>Lịch họp <b>−</b></h3><p class="empty">▣<br>Không có lịch họp nào!</p></article><article><h3>?? xuất cần duyệt <b>−</b></h3>${data.alerts.map(([a,b]) => `<div class="rail-row"><small>15:37</small><span>${b}<small>${a}</small></span></div>`).join("")}</article></aside>
-    </div>${projectModal()}`;
+    ${projectModal()}
+    </section>`;
   bindLanding();
 }
 
@@ -272,10 +735,18 @@ function projectModal() {
 }
 
 function bindLanding() {
-  $(".sort-select").value = ui.sortBy;
   $("#app").onclick = (event) => {
+    const taskView = event.target.closest("[data-my-task-view]")?.dataset.myTaskView;
+    if (taskView) {
+      ui.myTaskView = taskView;
+      return projectLanding();
+    }
+    const taskCard = event.target.closest("[data-project-view][data-project]");
+    if (taskCard) return void (location.href = `/constructions/detail/${taskCard.dataset.project}/?view=${encodeURIComponent(taskCard.dataset.projectView)}`);
     const card = event.target.closest("[data-project]");
     if (card) return void (location.href = `/constructions/detail/${card.dataset.project}/`);
+    const dashboardLink = event.target.closest("[data-dashboard-link]")?.dataset.dashboardLink;
+    if (dashboardLink) return void (location.hash = dashboardLink);
     const template = event.target.closest("[data-template]")?.dataset.template;
     if (template) {
       const templateScope = { "Mẫu nội thất": "Nội thất", "Mẫu Kiến trúc": "Kiến trúc", "Mẫu Kiến trúc Nội thất": "Nội thất kiến trúc", "Mẫu quy hoạch": "Khác" };
@@ -289,7 +760,7 @@ function bindLanding() {
     if (!action) return;
     if (action === "toggle-quick") return $("#quick-menu").classList.toggle("open");
     if (action === "toggle-utility") return $("#utility-menu").classList.toggle("open");
-    if (action === "toggle-date") return $("#date-menu").classList.toggle("open");
+    if (action === "toggle-date") return $("#date-menu")?.classList.toggle("open");
     if (action === "reload") return projectLanding();
     if (action === "sort-dir") { ui.sortDir = ui.sortDir === "desc" ? "asc" : "desc"; return projectLanding(); }
     if (action === "hide-welcome") { ui.hiddenWelcome = true; return projectLanding(); }
@@ -298,8 +769,13 @@ function bindLanding() {
     if (action === "new-project") return $("#project-form").classList.add("open");
     if (action === "show-templates") return $("#template-picker").classList.add("open");
   };
-  $(".sort-select").onchange = (event) => { ui.sortBy = event.target.value; projectLanding(); };
-  $("#date-menu").onclick = (event) => {
+  const sortSelect = $(".sort-select");
+  if (sortSelect) {
+    sortSelect.value = ui.sortBy;
+    sortSelect.onchange = (event) => { ui.sortBy = event.target.value; projectLanding(); };
+  }
+  const dateMenu = $("#date-menu");
+  if (dateMenu) dateMenu.onclick = (event) => {
     const button = event.target.closest(".date-grid button");
     if (!button) return;
     ui.dateRange = button.innerText;
@@ -576,9 +1052,18 @@ const CATALOG_FALLBACK = {
   projectList: [],
   constructionCategories: ["KHẢO SÁT - ĐO ĐẠC", "CHE PHỦ", "PHÁ DỠ", "VẬN CHUYỂN", "XÂY TRÁT", "CHỐNG THẤM", "ĐIỆN NƯỚC", "PCCC / AN TOÀN KỸ THUẬT", "ĐIỀU HÒA", "THIẾT BỊ THÔNG MINH - MẠNG - CAMERA", "THẠCH CAO", "ỐP LÁT", "ĐÁ", "SƠN BẢ", "SÀN GỖ - SÀN NHỰA", "CỬA", "NHÔM KÍNH", "SẮT", "GỖ NỘI THẤT", "RÈM", "CÂY - TIỂU CẢNH", "BIỂN BẢNG LOGO", "DEFECT CHẤM VÁ", "VỆ SINH CN", "KHÁC"],
   materialCategories: ["VẬT LIỆU HOÀN THIỆN", "PHỤ KIỆN ĐỒ NỘI THẤT", "THIẾT BỊ CHIẾU SÁNG", "THIẾT BỊ BẾP", "THIẾT BỊ VỆ SINH", "ĐÈN DECOR", "ĐỒ DECOR", "ĐỒ DECOR BẾP", "CHĂN GA ĐỆM", "ĐỒ THỦ CÔNG", "KHÁC"],
-  contractTypes: ["Hợp đồng thiết kế", "Hợp đồng thi công", "Hợp đồng thiết kế thi công", "Hợp đồng phát sinh"]
+  contractTypes: ["Hợp đồng thiết kế", "Hợp đồng thi công", "Hợp đồng thiết kế thi công", "Hợp đồng phát sinh"],
+  overtimeVoucherTypes: ["Phiếu OT ngày thường", "Phiếu OT cuối tuần", "Phiếu OT ngày lễ", "Phiếu OT bổ sung"],
+  paymentVoucherTypes: ["Phiếu chi dự án", "Phiếu chi vận hành", "Phiếu chi tạm ứng", "Phiếu chi hoàn ứng", "Phiếu chi khác"],
+  attendanceVoucherTypes: ["Check-in", "Check-out", "Phiếu bổ sung công", "Phiếu điều chỉnh công"],
+  inventoryReceiptTypes: ["Nhập mua mới", "Nhập hoàn trả", "Nhập điều chuyển", "Nhập tồn đầu kỳ"],
+  warehouseList: ["Kho VP", "Kho dự án", "Kho công trình", "Kho tạm"],
+  cdtChangeRequestTypes: ["Phát sinh khối lượng", "Thay đổi vật liệu", "Thay đổi thiết kế", "Bổ sung hạng mục"],
+  cdtNoteRequestTypes: ["Ghi chú hiện trạng", "Ghi chú nghiệm thu", "Ghi chú vật tư", "Ghi chú tiến độ"],
+  cdtApprovalRequestTypes: ["Duyệt báo giá", "Duyệt phương án", "Duyệt vật liệu", "Duyệt tiến độ", "Duyệt phát sinh"],
+  incidentIssueTypes: ["Sự cố kỹ thuật", "Sự cố vật tư", "Sự cố an toàn", "Sự cố tiến độ", "Sự cố chất lượng"]
 };
-let catalogData = { projectList: [...CATALOG_FALLBACK.projectList], constructionCategories: [...CATALOG_FALLBACK.constructionCategories], materialCategories: [...CATALOG_FALLBACK.materialCategories], contractTypes: [...CATALOG_FALLBACK.contractTypes] };
+let catalogData = Object.fromEntries(Object.entries(CATALOG_FALLBACK).map(([key, values]) => [key, [...values]]));
 let catalogProjectDefaults = [];
 let catalogProjectRows = [];
 let catalogAutosaveTimer = null;
@@ -595,7 +1080,16 @@ function normalizeCatalogData(input = {}) {
     projectList: catalogList(input.projectList, catalogProjectDefaults.length ? catalogProjectDefaults : CATALOG_FALLBACK.projectList),
     constructionCategories: catalogList(input.constructionCategories, CATALOG_FALLBACK.constructionCategories),
     materialCategories: catalogList(input.materialCategories, CATALOG_FALLBACK.materialCategories),
-    contractTypes: catalogList(input.contractTypes, CATALOG_FALLBACK.contractTypes)
+    contractTypes: catalogList(input.contractTypes, CATALOG_FALLBACK.contractTypes),
+    overtimeVoucherTypes: catalogList(input.overtimeVoucherTypes, CATALOG_FALLBACK.overtimeVoucherTypes),
+    paymentVoucherTypes: catalogList(input.paymentVoucherTypes, CATALOG_FALLBACK.paymentVoucherTypes),
+    attendanceVoucherTypes: catalogList(input.attendanceVoucherTypes, CATALOG_FALLBACK.attendanceVoucherTypes),
+    inventoryReceiptTypes: catalogList(input.inventoryReceiptTypes, CATALOG_FALLBACK.inventoryReceiptTypes),
+    warehouseList: catalogList(input.warehouseList, CATALOG_FALLBACK.warehouseList),
+    cdtChangeRequestTypes: catalogList(input.cdtChangeRequestTypes, CATALOG_FALLBACK.cdtChangeRequestTypes),
+    cdtNoteRequestTypes: catalogList(input.cdtNoteRequestTypes, CATALOG_FALLBACK.cdtNoteRequestTypes),
+    cdtApprovalRequestTypes: catalogList(input.cdtApprovalRequestTypes, CATALOG_FALLBACK.cdtApprovalRequestTypes),
+    incidentIssueTypes: catalogList(input.incidentIssueTypes, CATALOG_FALLBACK.incidentIssueTypes)
   };
 }
 const projectListOptions = () => catalogList(catalogData.projectList, catalogProjectDefaults.length ? catalogProjectDefaults : CATALOG_FALLBACK.projectList);
@@ -645,8 +1139,63 @@ const CATALOG_LIST_CONFIG = {
     note: "Dùng để phân loại hợp đồng trong dự án và giao dịch tài chính.",
     placeholder: "VD: Hợp đồng bảo trì",
     preserveCase: true
+  },
+  overtimeVoucherTypes: {
+    title: "Danh sách Phiếu Overtime",
+    note: "Dùng cho module Nhân sự > Phiếu Overtime và các bước xét duyệt OT.",
+    placeholder: "VD: Phiếu OT công trình",
+    preserveCase: true
+  },
+  paymentVoucherTypes: {
+    title: "Danh sách Phiếu chi",
+    note: "Dùng cho tài chính, chi phí dự án và các phiếu thanh toán nội bộ.",
+    placeholder: "VD: Phiếu chi vật tư",
+    preserveCase: true
+  },
+  attendanceVoucherTypes: {
+    title: "Danh sách phiếu chấm công",
+    note: "Dùng cho phiếu check-in/check-out, bổ sung công và điều chỉnh công.",
+    placeholder: "VD: Phiếu bổ sung công",
+    preserveCase: true
+  },
+  inventoryReceiptTypes: {
+    title: "Danh sách Phiếu nhập kho",
+    note: "Dùng cho quy trình nhập kho vật tư, thiết bị và điều chuyển tồn.",
+    placeholder: "VD: Nhập bảo hành trả về",
+    preserveCase: true
+  },
+  warehouseList: {
+    title: "Danh sách Kho",
+    note: "Dùng cho Kho VP, Kho dự án, kho công trình và vị trí lưu vật tư.",
+    placeholder: "VD: Kho showroom",
+    preserveCase: true
+  },
+  cdtChangeRequestTypes: {
+    title: "Danh sách Yêu cầu Phát sinh của CĐT",
+    note: "Dùng cho quy trình ghi nhận phát sinh, thay đổi phương án và bổ sung hạng mục từ CĐT.",
+    placeholder: "VD: Phát sinh vật tư",
+    preserveCase: true
+  },
+  cdtNoteRequestTypes: {
+    title: "Danh sách Yêu cầu ghi chú của CĐT",
+    note: "Dùng để phân loại ghi chú, nhắc việc và yêu cầu bổ sung thông tin từ CĐT.",
+    placeholder: "VD: Ghi chú nghiệm thu",
+    preserveCase: true
+  },
+  cdtApprovalRequestTypes: {
+    title: "Danh sách Yêu cầu cần CĐT phê duyệt",
+    note: "Dùng cho các mục cần CĐT xác nhận trước khi triển khai hoặc thanh toán.",
+    placeholder: "VD: Duyệt mẫu vật liệu",
+    preserveCase: true
+  },
+  incidentIssueTypes: {
+    title: "Danh sách Vấn đề sự cố",
+    note: "Dùng để phân loại sự cố kỹ thuật, chất lượng, an toàn, vật tư và tiến độ.",
+    placeholder: "VD: Sự cố bảo hành",
+    preserveCase: true
   }
 };
+const CATALOG_PAGE_LIST_TYPES = ["projectList", "partnerCustomers", "partnerContractors", "partnerSuppliers", "constructionCategories", "materialCategories", "contractTypes", "overtimeVoucherTypes", "paymentVoucherTypes", "attendanceVoucherTypes", "inventoryReceiptTypes", "warehouseList", "cdtChangeRequestTypes", "cdtNoteRequestTypes", "cdtApprovalRequestTypes", "incidentIssueTypes"];
 const FINANCE_CAPITAL_CATEGORY_OPTIONS = ["NGÂN HÀNG", "KHÁC"];
 const TRANSACTION_FLOW_LIST_CONFIG = {
   financeFlowTypes: {
@@ -1357,7 +1906,15 @@ async function saveDriveFiles(files) {
 }
 
 function driveIcon(type) {
-  return type === "PDF" ? "PDF" : type === "Excel" ? "XLS" : type === "Word" ? "DOC" : type === "PowerPoint" ? "PPT" : type === "Ảnh" ? "IMG" : type === "ZIP" ? "ZIP" : "FILE";
+  const icon = type === "PDF" ? ["pdf", "PDF"]
+    : type === "Excel" ? ["excel", "XLS"]
+    : type === "Word" ? ["word", "DOC"]
+    : type === "PowerPoint" ? ["powerpoint", "PPT"]
+    : type === "Ảnh" ? ["image", "IMG"]
+    : type === "ZIP" ? ["archive", "ZIP"]
+    : type === "RAR" ? ["archive", "RAR"]
+    : ["file", "FILE"];
+  return `<b class="drive-mini-icon ${icon[0]}" title="${escapeHtml(type || "File")}">${icon[1]}</b>`;
 }
 
 function driveBadge(scope) {
@@ -1373,12 +1930,13 @@ function driveTypeFromName(name) {
   if (["doc", "docx"].includes(ext)) return "Word";
   if (["ppt", "pptx"].includes(ext)) return "PowerPoint";
   if (ext === "zip") return "ZIP";
+  if (ext === "rar") return "RAR";
   return "File";
 }
 
-const DRIVE_ACCEPT = ".pdf,.png,.jpg,.jpeg,.webp,.doc,.docx,.xls,.xlsx,.csv,.ppt,.pptx,.txt,.md,.note,.zip";
+const DRIVE_ACCEPT = ".pdf,.png,.jpg,.jpeg,.webp,.doc,.docx,.xls,.xlsx,.csv,.ppt,.pptx,.txt,.md,.note,.zip,.rar";
 const DRIVE_ALLOWED_EXTENSIONS = new Set(DRIVE_ACCEPT.split(","));
-const DRIVE_PREVIEW_EXTENSIONS = new Set([".pdf", ".png", ".jpg", ".jpeg", ".webp", ".doc", ".docx", ".xls", ".xlsx", ".csv", ".ppt", ".pptx", ".txt", ".md", ".note"]);
+const DRIVE_PREVIEW_EXTENSIONS = new Set([".pdf", ".png", ".jpg", ".jpeg", ".webp", ".doc", ".docx", ".xls", ".xlsx", ".csv", ".ppt", ".pptx", ".txt", ".md", ".note", ".zip", ".rar"]);
 const driveExt = (name) => {
   const match = String(name || "").toLowerCase().match(/\.[^.\\/]+$/);
   return match ? match[0] : "";
@@ -1393,6 +1951,7 @@ const drivePreviewKind = (name) => {
   const ext = driveExt(name);
   if (ext === ".pdf") return "pdf";
   if ([".png", ".jpg", ".jpeg", ".webp"].includes(ext)) return "image";
+  if ([".zip", ".rar"].includes(ext)) return "archive";
   if ([".doc", ".docx", ".xls", ".xlsx", ".csv", ".ppt", ".pptx", ".txt", ".md", ".note"].includes(ext)) return "office";
   return "file";
 };
@@ -1422,11 +1981,22 @@ function driveRowsMarkup(rows) {
     const fileOpen = canPreview ? `<button type="button" class="drive-file drive-file-button" data-drive="preview" data-index="${originalIndex}" title="Click để đọc nhanh">` : `<div class="drive-file">`;
     const fileClose = canPreview ? "</button>" : "</div>";
     const actions = `<button data-drive="download" data-index="${originalIndex}">Tải</button><button data-drive="delete" data-index="${originalIndex}">×</button>`;
-    return `<tr><td>${fileOpen}<b>${driveIcon(file[2])}</b><span>${escapeHtml(file[1])}<small>${escapeHtml(file[0])} · ${escapeHtml(file[2])} · ${escapeHtml(driveExpiryLabel(file[12]))}</small></span>${fileClose}</td><td>${escapeHtml(file[5])}</td><td>${financeDate(file[6])}</td><td>${money(file[7])} KB</td><td>${driveBadge(file[8])}</td><td>${escapeHtml(file[9])}</td><td class="drive-actions">${actions}</td></tr>`;
+    return `<tr><td>${fileOpen}${driveIcon(file[2])}<span>${escapeHtml(file[1])}<small>${escapeHtml(file[0])} · ${escapeHtml(file[2])} · ${escapeHtml(driveExpiryLabel(file[12]))}</small></span>${fileClose}</td><td>${escapeHtml(file[5])}</td><td>${financeDate(file[6])}</td><td>${money(file[7])} KB</td><td>${driveBadge(file[8])}</td><td>${escapeHtml(file[9])}</td><td class="drive-actions">${actions}</td></tr>`;
   }).join("");
 }
 
 function drivePreviewContent(data) {
+  if (data.kind === "archive") {
+    const entries = Array.isArray(data.entries) ? data.entries : [];
+    if (!entries.length) return `<div class="drive-preview-empty">${escapeHtml(data.message || "Không đọc được danh sách file trong gói nén.")}</div>`;
+    const summary = `${escapeHtml(data.archiveType || "Archive")} · ${entries.length}${data.total && data.total > entries.length ? ` / ${escapeHtml(data.total)}` : ""} mục`;
+    return `<section class="drive-archive-tree"><h4>${summary}</h4><div class="drive-archive-list">${entries.map((entry) => {
+      const level = Math.max(0, Math.min(12, Number(entry.level) || 0));
+      const type = entry.type === "folder" ? "folder" : "file";
+      const marker = type === "folder" ? "DIR" : escapeHtml(entry.ext || "FILE");
+      return `<p class="drive-archive-entry ${type}" style="--level:${level}"><b>${marker}</b><span>${escapeHtml(entry.name || entry.path)}</span><small>${escapeHtml(entry.path || "")}</small></p>`;
+    }).join("")}</div>${data.total && data.total > entries.length ? `<p class="drive-archive-note">Đang hiển thị ${entries.length} mục đầu tiên.</p>` : ""}</section>`;
+  }
   if (data.text) return `<pre>${escapeHtml(data.text)}</pre>`;
   if (data.message) return `<div class="drive-preview-empty">${escapeHtml(data.message)}</div>`;
   if (Array.isArray(data.sheets)) {
@@ -1458,7 +2028,7 @@ async function openDrivePreview(file) {
   const onKey = (event) => { if (event.key === "Escape") close(); };
   modal.querySelector("[data-drive-preview-close]").onclick = close;
   document.addEventListener("keydown", onKey);
-  if (kind === "office") {
+  if (kind === "office" || kind === "archive") {
     try {
       const response = await fetch(drivePreviewUrl(file), { credentials: "same-origin" });
       const bodyJson = await response.json();
@@ -1514,9 +2084,9 @@ async function renderDrive() {
     <header class="drive-head"><div><h2>▰ LE DOME DRIVE</h2><p>Nơi các thành viên gửi nhanh file. File lưu tại đây sẽ tự động xóa sau 1 tuần.</p></div><button class="btn" data-drive="open-upload">＋ Chia sẻ file</button></header>
     <div class="finance-kpis drive-kpis"><article><small>Tổng file</small><b>${files.length}</b><span>Đang chia sẻ nội bộ</span></article><article><small>Dung lượng</small><b>${money(totalSize)} KB</b><span>Tổng dung lượng hiện có</span></article><article><small>Thời hạn lưu</small><b>7 ngày</b><span>Tự xóa file tải lên</span></article><article><small>Toàn công ty</small><b>${files.filter((file) => file[8] === "Toàn công ty").length}</b><span>Ai cũng xem được</span></article></div>
     <div class="drive-layout">
-      <main class="drive-main"><p class="drive-rule">Le DOME Drive dùng để gửi nhanh file cho đội nội bộ. File tải lên được lưu tạm và tự động xóa sau 7 ngày.</p><label class="drive-drop" id="drive-drop"><input id="drive-upload-input" type="file" multiple accept="${DRIVE_ACCEPT}"><strong>Kéo thả file hoặc folder vào đây</strong><span>Hỗ trợ đọc nhanh PDF, JPEG, PNG, Word, Excel, PowerPoint. Có thể thả cả folder.</span><em>${escapeHtml(state.driveUploadMessage || "Hoặc bấm để chọn file từ máy. File mới sẽ được thêm thẳng vào Drive và tự xóa sau 7 ngày.")}</em></label><div class="drive-tools"><input id="drive-search" value="${escapeHtml(state.driveQuery)}" placeholder="Tìm tên file, folder, người chia sẻ, ghi chú"><button data-drive="reset">Khôi phục mẫu</button></div><div class="drive-table-wrap"><table class="drive-table"><thead><tr><th>File</th><th>Người chia sẻ</th><th>Cập nhật</th><th>Dung lượng</th><th>Quyền xem</th><th>Ghi chú</th><th></th></tr></thead><tbody>${driveRowsMarkup(filtered) || `<tr><td colspan="7">Chưa có file phù hợp.</td></tr>`}</tbody></table></div></main>
+      <main class="drive-main"><p class="drive-rule">Le DOME Drive dùng để gửi nhanh file cho đội nội bộ. File tải lên được lưu tạm và tự động xóa sau 7 ngày.</p><label class="drive-drop" id="drive-drop"><input id="drive-upload-input" type="file" multiple accept="${DRIVE_ACCEPT}"><strong>Kéo thả file hoặc folder vào đây</strong><span>Hỗ trợ đọc nhanh PDF, JPEG, PNG, Word, Excel, PowerPoint, ZIP và RAR. Có thể thả cả folder.</span><em>${escapeHtml(state.driveUploadMessage || "Hoặc bấm để chọn file từ máy. File mới sẽ được thêm thẳng vào Drive và tự xóa sau 7 ngày.")}</em></label><div class="drive-tools"><input id="drive-search" value="${escapeHtml(state.driveQuery)}" placeholder="Tìm tên file, folder, người chia sẻ, ghi chú"><button data-drive="reset">Khôi phục mẫu</button></div><div class="drive-table-wrap"><table class="drive-table"><thead><tr><th>File</th><th>Người chia sẻ</th><th>Cập nhật</th><th>Dung lượng</th><th>Quyền xem</th><th>Ghi chú</th><th></th></tr></thead><tbody>${driveRowsMarkup(filtered) || `<tr><td colspan="7">Chưa có file phù hợp.</td></tr>`}</tbody></table></div></main>
     </div>
-    <div class="finance-modal" id="drive-modal"><form id="drive-form"><header><h3>Chia sẻ file</h3><button type="button" data-drive="close-upload">×</button></header><label class="wide">Tên file<input name="name" required placeholder="VD: Hợp đồng mẫu.docx"></label><label>Loại<select name="type"><option>PDF</option><option>Word</option><option>Excel</option><option>ZIP</option><option>File</option></select></label><label>Thuộc mục<input name="topic" placeholder="VD: HDT 17T5"></label><label>Quyền xem<input name="scope" value="Toàn công ty"></label><label class="wide">Ghi chú<textarea name="note" placeholder="Mô tả ngắn về file"></textarea></label><footer><button type="button" class="btn secondary" data-drive="close-upload">Đóng</button><button class="btn">Lưu chia sẻ</button></footer></form></div>
+    <div class="finance-modal" id="drive-modal"><form id="drive-form"><header><h3>Chia sẻ file</h3><button type="button" data-drive="close-upload">×</button></header><label class="wide">Tên file<input name="name" required placeholder="VD: Hợp đồng mẫu.docx"></label><label>Loại<select name="type"><option>PDF</option><option>Word</option><option>Excel</option><option>PowerPoint</option><option>ZIP</option><option>RAR</option><option>File</option></select></label><label>Thuộc mục<input name="topic" placeholder="VD: HDT 17T5"></label><label>Quyền xem<input name="scope" value="Toàn công ty"></label><label class="wide">Ghi chú<textarea name="note" placeholder="Mô tả ngắn về file"></textarea></label><footer><button type="button" class="btn secondary" data-drive="close-upload">Đóng</button><button class="btn">Lưu chia sẻ</button></footer></form></div>
   </section>`;
   bindDrive();
 }
@@ -3609,6 +4179,7 @@ const HRM_PAYROLL = [
   { department: "BP THIẾT KẾ", order: 10, staffCode: "NS005", name: "Bùi Vũ Kiên", title: "Kiến trúc sư", agreedSalary: 8000000, workDays: 24.5, project: "VPH", contract: "Thi công", rate: "", revenue: 0, projectBonus: 0, transportAllowance: 160000, tax: 0 },
   { department: "BP HCNS", order: 11, staffCode: "NS012", name: "Hoàng Thu Mai", title: "Hành chính", agreedSalary: 10000000, workDays: 24, project: "", contract: "", rate: "", revenue: 0, projectBonus: 0, transportAllowance: 0, tax: 0 }
 ];
+const HRM_PAYROLL_STORAGE = "ledome.hrmPayroll.v1";
 const ATTENDANCE_RULES = {
   month: "06 / 2026",
   workStart: "08:30",
@@ -3672,35 +4243,84 @@ function attendancePolicyMarkup() {
     <p class="attendance-formula"><b>Công tính lương mẫu</b><span>Có mặt + phép hưởng lương + OT có phiếu / 8 - khấu trừ đi muộn/về sớm.</span></p>
   </section>`;
 }
-function attendanceDailyTimeRows(rows) {
-  const days = [1,2,3,4,5,6,8,9,10,11,12,13];
-  return rows.flatMap((row, staffIndex) => days.map((day, dayIndex) => {
-    const lateMinor = dayIndex < row.lateMinor;
-    const lateMajor = dayIndex >= row.lateMinor && dayIndex < row.lateMinor + row.lateMajor;
-    const earlyMinor = dayIndex < row.earlyMinor;
-    const earlyMajor = dayIndex >= row.earlyMinor && dayIndex < row.earlyMinor + row.earlyMajor;
-    const leave = dayIndex >= row.present && dayIndex < row.present + row.leave;
-    const checkIn = leave ? "--" : lateMajor ? "09:12" : lateMinor ? "08:47" : ["08:21","08:26","08:30","08:24"][(staffIndex + dayIndex) % 4];
-    const checkOut = leave ? "--" : earlyMajor ? "16:58" : earlyMinor ? "17:42" : ["18:02","18:08","18:12","18:18"][(staffIndex + dayIndex) % 4];
-    const issue = lateMajor ? "Đi muộn trên 30 phút" : lateMinor ? "Đi muộn 15-30 phút" : earlyMajor ? "Về sớm trên 30 phút" : earlyMinor ? "Về sớm 15-30 phút" : leave ? "Nghỉ phép hưởng lương" : "Đủ giờ";
+function attendanceMonthInfo(value = ATTENDANCE_RULES.month) {
+  const match = String(value || "").match(/(\d{1,2})\s*\/\s*(\d{4})/);
+  const fallback = new Date();
+  const month = match ? Number(match[1]) : fallback.getMonth() + 1;
+  const year = match ? Number(match[2]) : fallback.getFullYear();
+  return {
+    month,
+    year,
+    days: new Date(year, month, 0).getDate(),
+    label: `${String(month).padStart(2,"0")}/${year}`
+  };
+}
+function attendanceWeekdayLabel(year, month, day) {
+  return ["CN","T2","T3","T4","T5","T6","T7"][new Date(year, month - 1, day).getDay()];
+}
+function attendanceIsWorkingDay(year, month, day) {
+  const weekday = new Date(year, month - 1, day).getDay();
+  return (weekday >= 1 && weekday <= 5) || (weekday === 6 && day <= 14);
+}
+function attendanceMonthRecords(row, staffIndex, info) {
+  let workIndex = 0;
+  return Array.from({ length: info.days }, (_, dayIndex) => {
+    const day = dayIndex + 1;
+    const isWorkingDay = attendanceIsWorkingDay(info.year, info.month, day);
+    const weekday = attendanceWeekdayLabel(info.year, info.month, day);
+    if (!isWorkingDay) return { day, weekday, checkIn: "", checkOut: "", ot: "", credit: "", note: "Ngày nghỉ", kind: "rest" };
+    const currentWorkIndex = workIndex++;
+    const lateMinorEnd = row.lateMinor;
+    const lateMajorEnd = lateMinorEnd + row.lateMajor;
+    const earlyMinorEnd = lateMajorEnd + row.earlyMinor;
+    const earlyMajorEnd = earlyMinorEnd + row.earlyMajor;
+    const lateMinor = currentWorkIndex < lateMinorEnd;
+    const lateMajor = currentWorkIndex >= lateMinorEnd && currentWorkIndex < lateMajorEnd;
+    const earlyMinor = currentWorkIndex >= lateMajorEnd && currentWorkIndex < earlyMinorEnd;
+    const earlyMajor = currentWorkIndex >= earlyMinorEnd && currentWorkIndex < earlyMajorEnd;
+    const leave = currentWorkIndex >= row.present && currentWorkIndex < row.present + row.leave;
+    const absent = currentWorkIndex >= row.present + row.leave;
+    const checkIn = leave || absent ? "--" : lateMajor ? "09:12" : lateMinor ? "08:47" : ["08:21","08:26","08:30","08:24"][(staffIndex + currentWorkIndex) % 4];
+    const checkOut = leave || absent ? "--" : earlyMajor ? "16:58" : earlyMinor ? "17:42" : ["18:02","18:08","18:12","18:18"][(staffIndex + currentWorkIndex) % 4];
+    const issue = absent ? "Thiếu công" : leave ? "Nghỉ phép hưởng lương" : lateMajor ? "Đi muộn trên 30 phút" : lateMinor ? "Đi muộn 15-30 phút" : earlyMajor ? "Về sớm trên 30 phút" : earlyMinor ? "Về sớm 15-30 phút" : "Đủ giờ";
+    const approvedOt = row.otForms > 0 && currentWorkIndex >= Math.max(0, row.present - row.otForms) && currentWorkIndex < row.present;
+    const ot = approvedOt ? attendanceWork(row.otHours / row.otForms) : "";
+    const credit = absent ? "0" : leave ? "P" : lateMajor || earlyMajor ? "0.5" : lateMinor || earlyMinor ? "0.7" : "1";
+    const kind = absent ? "absent" : leave ? "leave" : issue === "Đủ giờ" ? "ok" : "review";
     return {
-      date: `${String(day).padStart(2,"0")}/06/2026`,
-      staffCode: row.staffCode,
-      staffName: row.staffName,
-      role: row.role,
+      day,
+      weekday,
       checkIn,
       checkOut,
-      site: ["VP Le Dome","Căn hộ PN An Định","Hoàng Đạo Thúy - 17T5"][(staffIndex + dayIndex) % 3],
-      status: leave ? "Phép" : issue === "Đủ giờ" ? "Hợp lệ" : "Cần kiểm tra",
-      note: issue
+      ot,
+      credit,
+      note: issue,
+      site: ["VP Le Dome","Căn hộ PN An Định","Hoàng Đạo Thúy - 17T5"][(staffIndex + currentWorkIndex) % 3],
+      kind
     };
-  }));
+  });
+}
+function attendanceMonthCell(record, field) {
+  const value = record[field] || "";
+  const tooltip = record.site ? `${record.site} - ${record.note}` : record.note;
+  return `<td class="attendance-month-cell ${record.kind}" title="${escapeHtml(tooltip)}">${escapeHtml(value)}</td>`;
+}
+function attendanceMonthStaffRows(row, staffIndex, info) {
+  const records = attendanceMonthRecords(row, staffIndex, info);
+  const baseWork = row.present + row.leave - row.deduction;
+  const identityCells = `<td class="attendance-month-person" rowspan="4"><b>${escapeHtml(row.staffName)}</b><small>${escapeHtml(row.staffCode)}</small></td><td class="attendance-month-role" rowspan="4">${escapeHtml(row.role)}</td><td class="attendance-month-code" rowspan="4">${escapeHtml(row.staffCode)}</td>`;
+  const totalCells = `<td class="attendance-month-total" rowspan="4">${attendanceWork(baseWork)}</td><td class="attendance-month-total" rowspan="4">${attendanceWork(row.otWork)}</td><td class="attendance-month-total strong" rowspan="4">${attendanceWork(row.payable)}</td>`;
+  const line = (label, field, includeRowspanCells = false) => `<tr class="attendance-month-staff ${staffIndex % 2 ? "alt" : ""}">${includeRowspanCells ? identityCells : ""}<td class="attendance-month-line">${label}</td>${records.map((record) => attendanceMonthCell(record, field)).join("")}${includeRowspanCells ? totalCells : ""}</tr>`;
+  return `${line("S", "checkIn", true)}${line("C", "checkOut")}${line("OT (giờ)", "ot")}${line("TC", "credit")}`;
 }
 function attendanceDailyTimeTable(rows) {
-  const dailyRows = attendanceDailyTimeRows(rows);
-  return `<section class="attendance-daily-card">
-    <header><div><h3>Bảng giờ chấm công theo ngày</h3><p>Chi tiết giờ vào/ra từng ngày để đối chiếu khi chốt công tháng. Đi muộn/về sớm chỉ thể hiện ở ghi chú và được tính vào công thức khấu trừ.</p></div><span>${dailyRows.length} dòng</span></header>
-    <div class="hrm-table-wrap"><table class="hrm-table attendance-daily-table"><thead><tr><th>Ngày</th><th>Nhân sự</th><th>Vai trò</th><th>Check-in</th><th>Check-out</th><th>Điểm chấm công</th><th>Trạng thái</th><th>Ghi chú</th></tr></thead><tbody>${dailyRows.map((row) => `<tr><td><b>${escapeHtml(row.date)}</b></td><td class="attendance-person"><b>${escapeHtml(row.staffName)}</b><small>${escapeHtml(row.staffCode)}</small></td><td>${escapeHtml(row.role)}</td><td><strong>${escapeHtml(row.checkIn)}</strong></td><td><strong>${escapeHtml(row.checkOut)}</strong></td><td>${escapeHtml(row.site)}</td><td>${hrmStatus(row.status)}</td><td class="attendance-note">${escapeHtml(row.note)}</td></tr>`).join("")}</tbody></table></div>
+  const info = attendanceMonthInfo();
+  const days = Array.from({ length: info.days }, (_, index) => index + 1);
+  const dayHeaders = days.map((day) => `<th class="${attendanceIsWorkingDay(info.year, info.month, day) ? "" : "rest"}">${day}</th>`).join("");
+  const weekdayHeaders = days.map((day) => `<th class="${attendanceIsWorkingDay(info.year, info.month, day) ? "" : "rest"}">${attendanceWeekdayLabel(info.year, info.month, day)}</th>`).join("");
+  return `<section class="attendance-daily-card attendance-month-card">
+    <header><div><h3>Bảng chấm công tháng ${escapeHtml(info.label)}</h3><p>Chi tiết giờ vào, giờ ra, OT và công tính theo từng ngày trong tháng.</p></div><span>${rows.length} nhân sự</span></header>
+    <div class="hrm-table-wrap attendance-month-wrap"><table class="hrm-table attendance-month-table"><thead><tr><th class="attendance-month-meta" colspan="4">Thời gian: 01/${escapeHtml(info.label)}</th><th class="attendance-month-title" colspan="${info.days}">Bảng chấm công tháng ${escapeHtml(info.label)}</th><th class="attendance-month-meta" colspan="3">${ATTENDANCE_RULES.standardDays} công chuẩn</th></tr><tr><th>Họ tên</th><th>Chức danh</th><th>Mã NV</th><th></th>${dayHeaders}<th>Công</th><th>Lễ/Thêm</th><th>Tổng công</th></tr><tr><th colspan="4"></th>${weekdayHeaders}<th colspan="3"></th></tr></thead><tbody>${rows.map((row, index) => attendanceMonthStaffRows(row, index, info)).join("")}</tbody></table></div>
   </section>`;
 }
 function attendanceSummaryTable(rows) {
@@ -3730,7 +4350,52 @@ function attendanceSummaryTable(rows) {
 function attendanceEvidenceTable(rows) {
   return `<section class="attendance-evidence-card">
     <header><div><h3>Chứng cứ chấm công điện thoại</h3><p>Dữ liệu check-in/check-out vẫn dùng để duyệt GPS, ảnh xác thực và đối chiếu khi chốt bảng công.</p></div><span>${rows.length} bản ghi</span></header>
-    <div class="hrm-table-wrap"><table class="hrm-table attendance-table"><thead><tr><th>Nhân sự</th><th>Check-in</th><th>Check-out</th><th>Điểm chấm công</th><th>Ảnh xác thực</th><th>GPS</th><th>Trạng thái</th><th></th></tr></thead><tbody>${rows.map((row) => `<tr><td><b>${escapeHtml(row[1])}</b><small>${escapeHtml(row[0])}</small></td><td>${escapeHtml(row[2])}</td><td>${escapeHtml(row[3])}</td><td>${escapeHtml(row[4])}</td><td><b class="face-score">◉ ${escapeHtml(row[5])}</b></td><td>${escapeHtml(row[6])}</td><td>${hrmStatus(row[7])}</td><td><button class="hrm-view" data-hrm="evidence" data-code="${escapeHtml(row[0])}" data-record="${escapeHtml(row[8] || "")}">Xem</button></td></tr>`).join("")}</tbody></table></div>
+    <div class="hrm-table-wrap"><table class="hrm-table attendance-table"><thead><tr><th>Nhân sự</th><th>Check-in</th><th>Check-out</th><th>Điểm chấm công</th><th>Ảnh xác thực</th><th>GPS</th><th>Trạng thái</th><th></th></tr></thead><tbody>${rows.map((row) => `<tr><td><b>${escapeHtml(row[1])}</b><small>${escapeHtml(row[0])}</small></td><td>${escapeHtml(row[2])}</td><td>${escapeHtml(row[3])}</td><td>${escapeHtml(row[4])}</td><td><b class="face-score">◉ ${escapeHtml(row[5])}</b></td><td>${attendanceGpsBadge(row)}</td><td>${hrmStatus(row[7])}</td><td><button class="hrm-view" data-hrm="evidence" data-code="${escapeHtml(row[0])}" data-record="${escapeHtml(row[8] || "")}">Xem</button></td></tr>`).join("")}</tbody></table></div>
+  </section>`;
+}
+function attendanceGpsInfoFromRecord(record) {
+  const rawDistance = record.distanceMeters;
+  const distance = Number(rawDistance);
+  const hasDistance = rawDistance !== null && rawDistance !== undefined && rawDistance !== "" && Number.isFinite(distance);
+  const radius = Number(record.geofenceRadiusMeters ?? record.radiusMeters ?? record.attendanceRadiusMeters);
+  const hasRadius = Number.isFinite(radius) && radius > 0;
+  const passed = record.insideGeofence === true || record.gpsStatus === "Đạt";
+  const note = passed ? "GPS chuẩn vị trí trong phạm vi cho phép" : record.gpsNote || (hasRadius ? "GPS ngoài phạm vi cho phép" : "Điểm chấm công chưa có phạm vi GPS");
+  const detail = hasDistance ? `Cách ${Math.round(distance)} m${hasRadius ? ` / phạm vi ${Math.round(radius)} m` : ""}` : "Chưa có phạm vi GPS";
+  return { status: passed ? "Đạt" : "Không đạt", tone: passed ? "ok" : "bad", note, detail, text: `${passed ? "Đạt" : "Không đạt"} - ${note}. ${detail}` };
+}
+function attendanceGpsInfoFromRow(row) {
+  if (row[11]) return row[11];
+  const raw = String(row[6] || "");
+  const normalized = plainVietnamese(raw);
+  const explicitFail = normalized.includes("khong dat") || normalized.includes("chua co") || row[7] === "Cần duyệt";
+  const explicitPass = normalized.includes("dat") && !normalized.includes("khong dat");
+  const distanceMatch = raw.match(/(\d+(?:[.,]\d+)?)/);
+  const distance = distanceMatch ? Number(distanceMatch[1].replace(",", ".")) : NaN;
+  const hasDistance = Number.isFinite(distance);
+  const passed = explicitPass || (hasDistance && !explicitFail);
+  const note = passed ? "GPS chuẩn vị trí trong phạm vi cho phép" : normalized.includes("chua co") ? "Điểm chấm công chưa có phạm vi GPS" : "GPS ngoài phạm vi cho phép";
+  const detail = hasDistance ? `Cách ${Math.round(distance)} m` : "Chưa có phạm vi GPS";
+  return { status: passed ? "Đạt" : "Không đạt", tone: passed ? "ok" : "bad", note, detail, text: `${passed ? "Đạt" : "Không đạt"} - ${note}. ${detail}` };
+}
+function attendanceGpsText(row) {
+  return attendanceGpsInfoFromRow(row).text;
+}
+function attendanceGpsBadge(row) {
+  const gps = attendanceGpsInfoFromRow(row);
+  return `<div class="attendance-gps ${gps.tone}"><b>${escapeHtml(gps.status)}</b><small>${escapeHtml(gps.note)}</small><em>${escapeHtml(gps.detail)}</em></div>`;
+}
+function attendanceApprovalTable(rows) {
+  const sorted = [...rows].sort((a, b) => (a[7] === "Cần duyệt" ? -1 : 0) - (b[7] === "Cần duyệt" ? -1 : 0));
+  const pending = sorted.filter((row) => row[7] === "Cần duyệt").length;
+  const body = sorted.length ? sorted.map((row) => {
+    const canApprove = row[7] === "Cần duyệt";
+    const typeLabel = row[9] === "check-out" ? "Check-out" : "Check-in";
+    return `<tr><td class="attendance-person"><b>${escapeHtml(row[1])}</b><small>${escapeHtml(row[0])}</small></td><td><strong>${escapeHtml(typeLabel)}</strong><small>${escapeHtml(row[10] || "")}</small></td><td>${escapeHtml(row[4])}</td><td><b class="face-score">◉ ${escapeHtml(row[5])}</b></td><td>${attendanceGpsBadge(row)}</td><td>${hrmStatus(row[7])}</td><td class="attendance-approval-actions"><button class="hrm-view" data-hrm="evidence" data-code="${escapeHtml(row[0])}" data-record="${escapeHtml(row[8] || "")}">Xem</button>${canApprove ? `<button class="hrm-view approve" data-hrm="approve-attendance" data-code="${escapeHtml(row[0])}" data-record="${escapeHtml(row[8] || "")}">Xét duyệt</button>` : ""}</td></tr>`;
+  }).join("") : `<tr><td colspan="7" class="attendance-empty">Chưa có phiếu chấm công từ điện thoại.</td></tr>`;
+  return `<section class="attendance-approval-card">
+    <header><div><h3>Xét duyệt chấm công</h3><p>Phiếu chấm công nhân viên gửi từ điện thoại sẽ hiện tại đây để kiểm tra GPS, ảnh xác thực và xét duyệt.</p></div><span>${pending} cần duyệt / ${rows.length} phiếu</span></header>
+    <div class="hrm-table-wrap"><table class="hrm-table attendance-approval-table"><thead><tr><th>Nhân sự</th><th>Loại phiếu</th><th>Điểm chấm công</th><th>Ảnh xác thực</th><th>GPS</th><th>Trạng thái</th><th></th></tr></thead><tbody>${body}</tbody></table></div>
   </section>`;
 }
 const hrmStatus = (text) => `<i class="hrm-status ${["Hợp lệ","Đang làm việc","Đủ công"].includes(text) ? "ok" : ["Cần duyệt","Cần kiểm tra"].includes(text) ? "review" : ["Đi muộn","Thiếu công"].includes(text) ? "late" : "off"}">${text}</i>`;
@@ -3763,17 +4428,23 @@ function orgStaffCard(staff) {
 async function hrmAttendance() {
   await loadOrgStaff();
   const runtime = await api("/attendance/records");
-  const phoneRows = runtime.data.map((record) => [
-    record.employeeId,
-    record.employeeName,
-    record.type === "check-in" ? new Date(record.capturedAt).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" }) : "--",
-    record.type === "check-out" ? new Date(record.capturedAt).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" }) : "--",
-    record.siteName,
-    record.faceEvidence || "Đã chụp ảnh",
-    record.distanceMeters == null ? "Chưa có geofence" : `${record.distanceMeters} m`,
-    record.status,
-    record.id
-  ]);
+  const phoneRows = runtime.data.map((record) => {
+    const gpsInfo = attendanceGpsInfoFromRecord(record);
+    return [
+      record.employeeId,
+      record.employeeName,
+      record.type === "check-in" ? new Date(record.capturedAt).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" }) : "--",
+      record.type === "check-out" ? new Date(record.capturedAt).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" }) : "--",
+      record.siteName,
+      record.faceEvidence || "Đã chụp ảnh",
+      gpsInfo.text,
+      record.status,
+      record.id,
+      record.type,
+      new Date(record.capturedAt).toLocaleString("vi-VN"),
+      gpsInfo
+    ];
+  });
   const attendanceRows = phoneRows.concat(HRM_ATTENDANCE);
   const monthlyRows = attendanceMonthlyRows();
   const totalPayable = monthlyRows.reduce((sum, row) => sum + row.payable, 0);
@@ -3781,13 +4452,14 @@ async function hrmAttendance() {
   const totalOtHours = monthlyRows.reduce((sum, row) => sum + row.otCountedHours, 0);
   const pendingRows = monthlyRows.filter((row) => row.status !== "Đủ công").length;
   setTitle("hrm-attendance", "");
-  $("#app").innerHTML = `<section class="hrm-page attendance-page">${hrmHeader("▣ Bảng chấm công","Tổng hợp kết quả chấm công tháng của nhân sự Le Dome",'<a class="btn attendance-mobile-link" href="/attendance/" target="_blank">▣ Mở trang chấm công điện thoại</a>')}${hrmStats([["Kỳ công",ATTENDANCE_RULES.month,`${ATTENDANCE_RULES.standardDays} công chuẩn / tháng`],["Nhân sự Le Dome",monthlyRows.length,"Lấy từ danh sách Nhân sự"],["Tổng công tính",attendanceWork(totalPayable),"Sau phép, OT và khấu trừ"],["Cần kiểm tra",pendingRows,`Khấu trừ ${attendanceWork(totalDeduction)} công · OT ${attendanceWork(totalOtHours)} giờ`]])}
-  ${attendancePolicyMarkup()}
+  $("#app").innerHTML = `<section class="hrm-page attendance-page">${hrmHeader("▣ Bảng chấm công","Tổng hợp kết quả chấm công tháng của nhân sự Le Dome",'<button class="btn attendance-mobile-link" type="button" data-hrm="open-attendance-form">▣ Mở trang chấm công điện thoại</button>')}${hrmStats([["Kỳ công",ATTENDANCE_RULES.month,`${ATTENDANCE_RULES.standardDays} công chuẩn / tháng`],["Nhân sự Le Dome",monthlyRows.length,"Lấy từ danh sách Nhân sự"],["Tổng công tính",attendanceWork(totalPayable),"Sau phép, OT và khấu trừ"],["Cần kiểm tra",pendingRows,`Khấu trừ ${attendanceWork(totalDeduction)} công · OT ${attendanceWork(totalOtHours)} giờ`]])}
   <div class="hrm-tools attendance-tools"><input placeholder="⌕ Tìm nhân sự, phòng ban hoặc ghi chú"><input type="month" value="2026-06"><select><option>Tất cả trạng thái</option><option>Đủ công</option><option>Cần kiểm tra</option><option>Thiếu công</option></select><button>↻ Tính lại</button><button>▣ Xuất Excel</button></div>
+  ${attendanceApprovalTable(phoneRows)}
   ${attendanceDailyTimeTable(monthlyRows)}
   ${attendanceSummaryTable(monthlyRows)}
   ${attendanceEvidenceTable(attendanceRows)}
-  <aside class="hrm-evidence" id="hrm-evidence"><header><b>Chi tiết xác thực</b><button data-hrm="close-evidence">×</button></header><div class="face-preview"><i>◎</i><span>Face ID</span></div><div class="gps-preview"><b>⌖</b><span>Vị trí GPS từ điện thoại</span></div><p><span>Nhân sự</span><b id="evidence-name"></b></p><p><span>Thiết bị</span><b>Điện thoại cá nhân</b></p><p><span>Độ khớp Face ID</span><b id="evidence-face"></b></p><p><span>Khoảng cách GPS</span><b id="evidence-gps"></b></p><footer><button class="btn secondary" data-hrm="close-evidence">Đóng</button><button class="btn" data-hrm="approve-attendance">Duyệt bản ghi</button></footer></aside></section>`;
+  ${attendancePolicyMarkup()}
+  <aside class="hrm-evidence" id="hrm-evidence"><header><b>Chi tiết xác thực</b><button data-hrm="close-evidence">×</button></header><div class="face-preview"><i>◎</i><span>Face ID</span></div><div class="gps-preview"><b>⌖</b><span>Vị trí GPS từ điện thoại</span></div><p><span>Nhân sự</span><b id="evidence-name"></b></p><p><span>Thiết bị</span><b>Điện thoại cá nhân</b></p><p><span>Độ khớp Face ID</span><b id="evidence-face"></b></p><p><span>Kết quả GPS</span><b id="evidence-gps"></b></p><footer><button class="btn secondary" data-hrm="close-evidence">Đóng</button><button class="btn" data-hrm="approve-attendance">Duyệt bản ghi</button></footer></aside></section>`;
   bindHrm("attendance", attendanceRows);
 }
 
@@ -3815,6 +4487,31 @@ function loadHrmOvertime() {
 
 function saveHrmOvertime() {
   localStorage.setItem(HRM_OVERTIME_STORAGE, JSON.stringify(HRM_OVERTIME));
+}
+
+function loadHrmPayroll() {
+  if (HRM_PAYROLL.loaded) return;
+  HRM_PAYROLL.loaded = true;
+  try {
+    const saved = JSON.parse(localStorage.getItem(HRM_PAYROLL_STORAGE) || "[]");
+    if (!Array.isArray(saved)) return;
+    saved.forEach((savedRow) => {
+      const row = HRM_PAYROLL.find((item) => item.staffCode === savedRow.staffCode);
+      if (!row) return;
+      ["agreedSalary", "transportAllowance"].forEach((field) => {
+        const value = Number(savedRow[field]);
+        if (Number.isFinite(value)) row[field] = value;
+      });
+    });
+  } catch {}
+}
+
+function saveHrmPayroll() {
+  localStorage.setItem(HRM_PAYROLL_STORAGE, JSON.stringify(HRM_PAYROLL.map((row) => ({
+    staffCode: row.staffCode,
+    agreedSalary: row.agreedSalary,
+    transportAllowance: row.transportAllowance
+  }))));
 }
 
 function hrmOvertimeRow(row) {
@@ -3865,6 +4562,10 @@ function payrollFormat(value) {
   return value ? `${money(value)} đ` : "";
 }
 
+function payrollEditableMoney(row, field, label) {
+  return `<span class="payroll-edit-cell"><input class="payroll-edit-money" inputmode="numeric" value="${money(row[field] || 0)}" data-payroll-edit="${field}" data-code="${escapeHtml(row.staffCode)}" aria-label="${escapeHtml(label)} - ${escapeHtml(row.name)}"><em>đ</em></span>`;
+}
+
 function payrollDepartmentRows(rows) {
   const groups = [];
   rows.forEach((row) => {
@@ -3882,7 +4583,7 @@ function payrollRow(row, showDepartment) {
     <td class="payroll-department">${showDepartment ? escapeHtml(row.department) : ""}</td>
     <td class="payroll-center">${row.order || ""}</td>
     <td><b>${escapeHtml(row.name)}</b><small>${escapeHtml(row.staffCode)} · ${escapeHtml(row.title || "")}</small></td>
-    <td class="payroll-money">${money(row.agreedSalary)} đ</td>
+    <td class="payroll-money payroll-editable">${payrollEditableMoney(row, "agreedSalary", "Mức lương CĐ")}</td>
     <td class="payroll-center">${attendanceWork(row.workDays)}</td>
     <td class="payroll-money"><strong>${money(workSalary)} đ</strong></td>
     <td>${escapeHtml(row.project || "")}</td>
@@ -3890,7 +4591,7 @@ function payrollRow(row, showDepartment) {
     <td class="payroll-center">${escapeHtml(row.rate || "")}</td>
     <td class="payroll-money">${payrollFormat(row.revenue)}</td>
     <td class="payroll-money">${payrollFormat(row.projectBonus)}</td>
-    <td class="payroll-money">${payrollFormat(row.transportAllowance)}</td>
+    <td class="payroll-money payroll-editable">${payrollEditableMoney(row, "transportAllowance", "Phụ cấp gửi xe")}</td>
     <td class="payroll-money">${payrollFormat(row.tax)}</td>
     <td class="payroll-money payroll-total"><strong>${money(netSalary)} đ</strong></td>
   </tr>`;
@@ -3902,6 +4603,7 @@ function payrollDepartmentSubtotal(group) {
 }
 
 function hrmPayroll() {
+  loadHrmPayroll();
   setTitle("hrm-payroll", "");
   const total = HRM_PAYROLL.reduce((sum, row) => sum + payrollNetSalary(row), 0);
   const totalWorkDays = HRM_PAYROLL.reduce((sum, row) => sum + Number(row.workDays || 0), 0);
@@ -3913,9 +4615,39 @@ function hrmPayroll() {
   bindHrm("payroll");
 }
 
+function bindPayrollEditors() {
+  document.querySelectorAll("[data-payroll-edit]").forEach((input) => {
+    const commit = () => {
+      const row = HRM_PAYROLL.find((item) => item.staffCode === input.dataset.code);
+      if (!row) return;
+      const field = input.dataset.payrollEdit;
+      const nextValue = parseMoneyInput(input.value);
+      if (Number(row[field] || 0) === nextValue) {
+        input.value = money(nextValue);
+        return;
+      }
+      row[field] = nextValue;
+      saveHrmPayroll();
+      hrmPayroll();
+    };
+    input.addEventListener("focus", () => {
+      input.value = String(parseMoneyInput(input.value) || "");
+      input.select();
+    });
+    input.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        input.blur();
+      }
+    });
+    input.addEventListener("blur", commit);
+  });
+}
+
 function bindHrm(type, attendanceRows = HRM_ATTENDANCE) {
   $("#app").onclick = async (event) => {
     const action = event.target.closest("[data-hrm]")?.dataset.hrm;
+    if (action === "open-attendance-form") return openAttendanceForm(event);
     if (action === "add-staff") {
       $("#hrm-staff-form").reset();
       $("#hrm-staff-form").elements.code.value = `NS${String(ORG_STAFF.length + 1).padStart(3,"0")}`;
@@ -3965,16 +4697,18 @@ function bindHrm(type, attendanceRows = HRM_ATTENDANCE) {
       if (!row) return;
       $("#evidence-name").textContent = row[1];
       $("#evidence-face").textContent = row[5];
-      $("#evidence-gps").textContent = row[6];
+      $("#evidence-gps").textContent = attendanceGpsText(row);
       $("#hrm-evidence").dataset.code = row[0];
       $("#hrm-evidence").dataset.record = row[8] || "";
       return $("#hrm-evidence").classList.add("open");
     }
     if (action === "approve-attendance") {
-      const recordId = $("#hrm-evidence").dataset.record;
+      const trigger = event.target.closest("[data-record]");
+      const recordId = trigger?.dataset.record || $("#hrm-evidence").dataset.record;
       if (recordId) await api(`/attendance/records/${recordId}/approve`, { method: "POST" });
       else {
-        const row = HRM_ATTENDANCE.find((item) => item[0] === $("#hrm-evidence").dataset.code);
+        const code = event.target.closest("[data-code]")?.dataset.code || $("#hrm-evidence").dataset.code;
+        const row = HRM_ATTENDANCE.find((item) => item[0] === code);
         if (row) row[7] = "Hợp lệ";
       }
       return hrmAttendance();
@@ -4029,6 +4763,7 @@ function bindHrm(type, attendanceRows = HRM_ATTENDANCE) {
     saveHrmOvertime();
     hrmOvertime();
   };
+  if (type === "payroll") bindPayrollEditors();
 }
 
 function accountPermissionBadges(permissions) {
@@ -4414,7 +5149,7 @@ async function configCatalog(reload = true) {
   $("#app").innerHTML = `<section class="catalog-page">
     <header class="catalog-head"><div><h2>▰ Cơ sở dữ liệu</h2><p>Nguồn dữ liệu chuẩn cho Hợp đồng, Nhà thầu, Nhà cung cấp và các màn dự án.</p></div><button class="btn" data-catalog-save>Lưu cơ sở dữ liệu</button></header>
     <div class="catalog-tools"><input data-catalog-search value="${escapeHtml(state.catalogQuery)}" placeholder="⌕ Tìm danh mục"><button data-catalog-reset>Khôi phục mặc định</button></div>
-    <div class="catalog-grid">${catalogEditorList("projectList")}${catalogEditorList("partnerCustomers")}${catalogEditorList("partnerContractors")}${catalogEditorList("partnerSuppliers")}${catalogEditorList("constructionCategories")}${catalogEditorList("materialCategories")}${catalogEditorList("contractTypes")}</div>
+    <div class="catalog-grid">${CATALOG_PAGE_LIST_TYPES.map(catalogEditorList).join("")}</div>
   </section>`;
   bindCatalog();
 }
@@ -4670,13 +5405,17 @@ async function partnersOverview() {
 
 async function hrmOverview() {
   await loadOrgStaff();
+  loadHrmPayroll();
   let phoneRows = [];
   try {
     const runtime = await api("/attendance/records");
     phoneRows = Array.isArray(runtime.data) ? runtime.data : [];
   } catch {}
   const people = staffPeople();
-  const attendanceRows = phoneRows.map((record) => [record.employeeId, record.employeeName, record.type === "check-in" ? new Date(record.capturedAt).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" }) : "--", record.type === "check-out" ? new Date(record.capturedAt).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" }) : "--", record.siteName, record.faceEvidence || "Đã chụp ảnh", record.distanceMeters == null ? "Chưa có geofence" : `${record.distanceMeters} m`, record.status]).concat(HRM_ATTENDANCE);
+  const attendanceRows = phoneRows.map((record) => {
+    const gpsInfo = attendanceGpsInfoFromRecord(record);
+    return [record.employeeId, record.employeeName, record.type === "check-in" ? new Date(record.capturedAt).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" }) : "--", record.type === "check-out" ? new Date(record.capturedAt).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" }) : "--", record.siteName, record.faceEvidence || "Đã chụp ảnh", gpsInfo.text, record.status, record.id, record.type, new Date(record.capturedAt).toLocaleString("vi-VN"), gpsInfo];
+  }).concat(HRM_ATTENDANCE);
   const payrollTotal = HRM_PAYROLL.reduce((sum, row) => sum + payrollNetSalary(row), 0);
   const departmentGroups = [...new Set(ORG_STAFF.map((staff) => staff[3]))].map((department) => [department, ORG_STAFF.filter((staff) => staff[3] === department).length]);
   setTitle("hrm-overview", "Hiển thị nhanh nhân sự, chấm công và lương");
@@ -4785,8 +5524,11 @@ async function init() {
   setSidebarHidden(sidebarHidden, false);
   $("#menu").onclick = toggleSidebar;
   addEventListener("resize", syncSidebarToggle);
+  addEventListener("message", handleAttendanceSubmitted);
+  addEventListener("storage", handleAttendanceSubmittedStorage);
   document.body.onclick = async (event) => {
     const notificationWrap = event.target.closest(".notification-wrap");
+    if (event.target.closest("[data-attendance-open]")) return openAttendanceForm(event);
     if (event.target.closest("[data-notifications-toggle]")) {
       $("#notification-panel")?.classList.toggle("open");
       return;

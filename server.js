@@ -46,7 +46,7 @@ let testBackups = [];
 const uploadMaxBytes = positiveNumber(process.env.UPLOAD_MAX_BYTES, 25 * 1024 * 1024);
 const sessionTtlMs = positiveNumber(process.env.SESSION_TTL_HOURS, 12) * 60 * 60 * 1000;
 const driveRetentionMs = positiveNumber(process.env.DRIVE_RETENTION_DAYS, 7) * 24 * 60 * 60 * 1000;
-const allowedUploadExtensions = new Set([".pdf", ".png", ".jpg", ".jpeg", ".webp", ".mp4", ".mov", ".doc", ".docx", ".xls", ".xlsx", ".csv", ".ppt", ".pptx", ".txt", ".md", ".note", ".dwg", ".zip"]);
+const allowedUploadExtensions = new Set([".pdf", ".png", ".jpg", ".jpeg", ".webp", ".mp4", ".mov", ".doc", ".docx", ".xls", ".xlsx", ".csv", ".ppt", ".pptx", ".txt", ".md", ".note", ".dwg", ".zip", ".rar"]);
 
 // New Dossier configurations for stages
 const dossierConfigs = {
@@ -93,6 +93,8 @@ const mime = {
   ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
   ".ppt": "application/vnd.ms-powerpoint",
   ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  ".zip": "application/zip",
+  ".rar": "application/vnd.rar",
   ".png": "image/png",
   ".jpg": "image/jpeg",
   ".jpeg": "image/jpeg",
@@ -973,6 +975,157 @@ function zipText(entries, name) {
   return "";
 }
 
+function archiveEntriesFromNames(names) {
+  const rows = [];
+  const seen = new Set();
+  const add = (pathValue, type) => {
+    const clean = String(pathValue || "").replace(/\\/g, "/").replace(/^\/+/, "");
+    if (!clean || seen.has(`${type}:${clean}`)) return;
+    const parts = clean.replace(/\/$/, "").split("/").filter(Boolean);
+    if (!parts.length) return;
+    const name = parts.at(-1) || clean;
+    const ext = type === "folder" ? "DIR" : (path.extname(name).replace(".", "").toUpperCase() || "FILE");
+    seen.add(`${type}:${clean}`);
+    rows.push({ type, path: clean, name: type === "folder" ? `${name}/` : name, ext, level: Math.max(0, parts.length - 1) });
+  };
+  for (const rawName of names || []) {
+    const clean = String(rawName || "").replace(/\\/g, "/").replace(/^\/+/, "");
+    if (!clean || clean.includes("\0")) continue;
+    const parts = clean.split("/").filter(Boolean);
+    let current = "";
+    parts.forEach((part, index) => {
+      current = current ? `${current}/${part}` : part;
+      const isFolder = index < parts.length - 1 || clean.endsWith("/");
+      add(isFolder ? `${current}/` : current, isFolder ? "folder" : "file");
+    });
+  }
+  return rows.sort((a, b) => {
+    const parentA = a.path.replace(/[^/]+\/?$/, "");
+    const parentB = b.path.replace(/[^/]+\/?$/, "");
+    if (parentA === parentB && a.type !== b.type) return a.type === "folder" ? -1 : 1;
+    return a.path.localeCompare(b.path, "vi", { numeric: true, sensitivity: "base" });
+  });
+}
+
+function readRarVint(buffer, offset) {
+  let value = 0;
+  let shift = 0;
+  for (let count = 0; offset < buffer.length && count < 10; count += 1) {
+    const byte = buffer[offset];
+    value += (byte & 0x7f) * (2 ** shift);
+    offset += 1;
+    if ((byte & 0x80) === 0) return { value, offset };
+    shift += 7;
+  }
+  return null;
+}
+
+function decodeRarName(buffer) {
+  const raw = Buffer.from(buffer || []);
+  const end = raw.indexOf(0);
+  const source = end >= 0 ? raw.subarray(0, end) : raw;
+  const utf8 = source.toString("utf8");
+  return utf8.includes("\uFFFD") ? source.toString("latin1") : utf8;
+}
+
+function readRar4Entries(buffer) {
+  const names = [];
+  let offset = 7;
+  while (offset + 7 <= buffer.length) {
+    const type = buffer[offset + 2];
+    const flags = buffer.readUInt16LE(offset + 3);
+    const headerSize = buffer.readUInt16LE(offset + 5);
+    if (headerSize < 7 || offset + headerSize > buffer.length) break;
+    let dataSize = 0;
+    if (type === 0x74 && offset + 32 <= buffer.length) {
+      const packSize = buffer.readUInt32LE(offset + 7);
+      const nameSize = buffer.readUInt16LE(offset + 26);
+      const attr = buffer.readUInt32LE(offset + 28);
+      const highSizeOffset = offset + 32;
+      const nameOffset = highSizeOffset + ((flags & 0x0100) ? 8 : 0);
+      dataSize = packSize + ((flags & 0x0100) && highSizeOffset + 8 <= buffer.length ? buffer.readUInt32LE(highSizeOffset) * 0x100000000 : 0);
+      if (nameOffset + nameSize <= offset + headerSize) {
+        const name = decodeRarName(buffer.subarray(nameOffset, nameOffset + nameSize)).replace(/\\/g, "/");
+        if (name) names.push((attr & 0x10) && !name.endsWith("/") ? `${name}/` : name);
+      }
+    } else if (flags & 0x8000 && offset + headerSize + 4 <= buffer.length) {
+      dataSize = buffer.readUInt32LE(offset + 7);
+    }
+    if (type === 0x7b) break;
+    offset += headerSize + ((flags & 0x8000) ? dataSize : 0);
+  }
+  return names;
+}
+
+function readRar5Entries(buffer) {
+  const names = [];
+  let offset = 8;
+  while (offset + 5 < buffer.length) {
+    const sizeInfo = readRarVint(buffer, offset + 4);
+    if (!sizeInfo) break;
+    const headerStart = sizeInfo.offset;
+    const headerEnd = headerStart + sizeInfo.value;
+    if (headerEnd > buffer.length || headerEnd <= headerStart) break;
+    let cursor = headerStart;
+    const typeInfo = readRarVint(buffer, cursor); if (!typeInfo) break;
+    cursor = typeInfo.offset;
+    const flagsInfo = readRarVint(buffer, cursor); if (!flagsInfo) break;
+    cursor = flagsInfo.offset;
+    let extraSize = 0;
+    let dataSize = 0;
+    if (flagsInfo.value & 0x0001) {
+      const extraInfo = readRarVint(buffer, cursor); if (!extraInfo) break;
+      extraSize = extraInfo.value;
+      cursor = extraInfo.offset;
+    }
+    if (flagsInfo.value & 0x0002) {
+      const dataInfo = readRarVint(buffer, cursor); if (!dataInfo) break;
+      dataSize = dataInfo.value;
+      cursor = dataInfo.offset;
+    }
+    if (typeInfo.value === 2) {
+      const fileFlags = readRarVint(buffer, cursor); if (!fileFlags) break;
+      cursor = fileFlags.offset;
+      const unpacked = readRarVint(buffer, cursor); if (!unpacked) break;
+      cursor = unpacked.offset;
+      const attrs = readRarVint(buffer, cursor); if (!attrs) break;
+      cursor = attrs.offset;
+      if (fileFlags.value & 0x0002) cursor += 4;
+      if (fileFlags.value & 0x0004) cursor += 4;
+      const compression = readRarVint(buffer, cursor); if (!compression) break;
+      cursor = compression.offset;
+      const hostOs = readRarVint(buffer, cursor); if (!hostOs) break;
+      cursor = hostOs.offset;
+      const nameSize = readRarVint(buffer, cursor); if (!nameSize) break;
+      cursor = nameSize.offset;
+      if (cursor + nameSize.value <= headerEnd - extraSize) {
+        const name = decodeRarName(buffer.subarray(cursor, cursor + nameSize.value)).replace(/\\/g, "/");
+        if (name) names.push((fileFlags.value & 0x0001) && !name.endsWith("/") ? `${name}/` : name);
+      }
+    }
+    offset = headerEnd + dataSize;
+  }
+  return names;
+}
+
+function readRarEntries(buffer) {
+  if (buffer.length >= 7 && buffer.subarray(0, 7).equals(Buffer.from([0x52, 0x61, 0x72, 0x21, 0x1a, 0x07, 0x00]))) return readRar4Entries(buffer);
+  if (buffer.length >= 8 && buffer.subarray(0, 8).equals(Buffer.from([0x52, 0x61, 0x72, 0x21, 0x1a, 0x07, 0x01, 0x00]))) return readRar5Entries(buffer);
+  return [];
+}
+
+function previewArchive(info, archiveType, names) {
+  const entries = archiveEntriesFromNames(names);
+  return {
+    kind: "archive",
+    title: info.displayName,
+    archiveType,
+    total: entries.length,
+    entries: entries.slice(0, 1000),
+    message: entries.length ? "" : "Khong doc duoc danh sach file trong goi nen."
+  };
+}
+
 function sortNumberedXmlName(a, b) {
   const left = Number((a.match(/(\d+)\.xml$/) || [])[1] || 0);
   const right = Number((b.match(/(\d+)\.xml$/) || [])[1] || 0);
@@ -1025,6 +1178,13 @@ function previewOfficeFile(info) {
   if ([".txt", ".md", ".note", ".csv"].includes(ext)) {
     const content = fs.readFileSync(info.target, "utf8").slice(0, 200000);
     return { kind: ext === ".csv" ? "csv" : "text", title: info.displayName, text: content };
+  }
+  if (ext === ".zip") {
+    const entries = readZipEntries(fs.readFileSync(info.target));
+    return previewArchive(info, "ZIP", [...entries.keys()]);
+  }
+  if (ext === ".rar") {
+    return previewArchive(info, "RAR", readRarEntries(fs.readFileSync(info.target)));
   }
   if (![".docx", ".xlsx", ".pptx"].includes(ext)) {
     return { kind: "office", title: info.displayName, message: "Trình đọc nhanh hỗ trợ nội dung trực tiếp cho DOCX, XLSX và PPTX. File DOC/XLS/PPT cũ vẫn có thể tải hoặc mở bản gốc." };
@@ -1253,7 +1413,16 @@ const catalogSeed = {
     "Hợp đồng thi công",
     "Hợp đồng thiết kế thi công",
     "Hợp đồng phát sinh"
-  ]
+  ],
+  overtimeVoucherTypes: ["Phiếu OT ngày thường", "Phiếu OT cuối tuần", "Phiếu OT ngày lễ", "Phiếu OT bổ sung"],
+  paymentVoucherTypes: ["Phiếu chi dự án", "Phiếu chi vận hành", "Phiếu chi tạm ứng", "Phiếu chi hoàn ứng", "Phiếu chi khác"],
+  attendanceVoucherTypes: ["Check-in", "Check-out", "Phiếu bổ sung công", "Phiếu điều chỉnh công"],
+  inventoryReceiptTypes: ["Nhập mua mới", "Nhập hoàn trả", "Nhập điều chuyển", "Nhập tồn đầu kỳ"],
+  warehouseList: ["Kho VP", "Kho dự án", "Kho công trình", "Kho tạm"],
+  cdtChangeRequestTypes: ["Phát sinh khối lượng", "Thay đổi vật liệu", "Thay đổi thiết kế", "Bổ sung hạng mục"],
+  cdtNoteRequestTypes: ["Ghi chú hiện trạng", "Ghi chú nghiệm thu", "Ghi chú vật tư", "Ghi chú tiến độ"],
+  cdtApprovalRequestTypes: ["Duyệt báo giá", "Duyệt phương án", "Duyệt vật liệu", "Duyệt tiến độ", "Duyệt phát sinh"],
+  incidentIssueTypes: ["Sự cố kỹ thuật", "Sự cố vật tư", "Sự cố an toàn", "Sự cố tiến độ", "Sự cố chất lượng"]
 };
 
 function catalogList(input, fallback) {
@@ -1278,7 +1447,16 @@ function normalizeCatalog(input = {}) {
     projectList: catalogList(Array.isArray(input.projectList) && input.projectList.length ? input.projectList : null, projectDefaults),
     constructionCategories: catalogList(input.constructionCategories, catalogSeed.constructionCategories),
     materialCategories: catalogList(input.materialCategories, catalogSeed.materialCategories),
-    contractTypes: catalogList(input.contractTypes, catalogSeed.contractTypes)
+    contractTypes: catalogList(input.contractTypes, catalogSeed.contractTypes),
+    overtimeVoucherTypes: catalogList(input.overtimeVoucherTypes, catalogSeed.overtimeVoucherTypes),
+    paymentVoucherTypes: catalogList(input.paymentVoucherTypes, catalogSeed.paymentVoucherTypes),
+    attendanceVoucherTypes: catalogList(input.attendanceVoucherTypes, catalogSeed.attendanceVoucherTypes),
+    inventoryReceiptTypes: catalogList(input.inventoryReceiptTypes, catalogSeed.inventoryReceiptTypes),
+    warehouseList: catalogList(input.warehouseList, catalogSeed.warehouseList),
+    cdtChangeRequestTypes: catalogList(input.cdtChangeRequestTypes, catalogSeed.cdtChangeRequestTypes),
+    cdtNoteRequestTypes: catalogList(input.cdtNoteRequestTypes, catalogSeed.cdtNoteRequestTypes),
+    cdtApprovalRequestTypes: catalogList(input.cdtApprovalRequestTypes, catalogSeed.cdtApprovalRequestTypes),
+    incidentIssueTypes: catalogList(input.incidentIssueTypes, catalogSeed.incidentIssueTypes)
   };
 }
 
@@ -1673,13 +1851,17 @@ function api(req, res, pathname) {
   if (pathname === "/api/v1/dashboard/projects") return json(res, 200, { data: activeProjectList(dashboardProjects) });
   if (pathname === "/api/v1/insight") return json(res, 200, insight);
   if (pathname === "/api/v1/attendance/config" && req.method === "GET") {
-    if (!requireAccount(req, res)) return;
-    return json(res, 200, { sites: attendanceSiteOptions(), employees: attendanceEmployeeOptions() });
+    const account = requireAccount(req, res);
+    if (!account) return;
+    const employees = attendanceEmployeeOptions();
+    const employee = employees.find((item) => item.id === account.staffCode);
+    return json(res, 200, { sites: attendanceSiteOptions(), employees: employee ? [employee] : [] });
   }
   if (pathname === "/api/v1/attendance/records" && req.method === "GET") {
     const account = requireAccount(req, res);
     if (!account) return;
-    const data = hasPermission(account, "hrm.view") || !account.employeeId ? attendanceRecords : attendanceRecords.filter((record) => record.employeeId === account.employeeId);
+    const accountEmployeeId = String(account.staffCode || account.employeeId || "").trim();
+    const data = hasPermission(account, "hrm.view") ? attendanceRecords : attendanceRecords.filter((record) => record.employeeId === accountEmployeeId);
     return json(res, 200, { data, total: data.length });
   }
   if (pathname === "/api/v1/attendance/check" && req.method === "POST") {
@@ -1693,7 +1875,9 @@ function api(req, res, pathname) {
       const longitude = Number(input.longitude);
       const accuracy = Number(input.accuracy);
       const type = input.type === "check-out" ? "check-out" : "check-in";
-      if (account.employeeId && account.employeeId !== input.employeeId && !hasPermission(account, "hrm.approve")) return json(res, 403, { error: "Không có quyền chấm công cho nhân sự khác" });
+      const accountEmployeeId = String(account.staffCode || account.employeeId || "").trim();
+      const requestedEmployeeId = String(input.employeeId || "").trim();
+      if (!accountEmployeeId || requestedEmployeeId !== accountEmployeeId) return json(res, 403, { error: "Không có quyền chấm công cho nhân sự khác" });
       if (!employee) return json(res, 400, { error: "Nhân sự không hợp lệ" });
       if (!site) return json(res, 400, { error: "Vị trí không hợp lệ" });
       if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return json(res, 400, { error: "Thiếu tọa độ GPS" });
@@ -1713,7 +1897,10 @@ function api(req, res, pathname) {
         longitude,
         accuracy: Math.round(accuracy),
         distanceMeters: distance,
+        geofenceRadiusMeters: hasGeofence ? site.radiusMeters : null,
         insideGeofence,
+        gpsStatus: insideGeofence ? "Đạt" : "Không đạt",
+        gpsNote: insideGeofence ? "GPS chuẩn vị trí trong phạm vi cho phép" : hasGeofence ? "GPS ngoài phạm vi cho phép" : "Điểm chấm công chưa có phạm vi GPS",
         status: insideGeofence ? "Hợp lệ" : "Cần duyệt",
         faceEvidence: "Đã chụp ảnh",
         capturedAt: new Date().toISOString(),

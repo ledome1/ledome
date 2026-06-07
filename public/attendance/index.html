@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="theme-color" content="#087f78">
     <title>LE DOME - Chấm công vị trí</title>
-    <link rel="stylesheet" href="/attendance/mobile.css?v=2">
+    <link rel="stylesheet" href="/attendance/mobile.css?v=4">
   </head>
   <body>
     <main>
@@ -15,11 +15,16 @@
       </header>
       <section class="attendance-card">
         <div class="clock"><b id="clock">--:--</b><span id="today"></span></div>
-        <label>Nhân sự<select id="employee"></select></label>
+        <label>Nhân sự<input id="employee-name" class="locked-input" readonly><input id="employee" type="hidden"></label>
         <label>Vị trí<select id="site"></select></label>
         <section class="gps-panel">
           <div><b>⌖ Vị trí GPS</b><span id="gps-status">Đang tự động định vị...</span></div>
           <p id="gps-detail"></p>
+          <div class="gps-map-frame" id="gps-map-frame">
+            <iframe id="gps-map" title="Vị trí GPS trên Google Maps" loading="lazy" referrerpolicy="no-referrer-when-downgrade"></iframe>
+            <span id="gps-map-placeholder">Đang xác định vị trí trên Google Maps...</span>
+          </div>
+          <a class="gps-map-link" id="gps-map-link" href="https://maps.google.com" target="_blank" rel="noopener">Mở Google Maps</a>
         </section>
         <label class="photo-field">Ảnh xác thực tại vị trí
           <input id="photo" type="file" accept="image/*" capture="user">
@@ -37,6 +42,6 @@
         <div id="history"></div>
       </section>
     </main>
-    <script src="/attendance/mobile.js?v=5"></script>
+    <script src="/attendance/mobile.js?v=9"></script>
   </body>
 </html>

@@ -79,6 +79,44 @@ function zipBuffer(entries) {
   return Buffer.concat([...locals, centralBuffer, end]);
 }
 
+function rar4Buffer(entries) {
+  const chunks = [Buffer.from([0x52, 0x61, 0x72, 0x21, 0x1a, 0x07, 0x00])];
+  const main = Buffer.alloc(7);
+  main.writeUInt16LE(0, 0);
+  main.writeUInt8(0x73, 2);
+  main.writeUInt16LE(0, 3);
+  main.writeUInt16LE(7, 5);
+  chunks.push(main);
+  for (const [name, content] of Object.entries(entries)) {
+    const nameBuffer = Buffer.from(name);
+    const raw = Buffer.from(content);
+    const headerSize = 32 + nameBuffer.length;
+    const header = Buffer.alloc(headerSize);
+    header.writeUInt16LE(0, 0);
+    header.writeUInt8(0x74, 2);
+    header.writeUInt16LE(0x8000, 3);
+    header.writeUInt16LE(headerSize, 5);
+    header.writeUInt32LE(raw.length, 7);
+    header.writeUInt32LE(raw.length, 11);
+    header.writeUInt8(2, 15);
+    header.writeUInt32LE(0, 16);
+    header.writeUInt32LE(0, 20);
+    header.writeUInt8(20, 24);
+    header.writeUInt8(0x30, 25);
+    header.writeUInt16LE(nameBuffer.length, 26);
+    header.writeUInt32LE(0, 28);
+    nameBuffer.copy(header, 32);
+    chunks.push(header, raw);
+  }
+  const end = Buffer.alloc(7);
+  end.writeUInt16LE(0, 0);
+  end.writeUInt8(0x7b, 2);
+  end.writeUInt16LE(0, 3);
+  end.writeUInt16LE(7, 5);
+  chunks.push(end);
+  return Buffer.concat(chunks);
+}
+
 test.before(async () => {
   server = createServer();
   await new Promise((resolve) => server.listen(0, resolve));
@@ -226,15 +264,32 @@ test("catalog API includes and persists project list", async () => {
   const catalog = await authed(`${origin}/api/v1/catalog`).then((res) => res.json());
   assert.ok(Array.isArray(catalog.data.projectList));
   assert.ok(catalog.data.projectList.length > 0);
+  [
+    "overtimeVoucherTypes",
+    "paymentVoucherTypes",
+    "attendanceVoucherTypes",
+    "inventoryReceiptTypes",
+    "warehouseList",
+    "cdtChangeRequestTypes",
+    "cdtNoteRequestTypes",
+    "cdtApprovalRequestTypes",
+    "incidentIssueTypes"
+  ].forEach((key) => assert.ok(Array.isArray(catalog.data[key]), `${key} should be a catalog list`));
 
   const marker = `TEST-${Date.now()}`;
-  const data = { ...catalog.data, projectList: [marker, ...catalog.data.projectList] };
+  const overtimeMarker = `OT-${Date.now()}`;
+  const data = {
+    ...catalog.data,
+    projectList: [marker, ...catalog.data.projectList],
+    overtimeVoucherTypes: [overtimeMarker, ...catalog.data.overtimeVoucherTypes]
+  };
   const saved = await authed(`${origin}/api/v1/catalog`, {
     method: "PATCH",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ data })
   }).then((res) => res.json());
   assert.equal(saved.data.projectList[0], marker);
+  assert.equal(saved.data.overtimeVoucherTypes[0], overtimeMarker);
 
   await authed(`${origin}/api/v1/catalog`, {
     method: "PATCH",
@@ -322,6 +377,39 @@ test("drive files support inline view and quick Office preview", async () => {
   assert.equal(preview.data.sections[0].lines[0], "Drive quick preview works");
 });
 
+test("drive files preview ZIP and RAR archive folders", async () => {
+  const zip = zipBuffer({
+    "docs/readme.txt": "hello",
+    "docs/sub/note.txt": "nested"
+  });
+  const zipUpload = await authed(`${origin}/api/v1/drive-files?name=archive-test.zip`, {
+    method: "POST",
+    body: zip
+  });
+  assert.equal(zipUpload.status, 201);
+  const storedZip = await zipUpload.json();
+  const zipPreview = await authed(`${origin}/api/v1/drive-files/preview?storedName=${encodeURIComponent(storedZip.storedName)}`).then((res) => res.json());
+  assert.equal(zipPreview.data.kind, "archive");
+  assert.equal(zipPreview.data.archiveType, "ZIP");
+  assert.ok(zipPreview.data.entries.some((entry) => entry.type === "folder" && entry.path === "docs/"));
+  assert.ok(zipPreview.data.entries.some((entry) => entry.type === "file" && entry.path === "docs/sub/note.txt"));
+
+  const rar = rar4Buffer({
+    "contract/readme.txt": "rar hello"
+  });
+  const rarUpload = await authed(`${origin}/api/v1/drive-files?name=archive-test.rar`, {
+    method: "POST",
+    body: rar
+  });
+  assert.equal(rarUpload.status, 201);
+  const storedRar = await rarUpload.json();
+  const rarPreview = await authed(`${origin}/api/v1/drive-files/preview?storedName=${encodeURIComponent(storedRar.storedName)}`).then((res) => res.json());
+  assert.equal(rarPreview.data.kind, "archive");
+  assert.equal(rarPreview.data.archiveType, "RAR");
+  assert.ok(rarPreview.data.entries.some((entry) => entry.type === "folder" && entry.path === "contract/"));
+  assert.ok(rarPreview.data.entries.some((entry) => entry.type === "file" && entry.path === "contract/readme.txt"));
+});
+
 test("backup endpoint creates a backup record", async () => {
   const response = await authed(`${origin}/api/v1/admin/backup`, { method: "POST" });
   assert.equal(response.status, 201);
@@ -353,16 +441,31 @@ test("attendance GPS check-in validates site distance and supports approval", as
   }).then((res) => res.json());
   assert.equal(valid.status, "Hợp lệ");
   assert.equal(valid.distanceMeters, 0);
+  assert.equal(valid.geofenceRadiusMeters, ledome.radiusMeters);
+  assert.equal(valid.insideGeofence, true);
+  assert.equal(valid.gpsStatus, "Đạt");
+  assert.equal(valid.gpsNote, "GPS chuẩn vị trí trong phạm vi cho phép");
+
+  const forbiddenOtherEmployee = await authed(`${origin}/api/v1/attendance/check`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ employeeId: "NS002", siteId: ledome.id, latitude: ledome.latitude + 0.01, longitude: ledome.longitude, accuracy: 15, hasFacePhoto: true })
+  });
+  assert.equal(forbiddenOtherEmployee.status, 403);
 
   const outside = await authed(`${origin}/api/v1/attendance/check`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ employeeId: "NS002", siteId: ledome.id, latitude: ledome.latitude + 0.01, longitude: ledome.longitude, accuracy: 15, hasFacePhoto: true })
+    body: JSON.stringify({ employeeId: "NS001", siteId: ledome.id, latitude: ledome.latitude + 0.01, longitude: ledome.longitude, accuracy: 15, hasFacePhoto: true })
   }).then((res) => res.json());
   assert.equal(outside.status, "Cần duyệt");
+  assert.equal(outside.insideGeofence, false);
+  assert.equal(outside.gpsStatus, "Không đạt");
+  assert.equal(outside.gpsNote, "GPS ngoài phạm vi cho phép");
 
   const approved = await authed(`${origin}/api/v1/attendance/records/${outside.id}/approve`, { method: "POST" }).then((res) => res.json());
   assert.equal(approved.status, "Hợp lệ");
+  assert.equal(approved.gpsStatus, "Không đạt");
 });
 
 test("project APIs expose demo and runtime projects", async () => {
@@ -498,7 +601,9 @@ test("3D design files support proposal, concept and final marker", async () => {
 
 test("landing page and project detail clients expose expected workflows", async () => {
   const appScript = await fetch(`${origin}/app.js`).then((res) => res.text());
-  assert.match(appScript, /aria-label="Sắp xếp"/);
+  assert.match(appScript, /dashboardMyTasksPanel/);
+  assert.match(appScript, /data-my-task-view="week"/);
+  assert.match(appScript, /data-project-view/);
   assert.match(appScript, /data-action="create-project"/);
   assert.match(appScript, /Khởi tạo từ dự án mẫu/);
   assert.match(appScript, /Mẫu Kiến trúc Nội thất/);
