@@ -123,3 +123,16 @@ nav h4.personal-nav-group button:before{color:#20d0bd}
 .materials-table tr.material-used-row .material-actions{opacity:.72}
 .materials-table tr.material-used-row:hover td{opacity:.82}
 .payroll-page{max-width:none}.payroll-sheet{min-width:1540px;border-color:#cfdadc;font-size:10px}.payroll-sheet th{position:sticky;top:0;z-index:1;background:#fbfdfd;color:#31464c;font-weight:700;text-align:left}.payroll-sheet th,.payroll-sheet td{padding:8px 9px;border-right:1px solid #edf1f2}.payroll-sheet th:last-child,.payroll-sheet td:last-child{border-right:0}.payroll-sheet tbody tr:hover{background:#f7fbfb}.payroll-department{min-width:120px;background:#e6f2ff;color:#18313b;font-weight:700;white-space:nowrap}.payroll-center{text-align:center;white-space:nowrap}.payroll-money{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}.payroll-total strong{color:#0f776f}.payroll-subtotal td{background:#eef7f6!important;color:#0f776f;font-weight:800}.payroll-subtotal td:first-child{text-align:right}.payroll-sheet tfoot td{background:#f7fbfa;color:#18313b;font-weight:900}.payroll-sheet tfoot .payroll-money{color:#0f776f;font-size:12px}.payroll-sheet td small{margin-top:2px}@media(max-width:700px){.payroll-sheet{min-width:1320px}.payroll-page .hrm-head{align-items:flex-start;flex-direction:column}}
+
+/* Typography consistency */
+:root{--app-font:Inter,"Segoe UI",system-ui,Arial,sans-serif;--app-font-size:13px;--app-small-font-size:11px;--sidebar-group-font-size:13px;--sidebar-item-font-size:12px}
+body,button,input,select,textarea{font-family:var(--app-font);letter-spacing:0}
+body{font-size:var(--app-font-size);line-height:1.4}
+main,.content{font-size:var(--app-font-size)}
+.sidebar{font-family:var(--app-font);font-size:var(--sidebar-item-font-size);line-height:1.35;letter-spacing:0}
+.sidebar .attendance-quick-link{font-size:15px;line-height:1.2;letter-spacing:0}
+.sidebar nav h4 button{font-size:var(--sidebar-group-font-size);line-height:1.25;letter-spacing:0}
+.sidebar nav h4 button:before{font-size:12px}
+.sidebar nav>button{font-size:var(--sidebar-item-font-size);line-height:1.35;letter-spacing:0}
+.sidebar .profile{font-size:12px;line-height:1.35}
+.sidebar .profile small,.sidebar .profile button{font-size:var(--app-small-font-size);line-height:1.3}

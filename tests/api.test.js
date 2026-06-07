@@ -388,6 +388,26 @@ test("unknown project returns 404", async () => {
   assert.equal(response.status, 404);
 });
 
+test("new project starts without sample classification or progress data", async () => {
+  const response = await authed(`${origin}/api/v1/projects`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ name: `Blank project ${Date.now()}` })
+  });
+  assert.equal(response.status, 201);
+  const project = await response.json();
+  assert.equal(project.progress, 0);
+  assert.equal(project.type, "");
+  assert.equal(project.buildingType, "");
+  assert.equal(project.group, "");
+  assert.equal(project.status, "");
+  assert.equal(project.health, "");
+  assert.equal(project.description, "");
+
+  const deleted = await authed(`${origin}/api/v1/projects/${project.id}`, { method: "DELETE" });
+  assert.equal(deleted.status, 200);
+});
+
 test("created, updated and deleted projects stay in sync across project APIs", async () => {
   const name = `Dự án mới ${Date.now()}`;
   const createInput = {

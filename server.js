@@ -1748,9 +1748,9 @@ function api(req, res, pathname) {
           id,
           code: String(input.code || `DA-${projects.length + 1}`).trim(),
           name: String(input.name).trim(),
-          type: String(input.type || "Nội thất").trim(),
-          buildingType: String(input.buildingType || "Căn hộ").trim(),
-          group: String(input.group || "Thi công").trim(),
+          type: String(input.type || "").trim(),
+          buildingType: String(input.buildingType || "").trim(),
+          group: String(input.group || "").trim(),
           owner: String(input.owner || "").trim(),
           location: String(input.location || "").trim(),
           manager: String(input.manager || "").trim(),
@@ -1758,14 +1758,14 @@ function api(req, res, pathname) {
           qs: String(input.qs || "").trim(),
           accountant: String(input.accountant || "").trim(),
           progress: 0,
-          status: String(input.status || "Kế hoạch").trim(),
-          health: String(input.health || "Bình thường").trim(),
+          status: String(input.status || "").trim(),
+          health: String(input.health || "").trim(),
           startDate: String(input.startDate || "").trim(),
           endDate: String(input.endDate || "").trim(),
           duration: String(input.duration || "").trim(),
           budget: 0,
           spent: 0,
-          description: String(input.description || "Dự án mới khởi tạo").trim()
+          description: String(input.description || "").trim()
         };
         addProject(project);
         runtimeProjects.unshift(project);
@@ -2368,7 +2368,7 @@ function staticFile(req, res, pathname) {
       .pipe(res);
   }
   if (requested === "/constructions/detail/index.html") {
-    const html = fs.readFileSync(filename, "utf8").replace(/\/construction\.js(?:\?v=\d+)?/g, "/construction.js?v=179");
+    const html = fs.readFileSync(filename, "utf8").replace(/\/construction\.js(?:\?v=\d+)?/g, "/construction.js?v=182");
     res.writeHead(200, { "content-type": mime[".html"], "cache-control": "no-cache" });
     return res.end(html);
   }

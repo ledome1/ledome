@@ -1,0 +1,92 @@
+.gantt-view{position:fixed;z-index:14;inset:0 0 0 182px;min-height:100vh;overflow:hidden;background:#fff;border:0}
+.gantt-app-head{display:flex!important;height:28px!important;align-items:center;justify-content:space-between;padding:0 7px!important;border-bottom:1px solid #e0e6e7;background:#fff;font-size:11px}
+.gantt-app-head span{color:#1eb5a7}
+.gantt-subhead{display:flex;height:27px;align-items:center;padding-left:8px;border-bottom:1px solid #e0e6e7;background:#fff;font-size:9px}
+.gantt-subhead>a{color:#00a990;cursor:pointer}
+.gantt-subhead .gantt-toolbar{margin-left:auto;height:26px;padding:1px 3px;border:0}
+.gantt-toolbar input{width:164px;height:22px;padding:3px 6px;font-size:9px}
+.gantt-toolbar button{height:22px;padding:3px 6px;font-size:9px}
+.gantt-toolbar .green{background:#42ae2d;color:#fff}
+.gantt-layout{height:calc(100vh - 55px);grid-template-columns:var(--grid-width,50%) 7px minmax(0,1fr);overflow:hidden}
+.gantt-grid{height:100%;overflow-x:hidden;overflow-y:auto;border-right:0}
+.gantt-splitter{position:relative;z-index:7;width:7px;height:100%;padding:0;border:0;border-left:1px solid #aebfc2;border-right:1px solid #aebfc2;background:#e7eeee;color:#5c7478;cursor:col-resize;font-size:14px}.gantt-splitter:hover,.gantt-layout.resizing .gantt-splitter{background:#c3e6e3;color:#168e87}
+.gantt-table{width:1341px;min-width:1341px;table-layout:fixed;font-size:8px;background:#fff}
+.gantt-table th,.gantt-table td{height:26px;padding:3px 5px;border-right:1px solid #dfe5e6;border-bottom:1px solid #e4eaeb;overflow:hidden;white-space:nowrap;text-overflow:clip}
+.gantt-table th{position:relative;height:46px;background:#fff;font-weight:400;text-align:center;white-space:normal}
+.gantt-table th:nth-child(1),.gantt-table td:nth-child(1){width:32px}
+.gantt-table th:nth-child(2),.gantt-table td:nth-child(2){width:44px}
+.gantt-table th:nth-child(3),.gantt-table td:nth-child(3){width:340px}
+.gantt-table th:nth-child(4),.gantt-table td:nth-child(4){width:155px}
+.gantt-table th:nth-child(n+5),.gantt-table td:nth-child(n+5){width:78px;text-align:center}
+.gantt-table th:nth-child(10),.gantt-table td:nth-child(10),.gantt-table th:nth-child(11),.gantt-table td:nth-child(11){width:106px;text-align:right}
+.gantt-view .gantt-table tr.group.stage-design{background:#edf2ff!important;color:#3730a3!important}.gantt-view .gantt-table tr.group.stage-design a{color:#3730a3!important;font-weight:700}.gantt-view .gantt-table tr.group.stage-construction{background:#fff7ed!important;color:#c2410c!important}.gantt-view .gantt-table tr.group.stage-construction a{color:#c2410c!important;font-weight:700}.gantt-view .gantt-table tr.stage-design.late{background:#f8fafc;color:#1e293b}.gantt-view .gantt-table tr.stage-design.late td:first-child{border-left:3px solid #6366f1}.gantt-view .gantt-table tr.stage-design.late a{color:#4338ca!important}.gantt-view .gantt-table tr.stage-construction.late{background:#fdfdfd;color:#1e293b}.gantt-view .gantt-table tr.stage-construction.late td:first-child{border-left:3px solid #f97316}.gantt-view .gantt-table tr.stage-construction.late a{color:#c2410c!important}.gantt-view .gantt-table tr.done{background:#f0fdf4!important;color:#15803d!important}.gantt-view .gantt-table tr.done td:first-child{border-left:3px solid #22c55e}.gantt-view .gantt-table tr.done a{color:#166534!important}.gantt-view .gantt-table tr.selected{background:#fef08a!important;color:#854d0e}.gantt-view .gantt-table tr.selected td:first-child{border-left:3px solid #eab308}.gantt-view .gantt-table tr.selected a{color:#713f12!important}.gantt-table tr.done:nth-child(4) td,.gantt-table tr.done:nth-child(4) a{color:#ff4949}
+.gantt-table tbody tr{cursor:pointer}.gantt-table tbody tr:hover{outline:1px solid #19a99d;outline-offset:-1px}.gantt-table tbody tr.dragging{opacity:.45}.gantt-table tbody tr.gantt-drop-before{box-shadow:inset 0 3px 0 #168e87}.gantt-table tbody tr.gantt-drop-after{box-shadow:inset 0 -3px 0 #168e87}.gantt-table tbody tr.gantt-drop-child{outline:2px solid #168e87;outline-offset:-2px;box-shadow:inset 28px 0 0 #bff0ea}.gantt-bars span{cursor:pointer}
+.gantt-drag-handle{display:inline-grid;place-items:center;width:12px;height:18px;margin-right:4px;border:0;background:transparent;color:#93a7ab;cursor:grab;font-size:15px;line-height:1;opacity:.75}.gantt-drag-handle:hover{color:#168e87;opacity:1}.gantt-drag-handle:active{cursor:grabbing}.task-name{position:relative}.task-name a{display:flex;align-items:center;min-width:0;color:#00a990}.task-title{min-width:0;overflow:hidden;text-overflow:ellipsis;vertical-align:middle}.task-row-actions{display:inline-flex;align-items:center;gap:2px;margin-left:auto;padding-left:8px}.gantt-drag-ghost{position:fixed;z-index:200;max-width:260px;padding:6px 9px;border:1px solid #168e87;background:#eafffb;color:#21464b;box-shadow:0 3px 9px #0002;font-size:11px;pointer-events:none}.gantt-drag-ghost:after{content:attr(data-mode);display:block;margin-top:2px;color:#168e87;font-size:9px;font-weight:700}
+.task-row-menu{position:absolute;z-index:120;min-width:92px;padding:3px;border:1px solid #cfdcde;background:#fff;box-shadow:0 3px 9px #0002}.task-row-menu button{display:block;width:100%;padding:5px 8px;border:0;background:#fff;color:#c73535;cursor:pointer;font-size:10px;text-align:left}.task-row-menu button:hover{background:#fff1f1}
+.gantt-table td.editing{padding:0;background:#fff!important}.gantt-inline-editor{width:100%;height:25px;margin:0;padding:2px 4px;border:1px solid #16a99d;background:#fff;color:#102f36;font:inherit;outline:0}.gantt-inline-editor[readonly]{cursor:pointer}
+.task-date-picker{position:absolute;z-index:90;width:276px;padding:10px 12px 14px;border:1px solid #dce5e6;border-radius:4px;background:#fff;box-shadow:0 4px 12px #0002;color:#333;font-size:14px}.task-date-picker:before{content:"";position:absolute;left:14px;top:-6px;width:10px;height:10px;border-left:1px solid #dce5e6;border-top:1px solid #dce5e6;background:#fff;transform:rotate(45deg)}.task-date-picker header{position:relative;display:flex;height:32px;align-items:center;justify-content:center;font-size:16px}.task-date-picker header button{position:absolute;left:0;top:2px;width:28px;height:28px;padding:0;border:0;background:#fff;color:#333;cursor:pointer;font-size:24px;line-height:24px}.task-date-picker .weekdays,.task-date-picker .days{display:grid;grid-template-columns:repeat(7,1fr);text-align:center}.task-date-picker .weekdays strong{padding:8px 0 7px;font-size:16px}.task-date-picker .days button{position:relative;height:33px;border:0;background:#fff;color:#969696;cursor:pointer;font-size:16px}.task-date-picker .days button:hover{background:#edf6ff}.task-date-picker .days button.selected{border-radius:4px;background:#0b7be9;color:#fff;font-weight:700}.task-date-picker .days button.selected:after{content:"";position:absolute;right:3px;bottom:3px;border-left:5px solid transparent;border-bottom:5px solid #fff}.task-date-picker .days button.muted{color:#b6b6b6}
+.gantt-table .gantt-col-resizer{position:absolute;z-index:5;top:0;right:-3px;display:block;width:7px;height:100%;cursor:col-resize;background:transparent!important}.gantt-view.col-resizing{cursor:col-resize;user-select:none}
+.gantt-add,.gantt-delete{display:inline-grid;place-items:center;width:18px;height:18px;border:0;background:transparent;cursor:pointer;font-size:14px;line-height:1}.gantt-add{color:#24bfc7}.gantt-delete{color:#d84b4b}.gantt-add:hover,.gantt-delete:hover{background:#fff;border-radius:2px}
+.gantt-chart{height:100%;overflow:hidden}
+.gantt-layout.chart-hidden{grid-template-columns:calc(100% - 7px) 7px 0}
+.gantt-chart header{display:grid;height:23px;grid-template-columns:repeat(42,1fr);padding:0;border-bottom:1px solid #dfe5e6;font-size:8px}
+.gantt-chart header span{padding-top:5px;text-align:center;border-right:1px solid #e2e7e8}
+.gantt-days{display:grid;height:29px;grid-template-columns:repeat(42,1fr);border-bottom:1px solid #dfe5e6;background:#fff}
+.gantt-days b{display:grid;place-items:center;padding:2px 0;border-right:1px solid #e2e7e8;color:#697b80;font-size:7px;font-weight:400;line-height:9px}
+.gantt-days em{display:block;font-style:normal}.gantt-days .weekend{background:#fff3bb;color:#9a6b00}.gantt-days .sunday{background:#ffe9ae;color:#ad6500}
+.gantt-days .today{position:relative;z-index:2;border:1px solid #1684ee;background:#d7ecff;color:#0967bc;font-weight:700}
+.gantt-view.apartment-schedule .gantt-days .blocked{background:#d6dcde!important;color:#526368;text-decoration:line-through;font-weight:700}
+.gantt-workday-rule{margin-left:8px;padding:4px 9px;background:#0f8f87;color:#fff;font-size:11px;font-style:normal;font-weight:700}
+.gantt-rule-banner{padding:7px 12px;border-top:1px solid #b9ded9;border-bottom:1px solid #b9ded9;background:#e2f5f2;color:#126d66;font-size:11px;font-weight:700}
+.gantt-bars{position:relative;height:calc(100% - 52px);padding-top:0;background:repeating-linear-gradient(90deg,transparent 0,transparent calc(2.380952% - 1px),#e4e9ea calc(2.380952% - 1px),#e4e9ea 2.380952%);background-size:100% 100%,16.666667% 100%}
+.gantt-view.apartment-schedule .gantt-bars{background:repeating-linear-gradient(90deg,transparent 0,transparent calc(2.380952% - 1px),#d8e0e2 calc(2.380952% - 1px),#d8e0e2 2.380952%),repeating-linear-gradient(90deg,rgba(64,78,84,.18) 0,rgba(64,78,84,.18) calc(100%/42*2),transparent calc(100%/42*2),transparent calc(100%/42*7))}
+.gantt-view.apartment-schedule .gantt-bars span{background:repeating-linear-gradient(90deg,rgba(64,78,84,.13) 0,rgba(64,78,84,.13) calc(100%/42*2),transparent calc(100%/42*2),transparent calc(100%/42*7))}
+.gantt-bars:before{content:"";position:absolute;z-index:0;inset:0 auto 0 calc(var(--today-index)*100%/42);width:calc(100%/42);border-left:1px solid #1684ee;border-right:1px solid #1684ee;background:rgba(108,184,255,.22);pointer-events:none}
+.gantt-bars.without-today:before{display:none}
+.gantt-bars span{position:relative;display:block;height:26px;border-bottom:1px solid #e9eeee}
+.gantt-bars i,.gantt-bars .bar-actual{position:absolute;display:block;left:0;overflow:visible;white-space:nowrap;font-size:7px;font-style:normal}
+.gantt-bars i{top:3px;height:9px;padding:1px 4px}
+.gantt-bars i em{display:block;overflow:hidden;color:inherit;font-style:normal;text-overflow:clip}
+.gantt-bars .bar-plan{border:1px solid #1591aa;background:#2da4ae;color:#fff;cursor:move}
+.gantt-bars .bar-plan.stage-design{background:#6366f1;border:1px solid #4f46e5}
+.gantt-bars .bar-plan.stage-construction{background:#f97316;border:1px solid #ea580c}
+.gantt-bars .bar-group{top:4px;height:13px;border:1px solid #187f94;background:#2da4ae;color:#fff;cursor:move}
+.gantt-bars .bar-group.stage-design{background:#4f46e5;border:1px solid #3730a3}
+.gantt-bars .bar-group.stage-construction{background:#ea580c;border:1px solid #c2410c}
+.gantt-bars .bar-done{border:1px solid #059669!important;background:#10b981!important;color:#fff;cursor:move}
+.gantt-bars .bar-actual{top:15px;height:7px;border:1px solid #14b8a6;background:#ccfbf1}
+.bar-resize{position:absolute;z-index:2;top:-1px;width:6px;height:calc(100% + 2px);padding:0;border:0;background:transparent;cursor:ew-resize}.bar-resize.left{left:-3px}.bar-resize.right{right:-3px}.gantt-bars i:hover .bar-resize,.gantt-bars .bar-actual:hover .bar-resize{background:rgba(255,255,255,.55)}.gantt-view.bar-resizing{cursor:ew-resize;user-select:none}.gantt-bars i[data-range]:after,.gantt-bars .bar-actual[data-range]:after{content:attr(data-range);position:absolute;z-index:7;left:0;top:-22px;padding:3px 6px;border:1px solid #cfdcde;background:#fff;color:#31454c;box-shadow:0 2px 5px #0002;font-size:9px;white-space:nowrap}
+.gantt-bars strong{display:none;position:absolute;z-index:6;left:28px;top:14px;padding:7px 10px;border:1px solid #ddd;background:#fff;color:#31454c;box-shadow:0 2px 5px #0002;font-size:11px;font-weight:500;white-space:nowrap}
+.gantt-bars i:hover,.gantt-bars .bar-actual:hover{z-index:5}.gantt-bars i:hover strong,.gantt-bars .bar-actual:hover strong{display:block}
+.gantt-collapse{display:inline-grid;place-items:center;width:14px;height:18px;margin:0 5px 0 0;padding:0;border:0;background:transparent;color:#31454c;font-size:12px;line-height:1;vertical-align:middle}.gantt-collapse:hover{color:#168e87}.gantt-child-hidden{display:none!important}
+.task-detail{position:fixed;z-index:30;inset:0;overflow:auto;background:#edf1f5;color:#31454c}.task-detail>header{position:sticky;top:0;z-index:2;display:flex;align-items:center;gap:10px;height:46px;padding:7px 10px;border-bottom:1px solid #dce5e6;background:#fff}.task-detail>header h2{margin:0;font-size:15px}.task-detail>header div{margin-left:auto;display:flex;gap:6px}.task-detail>header button{padding:6px 9px;border:0;background:#19a99d;color:#fff;font-size:10px}.task-head{padding:12px 14px;border-bottom:1px solid #dce5e6;background:#fff}.task-head h3{margin:0 0 7px;color:#168e87;font-size:16px}.task-head p{margin:0 0 9px;color:#536a70;font-size:11px}.task-head em,.task-head b,.task-head strong{display:inline-block;margin-right:7px;padding:5px 8px;background:#d9effe;font-style:normal;font-size:10px}.task-head b{background:#61c44a;color:#fff}.task-head strong{background:#eb3f3f;color:#fff}.task-body{display:grid;grid-template-columns:360px 1fr;gap:10px;padding:10px}.task-body>aside,.task-body>main{min-height:calc(100vh - 145px);padding:12px;background:#fff}.task-body h3{margin:12px 0 8px;font-size:12px}.task-body p{margin:6px 0;font-size:11px}.task-body aside a{display:block;margin:8px 0;color:#00a990;cursor:pointer}.task-tabs{display:flex;gap:6px;border-bottom:1px solid #dde5e6}.task-tabs button{padding:8px 10px;border:0;background:#fff;color:#31454c;font-size:11px}.task-tabs .active{color:#168e87;border-bottom:2px solid #168e87}.task-empty{padding:12px;background:#f5f7f8;color:#7d8f94}.mini-gantt{padding:10px;background:#f4f8f8}.mini-gantt i{display:block;height:18px;margin:7px 0;background:#2ea8b1}.reminder-pop{position:absolute;width:225px;padding:10px;background:#fff;border:1px solid #dce5e6;box-shadow:0 2px 5px #0002}.reminder-pop label{display:grid;gap:5px;margin:9px 0}
+.task-detail input,.task-detail select,.task-detail textarea{border:1px solid #d8e3e5;background:#fff;color:#31454c;font:inherit}.task-head h3 input{width:520px;border:0;border-bottom:1px solid #d8e3e5;color:#168e87;font-size:16px;font-weight:700}.task-head p input{width:190px;padding:3px 4px}.task-head em input,.task-head b input{width:52px;border:0;background:transparent;text-align:center}.task-head b select{border:0;background:transparent;color:#fff;font-weight:700}.task-body label{display:grid;grid-template-columns:135px 1fr;gap:8px;align-items:center;margin:7px 0;font-size:11px}.task-body label span{color:#31454c}.task-body label input,.task-body label select{min-width:0;padding:5px}.task-detail input[type=date]{min-width:118px}.task-detail [data-task-date],.form-page [data-popup-date],.cash-modal [data-popup-date]{cursor:pointer;background:#fff}.task-description{display:block;width:100%;min-height:72px;padding:10px;resize:vertical;background:#f5f7f8}
+.action-menu,.baseline-menu,.utility-menu{top:50px}.utility-menu{width:260px}
+.row-menu{top:80px}
+.gantt-toast{top:31px}
+@media(max-width:1000px){.gantt-view{left:0}}
+
+/* Date picker navigation */
+.task-date-picker header [data-next-month]{right:0;left:auto}
+
+/* Keep timeline shading inside the task rows only. */
+.gantt-chart{background:#fff}
+.gantt-bars{height:auto;min-height:0}
+
+/* Align the timeline calendar with the task table header. */
+.gantt-chart header{height:20px}
+.gantt-days{height:26px}
+
+/* Use the same fixed row box on both sides of the splitter. */
+.gantt-table{border-collapse:separate;border-spacing:0}
+.gantt-table tbody tr{height:26px}
+.gantt-table tbody td{height:26px;max-height:26px;line-height:18px}
+.gantt-bars span{height:26px;max-height:26px}
+
+/* Prevent cell content from expanding rows and keep both panes pixel-aligned. */
+.gantt-view{--gantt-row-height:26px;--gantt-header-height:46px}
+.gantt-table thead tr,.gantt-table thead th{height:var(--gantt-header-height)!important;max-height:var(--gantt-header-height)!important}
+.gantt-table tbody tr,.gantt-table tbody td,.gantt-bars span{height:var(--gantt-row-height)!important;min-height:var(--gantt-row-height)!important;max-height:var(--gantt-row-height)!important}
+.gantt-table tbody td{padding-top:0!important;padding-bottom:0!important;line-height:var(--gantt-row-height)!important;vertical-align:middle}
+.gantt-chart header{height:20px!important;min-height:20px!important;max-height:20px!important}
+.gantt-days{height:26px!important;min-height:26px!important;max-height:26px!important}

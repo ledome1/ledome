@@ -8,6 +8,9 @@ const api = (path, options = {}) => fetch(`/api/v1${path}`, { credentials: "same
 });
 
 const escapeHtml = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;" }[char]));
+const isLocalhost = () => ["localhost", "127.0.0.1", "::1"].includes(location.hostname);
+const hasSecureBrowserFeatures = () => window.isSecureContext || isLocalhost();
+const secureFeatureMessage = "Domain chấm công phải chạy HTTPS để trình duyệt cho phép lấy GPS/camera. Localhost được phép, domain HTTP sẽ bị chặn.";
 
 function renderLogin(message = "") {
   document.body.innerHTML = `<main>
@@ -80,6 +83,11 @@ function setGpsError(error) {
 }
 
 function locate(force = false) {
+  if (!hasSecureBrowserFeatures()) {
+    $("#gps-status").textContent = "Domain chưa bật HTTPS";
+    $("#gps-detail").textContent = "";
+    return notice(secureFeatureMessage, "error");
+  }
   if (!navigator.geolocation) return notice("Điện thoại không hỗ trợ GPS trên trình duyệt này.", "error");
   if (state.locating && !force) return;
   state.locating = true;
@@ -96,6 +104,7 @@ function startAutoLocation() {
 }
 
 async function submit(type) {
+  if (!hasSecureBrowserFeatures()) return notice(secureFeatureMessage, "error");
   if (!state.position) return notice("Hệ thống đang tự động lấy vị trí GPS. Hãy cho phép quyền vị trí trên trình duyệt.", "error");
   if (!state.photo) return notice("Hãy chụp ảnh xác thực tại vị trí.", "error");
   try {

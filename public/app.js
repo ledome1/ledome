@@ -62,6 +62,11 @@ const NOTIFICATIONS = [
 const ui = { sortBy: "updated", sortDir: "desc", dateType: "all", dateRange: "Mọi lúc", hiddenWelcome: false };
 const isFinalSettlementProject = (project) => String(project?.projectStage || "").trim() === "final-settlement";
 const activeProjectsOnly = (items = []) => items.filter((project) => !isFinalSettlementProject(project));
+const DEMO_PROJECT_IDS = new Set(["p1", "p2"]);
+const projectPlanProgress = (project) => {
+  const value = Number(project?.progress || 0);
+  return Math.min(100, value + (DEMO_PROJECT_IDS.has(String(project?.id || "")) ? 4 : 0));
+};
 const PROJECT_NAV_FALLBACK = [
   ["▰  Khu phức hợp Riverside", "project/p1"],
   ["▰  Nhà máy điện tử Đông Nam", "project/p2"],
@@ -247,7 +252,7 @@ async function projectLanding() {
       <article class="finance-box contractor"><h3>NHÀ THẦU (NT)</h3><div><span>Hợp đồng</span><b>186.420.000.000</b></div><div><span>Đã thực hiện</span><b>92.610.000.000</b></div><div><span>Đề nghị thanh toán</span><b>54.880.000.000</b></div><div><span>Trả thực tế</span><b>42.300.000.000</b></div><strong>Còn nợ NT <b>12.580.000.000</b></strong></article>
       <article class="finance-box supplier"><h3>NHÀ CUNG CẤP (NCC)</h3><div><span>Hợp đồng</span><b>72.840.000.000</b></div><div><span>Đề nghị thanh toán</span><b>31.600.000.000</b></div><div><span>Trả thực tế</span><b>26.240.000.000</b></div><strong>Còn nợ NCC <b>5.360.000.000</b></strong></article>
     </div>
-    <div class="project-cards">${sortedProjects.map((p) => `<article class="project-compact" data-project="${p.id}"><h2>${p.name}</h2><p><i class="dot blue"></i>${p.status}　 Mã dự án: ${p.code}　 Giám đốc: ${p.manager}</p><div class="project-metrics"><div><small>Tình trạng</small>${badge(p.health)}</div><div class="ring"><b>${p.progress}%</b><small>Công việc</small></div><div><small>Tiến độ kế hoạch</small>${progress(Math.min(100,p.progress+4))}<small>Tiến độ thực tế</small>${progress(p.progress)}</div></div><footer><span>◌ Ngân sách <b>${money(p.budget)}</b></span><span>♧ Thu <b>${money(Math.round(p.spent*.72))}</b></span><span>❉ Chi <b>${money(p.spent)}</b></span></footer></article>`).join("")}</div>
+    <div class="project-cards">${sortedProjects.map((p) => `<article class="project-compact" data-project="${p.id}"><h2>${p.name}</h2><p><i class="dot blue"></i>${p.status}　 Mã dự án: ${p.code}　 Giám đốc: ${p.manager}</p><div class="project-metrics"><div><small>Tình trạng</small>${badge(p.health)}</div><div class="ring"><b>${p.progress}%</b><small>Công việc</small></div><div><small>Tiến độ kế hoạch</small>${progress(projectPlanProgress(p))}<small>Tiến độ thực tế</small>${progress(p.progress)}</div></div><footer><span>◌ Ngân sách <b>${money(p.budget)}</b></span><span>♧ Thu <b>${money(Math.round(p.spent*.72))}</b></span><span>❉ Chi <b>${money(p.spent)}</b></span></footer></article>`).join("")}</div>
     </div>
     <aside class="activity-rail"><div class="rail-date">Chủ nhật, ngày 31/05/2026</div><article><h3>Công việc hôm nay <b>−</b></h3>${data.tasks.concat([["Kiểm tra vật tư nhập kho","02/06","Trung bình"]]).map(([a,b]) => `<div class="rail-row"><small>${b}<br>17:00</small><span>${a}<em>Quá hạn</em></span></div>`).join("")}</article><article><h3>Lịch họp <b>−</b></h3><p class="empty">▣<br>Không có lịch họp nào!</p></article><article><h3>?? xuất cần duyệt <b>−</b></h3>${data.alerts.map(([a,b]) => `<div class="rail-row"><small>15:37</small><span>${b}<small>${a}</small></span></div>`).join("")}</article></aside>
     </div>${projectModal()}`;
@@ -256,11 +261,11 @@ async function projectLanding() {
 
 function projectModal() {
   const templates = ["Mẫu nội thất", "Mẫu Kiến trúc", "Mẫu Kiến trúc Nội thất", "Mẫu quy hoạch"];
-  const optionTags = (items, selected = "") => items.map((item) => `<option ${item === selected ? "selected" : ""}>${item}</option>`).join("");
+  const optionTags = (items, selected = "") => items.map((item) => `<option value="${escapeHtml(item)}" ${item === selected ? "selected" : ""}>${escapeHtml(item || "Chưa chọn")}</option>`).join("");
   const people = ["", "DINH Công Hoàng", "Bùi Xuân Dũng", "Nguyễn Hoàng Hải", "Bùi Vũ Kiên", "Hồ Quang Chiến", "X", "Y", "Z", "Nguyễn Hà Vân", "Khác"];
   return `<div class="modal-backdrop" id="project-modal"><section class="project-modal project-create-modal"><header><h2>Khởi tạo dự án</h2><button data-action="close-modal">×</button></header><div class="creation-options"><button data-action="new-project">＋<b>Khởi tạo dự án mới</b><small>Tạo dự án thực tế hoặc dự án mẫu</small></button><button>▤<b>Khởi tạo từ Excel</b><small>Nhập dữ liệu theo file mẫu</small></button><button data-action="show-templates">▦<b>Khởi tạo từ dự án mẫu</b><small>Chọn một mẫu dự án đã thiết lập sẵn</small></button></div><section class="template-picker" id="template-picker"><h3>Chọn dự án mẫu</h3><p>Nội dung chi tiết của từng mẫu sẽ được bổ sung sau.</p><div>${templates.map((name) => `<button data-template="${name}"><b>${name}</b><small>Nội dung mẫu đang cập nhật</small></button>`).join("")}</div></section><form id="project-form" class="project-create-form"><h3>Thông tin dự án <small id="selected-template"></small></h3>
     <fieldset class="identity"><legend>Nhận diện dự án</legend><label class="wide">Tên dự án<input name="name" id="nameProject" required placeholder="Nhập tên dự án"></label><label>Mã dự án<input name="code" value="DA-${String(Date.now()).slice(-4)}"></label><label>Chủ đầu tư<input name="owner" placeholder="Nhập chủ đầu tư"></label><label class="wide">Địa điểm<input name="location" placeholder="Nhập địa điểm dự án"></label></fieldset>
-    <fieldset class="classification"><legend>Phân loại</legend><label>Phạm vi<select name="type" id="scopeProject">${optionTags(["Nội thất", "Kiến trúc", "Nội thất kiến trúc", "Khác"], "Nội thất")}</select></label><label>Loại hình<select name="buildingType">${optionTags(["Căn hộ", "Nhà phố", "Biệt thự", "Homestay", "Nhà hàng", "Quán cafe", "Bar", "Văn phòng", "Khác"], "Căn hộ")}</select></label><label>Nhóm dự án<select name="group">${optionTags(["Thiết kế", "Thi công", "Thiết kế Thi công"], "Thi công")}</select></label><label>Trạng thái<select name="status" id="statusProject">${optionTags(["Kế hoạch", "Đang thực hiện", "Tạm dừng", "Hoàn thành", "Đóng"], "Kế hoạch")}</select></label><label>Tình trạng<select name="health">${optionTags(["Bình thường", "Theo dõi", "Rủi ro", "Chậm tiến độ"], "Bình thường")}</select></label></fieldset>
+    <fieldset class="classification"><legend>Phân loại</legend><label>Phạm vi<select name="type" id="scopeProject">${optionTags(["", "Nội thất", "Kiến trúc", "Nội thất kiến trúc", "Khác"])}</select></label><label>Loại hình<select name="buildingType">${optionTags(["", "Căn hộ", "Nhà phố", "Biệt thự", "Homestay", "Nhà hàng", "Quán cafe", "Bar", "Văn phòng", "Khác"])}</select></label><label>Nhóm dự án<select name="group">${optionTags(["", "Thiết kế", "Thi công", "Thiết kế Thi công"])}</select></label><label>Trạng thái<select name="status" id="statusProject">${optionTags(["", "Kế hoạch", "Đang thực hiện", "Tạm dừng", "Hoàn thành", "Đóng"])}</select></label><label>Tình trạng<select name="health">${optionTags(["", "Bình thường", "Theo dõi", "Rủi ro", "Chậm tiến độ"])}</select></label></fieldset>
     <fieldset class="people"><legend>Nhân sự phụ trách</legend><label>Giám đốc dự án<select name="manager">${optionTags(people, "")}</select></label><label>Chỉ huy trưởng<select name="commander">${optionTags(people, "")}</select></label><label>Giám sát dự án<select name="qs">${optionTags(people, "")}</select></label><label>Kế toán dự án<select name="accountant">${optionTags(people, "")}</select></label></fieldset>
     <fieldset class="timeline"><legend>Thời gian</legend><label>Ngày bắt đầu<input name="startDate" type="date"></label><label>Ngày kết thúc<input name="endDate" type="date"></label><label>Thời gian<input name="duration" placeholder="VD: 161 ngày"></label></fieldset>
     <footer><button type="button" class="btn secondary" data-action="close-modal">Đóng</button><button class="btn">Tạo và mở chi tiết</button></footer></form></section></div>`;
@@ -3893,7 +3898,7 @@ function payrollRow(row, showDepartment) {
 
 function payrollDepartmentSubtotal(group) {
   const total = group.rows.reduce((sum, row) => sum + payrollNetSalary(row), 0);
-  return `<tr class="payroll-subtotal"><td colspan="13">Tạm tính ${escapeHtml(group.department)}</td><td class="payroll-money">${money(total)} đ</td></tr>`;
+  return `<tr class="payroll-subtotal"><td colspan="13">${escapeHtml(group.department)}</td><td class="payroll-money">${money(total)} đ</td></tr>`;
 }
 
 function hrmPayroll() {
