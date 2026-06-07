@@ -2,24 +2,27 @@
 const money = (value) => new Intl.NumberFormat("vi-VN").format(value);
 const moneyInput = (value) => Number(value || 0).toLocaleString("vi-VN");
 const parseMoneyInput = (value) => Number(String(value || "").replace(/[^\d]/g, "")) || 0;
-const state = { page: location.hash.slice(1) || "projects", nav: [], account: null, customerId: "", customerQuery: "", customerFilter: "Tất cả", crmQuery: "", crmStatus: "Tất cả", crmSupplierCategory: "Tất cả", crmContractorCategory: "Tất cả", catalogType: "constructionCategories", catalogQuery: "", catalogCollapsed: {}, materialsQuery: "", materialsLocation: "Tất cả", materialsStatus: "Tất cả", standardsQuery: "", standardsCategory: "Tất cả", driveQuery: "", driveUploadMessage: "", financeQuery: "", financeKind: "Tất cả", financeFilterOpen: "", financeFilters: { type: [], group: [], topic: [], category: [], partner: [] }, personalQuery: "", personalKind: "Tất cả", navCollapsed: {} };
+const state = { page: location.hash.slice(1) || "projects", nav: [], account: null, customerId: "", customerQuery: "", customerFilter: "Tất cả", crmQuery: "", crmStatus: "Tất cả", crmSupplierCategory: "Tất cả", crmContractorCategory: "Tất cả", catalogType: "constructionCategories", catalogQuery: "", catalogCollapsed: {}, catalogOrder: [], materialsQuery: "", materialsLocation: "Tất cả", materialsStatus: "Tất cả", standardsQuery: "", standardsCategory: "Tất cả", driveQuery: "", driveUploadMessage: "", financeQuery: "", financeKind: "Tất cả", financeFilterOpen: "", financeFilters: { type: [], group: [], topic: [], category: [], partner: [] }, personalQuery: "", personalKind: "Tất cả", navCollapsed: {} };
 const AUTH_STORAGE = "ledome.auth.v1";
 const LOGIN_REMEMBER_STORAGE = "ledome.login.remember.v1";
 const NAV_COLLAPSE_STORAGE = "ledome.navCollapsed.v1";
 const SIDEBAR_VISIBILITY_STORAGE = "ledome.sidebarHidden.v1";
 const CATALOG_COLLAPSE_STORAGE = "ledome.catalogCollapsed.v1";
+const CATALOG_ORDER_STORAGE = "ledome.catalogOrder.v1";
 const FINANCE_STORAGE = "ledome.finance.v1";
 const PERSONAL_FINANCE_STORAGE = "ledome.personalFinance.v1";
 const ATTENDANCE_SUBMIT_STORAGE = "ledome.attendance.submitted";
+const DASHBOARD_VOUCHER_COLLAPSE_STORAGE = "ledome.dashboardVoucherCollapsed.v1";
+const DASHBOARD_VOUCHER_APPROVAL_STORAGE = "ledome.dashboardVoucherApproved.v1";
 const MODULE_PERMISSION = {
   projects: "projects", "projects-overview": "projects", insight: "projects", drive: "projects", tasks: "projects", approval: "projects", fleet: "projects",
   "partners-overview": "partners", customers: "partners", contractors: "partners", suppliers: "partners",
-  "hrm-overview": "hrm", "hrm-staff": "hrm", "hrm-attendance": "hrm", "hrm-overtime": "hrm", "hrm-payroll": "hrm",
+  "hrm-overview": "hrm", "hrm-staff": "hrm", "hrm-attendance": "hrm", "hrm-overtime": "hrm", "hrm-leave": "hrm", "hrm-payroll": "hrm",
   "finance-overview": "finance", "finance-ledome": "finance", "finance-projects": "finance",
   "personal-finance-overview": "personalFinance", "personal-finance-transactions": "personalFinance", "personal-finance-budget": "personalFinance", "personal-finance-report": "personalFinance",
   catalog: "config", materials: "materials", processes: "config", standards: "config", accounts: "config"
 };
-const pageTitles = { home: "DASHBOARD", insight: "INSIGHT", projects: "❖ DASHBOARD", "projects-overview": "▣ Tổng quan dự án", drive: "▰ LE DOME DRIVE", "partners-overview": "▣ Tổng quan đối tác", customers: "♟ Khách hàng", contractors: "▣ Nhà thầu", suppliers: "▤ Nhà cung cấp", "hrm-overview": "▣ Tổng quan nhân sự", "hrm-staff": "♟ Nhân sự", "hrm-attendance": "▣ Bảng chấm công", "hrm-overtime": "▤ Phiếu Overtime", "hrm-payroll": "$ Lương", "finance-overview": "▣ Tổng quan", "finance-ledome": "▣ Vận hành", "finance-projects": "▤ Dự án", "personal-finance-overview": "◈ Tài chính cá nhân", "personal-finance-transactions": "▤ Giao dịch cá nhân", "personal-finance-budget": "▣ Ngân sách tháng", "personal-finance-report": "◉ Báo cáo tháng", catalog: "▰ Cơ sở dữ liệu", materials: "▰ Kho", processes: "▰ Quy trình", standards: "▰ Quy chuẩn Tiêu chuẩn", accounts: "▣ Tài khoản" };
+const pageTitles = { home: "DASHBOARD", insight: "INSIGHT", projects: "❖ DASHBOARD", "projects-overview": "▣ Tổng quan dự án", drive: "▰ LE DOME DRIVE", "partners-overview": "▣ Tổng quan đối tác", customers: "♟ Khách hàng", contractors: "▣ Nhà thầu", suppliers: "▤ Nhà cung cấp", "hrm-overview": "▣ Tổng quan nhân sự", "hrm-staff": "♟ Nhân sự", "hrm-attendance": "▣ Bảng chấm công", "hrm-overtime": "▤ Phiếu Overtime", "hrm-leave": "▤ Phiếu xin nghỉ phép", "hrm-payroll": "$ Lương", "finance-overview": "▣ Tổng quan", "finance-ledome": "▣ Vận hành", "finance-projects": "▤ Dự án", "personal-finance-overview": "◈ Tài chính cá nhân", "personal-finance-transactions": "▤ Giao dịch cá nhân", "personal-finance-budget": "▣ Ngân sách tháng", "personal-finance-report": "◉ Báo cáo tháng", catalog: "▰ Cơ sở dữ liệu", materials: "▰ Kho", processes: "▰ Quy trình", standards: "▰ Quy chuẩn Tiêu chuẩn", accounts: "▣ Tài khoản" };
 const api = (url, options = {}) => fetch(`/api/v1${url}`, { credentials: "same-origin", ...options }).then(async (res) => {
   const body = await res.json();
   if (!res.ok) throw new Error(body.error || `API ${res.status}`);
@@ -79,7 +82,7 @@ const NOTIFICATIONS = [
   { audience: ["hrm"], title: "Bản ghi chấm công GPS cần duyệt trong hôm nay.", time: "2 ngày trước", unread: false, avatar: "NS" },
   { audience: ["config"], title: "Danh sách tài khoản đã được cập nhật theo nhân sự thật và vị trí kiêm nhiệm.", time: "3 ngày trước", unread: true, avatar: "CH" }
 ];
-const ui = { sortBy: "updated", sortDir: "desc", dateType: "all", dateRange: "Mọi lúc", hiddenWelcome: false, myTaskView: "week" };
+const ui = { sortBy: "updated", sortDir: "desc", dateType: "all", dateRange: "Mọi lúc", hiddenWelcome: false, myTaskView: "day" };
 const isFinalSettlementProject = (project) => String(project?.projectStage || "").trim() === "final-settlement";
 const activeProjectsOnly = (items = []) => items.filter((project) => !isFinalSettlementProject(project));
 const DEMO_PROJECT_IDS = new Set(["p1", "p2"]);
@@ -94,6 +97,8 @@ const PROJECT_NAV_FALLBACK = [
 ];
 let projectNavItems = null;
 let sidebarHidden = false;
+let dashboardVoucherCache = [];
+let dashboardVoucherApprovedCache = null;
 
 function isMobileSidebar() {
   return matchMedia("(max-width: 900px)").matches;
@@ -200,7 +205,7 @@ function renderNav() {
     ["", [["◉  INSIGHT", "insight"], ["▰  LE DOME DRIVE", "drive"]]],
     ["DỰ ÁN", [["▣  Tổng quan", "projects-overview"], ...activeProjects]],
     ["ĐỐI TÁC", [["▣  Tổng quan", "partners-overview"], ["♟  Khách hàng", "customers"], ["▣  Nhà thầu", "contractors"], ["▤  Nhà cung cấp", "suppliers"]]],
-    ["NHÂN SỰ", [["▣  Tổng quan", "hrm-overview"], ["♟  Nhân sự", "hrm-staff"], ["▣  Bảng chấm công", "hrm-attendance"], ["▤  Phiếu Overtime", "hrm-overtime"], ["$  Lương", "hrm-payroll"]]],
+    ["NHÂN SỰ", [["▣  Tổng quan", "hrm-overview"], ["♟  Nhân sự", "hrm-staff"], ["▣  Bảng chấm công", "hrm-attendance"], ["▤  Phiếu Overtime", "hrm-overtime"], ["▤  Phiếu xin nghỉ", "hrm-leave"], ["$  Lương", "hrm-payroll"]]],
     ["TÀI CHÍNH", [["▣  Tổng quan", "finance-overview"], ["▣  Vận hành", "finance-ledome"], ["▤  Dự án", "finance-projects"]]],
     ["KHO", [["▰  Kho", "materials"]]],
     ["CẤU HÌNH", [["▰  Cơ sở dữ liệu", "catalog"], ["▰  Quy trình", "processes"], ["▰  Quy chuẩn Tiêu chuẩn", "standards"], ["▣  Tài khoản", "accounts"]]],
@@ -230,6 +235,14 @@ function renderNav() {
     }
     if (button.dataset.page.startsWith("project/")) {
       openProjectDetail(button.dataset.page.split("/")[1]);
+      return;
+    }
+    if (button.dataset.page === "catalog" && state.page === "catalog") {
+      refreshCatalogFromDom();
+      collapseCatalogPagePanels();
+      void configCatalog(false);
+      $(".sidebar").classList.remove("open");
+      syncSidebarToggle();
       return;
     }
     location.hash = button.dataset.page;
@@ -294,6 +307,7 @@ function dashboardProjectFor(index, ...values) {
   return null;
 }
 function dashboardLinkAttr(item = {}) {
+  if (item.projectId && item.projectView) return `data-project="${escapeHtml(item.projectId)}" data-project-view="${escapeHtml(item.projectView)}"`;
   if (item.link && canAccess(item.link)) return `data-dashboard-link="${escapeHtml(item.link)}"`;
   if (item.projectId) return `data-project="${escapeHtml(item.projectId)}"`;
   return "";
@@ -309,14 +323,826 @@ function dashboardKpi(label, value, note, link, tone = "") {
 function dashboardStatusBreakdown(title, rows, total) {
   return `<section class="dashboard-panel dashboard-breakdown"><header><h3>${escapeHtml(title)}</h3></header><div>${rows.map(([label, count, tone = ""]) => `<p class="${tone}"><span>${escapeHtml(label)}</span><b>${count}</b><em>${dashboardPercent(count, total)}</em></p>`).join("")}</div></section>`;
 }
-function dashboardActionRows(items) {
-  return items.length ? items.map((item) => `<tr class="${escapeHtml(item.tone || "")}" ${dashboardLinkAttr(item)}><td><b>${escapeHtml(item.title)}</b><small>${escapeHtml(item.detail || "")}</small></td><td>${escapeHtml(item.source || "")}</td><td><i class="dashboard-priority ${escapeHtml(item.tone || "")}">${escapeHtml(item.priority || "Theo dõi")}</i></td><td>${escapeHtml(item.due || "")}</td><td>${dashboardSourceButton(item, "Mở")}</td></tr>`).join("") : `<tr><td colspan="5" class="dashboard-empty">Chưa có dữ liệu cần xử lý.</td></tr>`;
+const APP_VOUCHER_TYPE_DEFAULTS = [
+  "Phiếu chấm công",
+  "Phiếu Overtime",
+  "Phiếu xin nghỉ phép",
+  "Phiếu giao nhiệm vụ",
+  "Phiếu Nhật ký thi công",
+  "Phiếu nhập kho",
+  "Phiếu xuất kho",
+  "Phiếu chi",
+  "Phiếu Yêu cầu Phát sinh của CDT",
+  "Phiếu Yêu cầu ghi chú của CDT",
+  "Phiếu Yêu cầu cần CDT phê duyệt",
+  "Phiếu Vấn đề sự cố"
+];
+const DASHBOARD_VOUCHER_TYPE_DEFS = [
+  "Phiếu chấm công",
+  "Phiếu Overtime",
+  "Phiếu xin nghỉ phép",
+  "Phiếu giao nhiệm vụ",
+  "Phiếu Nhật ký thi công",
+  "Phiếu nhập kho",
+  "Phiếu xuất kho",
+  "Phiếu chi",
+  "Phiếu Yêu cầu Phát sinh của CDT",
+  "Phiếu Yêu cầu ghi chú của CDT",
+  "Phiếu Yêu cầu cần CDT phê duyệt",
+  "Phiếu Vấn đề sự cố"
+];
+const DASHBOARD_VOUCHER_FORM_GROUPS = [
+  {
+    title: "Cá nhân",
+    items: [
+      {
+        id: "attendance",
+        label: "Thêm phiếu chấm công",
+        type: "Phiếu chấm công",
+        codePrefix: "CC",
+        title: "Tạo phiếu chấm công",
+        note: "Ghi nhận ca làm, vị trí check-in/check-out và bằng chứng xác thực.",
+        sections: [
+          { title: "Thông tin chấm công", fields: [
+            { label: "Nhân sự", kind: "select", options: ["DINH Công Hoàng", "Bùi Xuân Dũng", "Nguyễn Hoàng Hải", "Hoàng Thu Mai"] },
+            { label: "Ngày chấm công", kind: "date", value: "today" },
+            { label: "Dự án / vị trí", placeholder: "VD: 6ATS, Văn phòng Le Dome" },
+            { label: "Loại ghi nhận", kind: "select", options: ["Check-in", "Check-out", "Bổ sung công", "Điều chỉnh công"] },
+            { label: "Giờ vào", kind: "time", value: "08:00" },
+            { label: "Giờ ra", kind: "time", value: "17:30" }
+          ] },
+          { title: "Bằng chứng và kết quả", fields: [
+            { label: "Ảnh xác thực / GPS", kind: "file", placeholder: "Ảnh chấm công hoặc bằng chứng vị trí." },
+            { label: "Kết quả", kind: "textarea", placeholder: "VD: Hợp lệ, cần kiểm tra GPS, đi muộn hoặc thiếu ảnh xác thực.", wide: true }
+          ] }
+        ]
+      },
+      {
+        id: "overtime",
+        label: "Thêm phiếu overtime",
+        type: "Phiếu Overtime",
+        codePrefix: "OT",
+        title: "Tạo phiếu overtime",
+        note: "Đề xuất làm thêm giờ và kết quả cần hoàn thành trước khi duyệt.",
+        sections: [
+          { title: "Thông tin overtime", fields: [
+            { label: "Nhân sự", kind: "select", options: ["DINH Công Hoàng", "Bùi Xuân Dũng", "Nguyễn Hoàng Hải", "Hoàng Thu Mai"] },
+            { label: "Ngày overtime", kind: "date", value: "today" },
+            { label: "Vị trí / dự án", placeholder: "VD: Nhà phố VPH" },
+            { label: "Người duyệt", kind: "select", options: ["DINH Công Hoàng", "Bùi Xuân Dũng", "Hoàng Thu Mai"] },
+            { label: "Giờ bắt đầu", kind: "time", value: "18:00" },
+            { label: "Giờ kết thúc", kind: "time", value: "20:00" }
+          ] },
+          { title: "Nội dung", fields: [
+            { label: "Lý do xin overtime", kind: "textarea", placeholder: "Nêu việc cần hoàn thành, deadline và ảnh hưởng nếu không làm thêm.", wide: true },
+            { label: "Kết quả dự kiến", kind: "textarea", placeholder: "VD: hoàn thành hồ sơ gửi CDT, kiểm kê xong vật tư, xử lý lỗi kỹ thuật.", wide: true }
+          ] }
+        ]
+      },
+      {
+        id: "leave",
+        label: "Thêm phiếu xin nghỉ phép",
+        type: "Phiếu xin nghỉ phép",
+        codePrefix: "NP",
+        title: "Tạo phiếu xin nghỉ phép",
+        note: "Ghi nhận thời gian nghỉ, lý do và nội dung bàn giao.",
+        sections: [
+          { title: "Thông tin nghỉ phép", fields: [
+            { label: "Nhân sự", kind: "select", options: ["DINH Công Hoàng", "Bùi Xuân Dũng", "Nguyễn Hoàng Hải", "Hoàng Thu Mai"] },
+            { label: "Từ ngày", kind: "date", value: "today" },
+            { label: "Đến ngày", kind: "date", value: "today" },
+            { label: "Loại nghỉ", kind: "select", options: ["Nghỉ phép năm", "Nghỉ cá nhân", "Nghỉ không lương", "Nghỉ ốm", "Khác"] },
+            { label: "Người duyệt", kind: "select", options: ["DINH Công Hoàng", "Bùi Xuân Dũng", "Hoàng Thu Mai"] },
+            { label: "Số ngày dự kiến", placeholder: "VD: 1" }
+          ] },
+          { title: "Lý do và bàn giao", fields: [
+            { label: "Lý do xin nghỉ", kind: "textarea", placeholder: "Nêu rõ lý do xin nghỉ.", wide: true },
+            { label: "Bàn giao công việc", kind: "textarea", placeholder: "Ghi người nhận bàn giao, việc đang xử lý và deadline liên quan.", wide: true }
+          ] }
+        ]
+      },
+      {
+        id: "task",
+        label: "Thêm phiếu giao nhiệm vụ",
+        type: "Phiếu giao nhiệm vụ",
+        codePrefix: "NV",
+        title: "Tạo phiếu giao nhiệm vụ",
+        note: "Tạo đầu việc mới và gắn người thực hiện, hạn xử lý, kết quả cần đạt.",
+        sections: [
+          { title: "Thông tin nhiệm vụ", fields: [
+            { label: "Dự án / phạm vi", placeholder: "VD: PN An Định" },
+            { label: "Công việc", placeholder: "Nhập tên nhiệm vụ cần giao" },
+            { label: "Người thực hiện", kind: "select", options: ["DINH Công Hoàng", "Bùi Xuân Dũng", "Nguyễn Hoàng Hải", "Bùi Vũ Kiên"] },
+            { label: "Người theo dõi", kind: "select", options: ["DINH Công Hoàng", "Bùi Xuân Dũng", "Hoàng Thu Mai"] },
+            { label: "Bắt đầu kế hoạch", kind: "date", value: "today" },
+            { label: "Kết thúc kế hoạch", kind: "date", value: "today" }
+          ] },
+          { title: "Yêu cầu hoàn thành", fields: [
+            { label: "Nội dung giao việc", kind: "textarea", placeholder: "Ghi rõ việc cần làm, tiêu chuẩn nghiệm thu và tài liệu liên quan.", wide: true },
+            { label: "Kết quả", kind: "textarea", placeholder: "Kết quả mong muốn hoặc bằng chứng cần nộp khi hoàn thành.", wide: true }
+          ] }
+        ]
+      }
+    ]
+  },
+  {
+    title: "Công trường",
+    items: [
+      {
+        id: "stock-in",
+        label: "Thêm phiếu nhập kho",
+        type: "Phiếu nhập kho",
+        codePrefix: "NK",
+        title: "Tạo phiếu nhập kho",
+        note: "Xác nhận thiết bị vật tư NCC giao, người nhận và kho lưu trữ.",
+        sections: [
+          { title: "Thông tin nhập kho", fields: [
+            { label: "Nhà cung cấp", placeholder: "VD: NCC HOMEKIT" },
+            { label: "Ngày nhận", kind: "date", value: "today" },
+            { label: "Kho nhận", kind: "select", options: ["Kho VP", "Kho dự án", "Kho công trình", "Kho tạm"] },
+            { label: "Người nhận", kind: "select", options: ["DINH Công Hoàng", "Bùi Xuân Dũng", "Nguyễn Hoàng Hải", "Bùi Vũ Kiên"] },
+            { label: "Dự án liên quan", placeholder: "VD: 6ATS" },
+            { label: "Hạng mục vật tư", placeholder: "VD: Thiết bị điện, vật liệu hoàn thiện" }
+          ] },
+          { title: "Vật tư nhận", fields: [
+            { label: "Danh sách vật tư / thiết bị", kind: "textarea", placeholder: "Ghi tên vật tư, số lượng, đơn vị, tình trạng khi nhận.", wide: true },
+            { label: "Kết quả kiểm tra", kind: "textarea", placeholder: "Đủ số lượng, thiếu, hỏng, cần đổi trả hoặc lưu ý bảo quản.", wide: true },
+            { label: "Ảnh / chứng từ", kind: "file", placeholder: "Ảnh hàng nhận, phiếu giao hàng, hóa đơn." }
+          ] }
+        ]
+      },
+      {
+        id: "stock-out",
+        label: "Thêm phiếu xuất kho",
+        type: "Phiếu xuất kho",
+        codePrefix: "XK",
+        title: "Tạo phiếu xuất kho",
+        note: "Ghi nhận vật tư xuất dùng cho thi công, người nhận và nhật ký liên quan.",
+        sections: [
+          { title: "Thông tin xuất kho", fields: [
+            { label: "Kho xuất", kind: "select", options: ["Kho VP", "Kho dự án", "Kho công trình", "Kho tạm"] },
+            { label: "Ngày xuất", kind: "date", value: "today" },
+            { label: "Người nhận / tổ đội", placeholder: "VD: Tổ điện nước, VHD" },
+            { label: "Người lập phiếu", kind: "select", options: ["DINH Công Hoàng", "Bùi Xuân Dũng", "Nguyễn Hoàng Hải"] },
+            { label: "Dự án", placeholder: "VD: 6ATS" },
+            { label: "Phiếu nhật ký liên quan", placeholder: "VD: NK-2026-0001" }
+          ] },
+          { title: "Vật tư xuất dùng", fields: [
+            { label: "Danh sách vật tư / thiết bị", kind: "textarea", placeholder: "Ghi tên vật tư, số lượng, đơn vị, hạng mục sử dụng.", wide: true },
+            { label: "Mục đích sử dụng", kind: "textarea", placeholder: "Gắn với hạng mục thi công hoặc công việc trong ngày.", wide: true },
+            { label: "Kết quả", kind: "textarea", placeholder: "Đã xuất đủ, cần bổ sung, trả lại kho hoặc chờ xác nhận.", wide: true }
+          ] }
+        ]
+      },
+      {
+        id: "expense",
+        label: "Thêm phiếu chi",
+        type: "Phiếu chi",
+        codePrefix: "PC",
+        title: "Tạo phiếu chi",
+        note: "Ghi nhận khoản chi dự án hoặc vận hành kèm đối tượng, hạng mục và chứng từ.",
+        sections: [
+          { title: "Thông tin chi", fields: [
+            { label: "Ngày lập phiếu", kind: "date", value: "today" },
+            { label: "Giá trị", kind: "money", placeholder: "0" },
+            { label: "Nhóm", kind: "select", options: ["DỰ ÁN", "TÀI CHÍNH", "VẬN HÀNH LE DOME"] },
+            { label: "Chủ đề", placeholder: "VD: 6ATS, KHÁC" },
+            { label: "Hạng mục", placeholder: "VD: Gạch, gỗ nội thất, ngân hàng" },
+            { label: "Đối tượng", placeholder: "VD: Nhà thầu, NCC, nhân sự" }
+          ] },
+          { title: "Diễn giải", fields: [
+            { label: "Nội dung chi", kind: "textarea", placeholder: "Ghi rõ khoản chi, căn cứ thanh toán và người theo dõi.", wide: true },
+            { label: "Chứng từ", kind: "file", placeholder: "Ảnh hóa đơn, phiếu giao hàng, biên nhận." },
+            { label: "Kết quả", kind: "textarea", placeholder: "Đã ghi nhận, chờ duyệt, cần bổ sung chứng từ.", wide: true }
+          ] }
+        ]
+      }
+    ]
+  },
+  {
+    title: "CDT",
+    items: [
+      {
+        id: "cdt-change",
+        label: "Thêm phiếu Yêu cầu Phát sinh của CDT",
+        type: "Phiếu Yêu cầu Phát sinh của CDT",
+        codePrefix: "PS-CDT",
+        title: "Tạo phiếu Yêu cầu Phát sinh của CDT",
+        note: "Ghi nhận yêu cầu thay đổi phạm vi, chi phí hoặc tiến độ từ Chủ đầu tư.",
+        fullTemplate: "cdt-change",
+        sections: [
+          { title: "Thông tin phát sinh", fields: [
+            { label: "Dự án", placeholder: "VD: PN An Định" },
+            { label: "Ngày ghi nhận", kind: "date", value: "today" },
+            { label: "CDT / người yêu cầu", placeholder: "Nhập đại diện CDT" },
+            { label: "Chủ trì dự án", kind: "select", options: ["DINH Công Hoàng", "Bùi Xuân Dũng", "Nguyễn Hoàng Hải"] },
+            { label: "Hạng mục thi công", placeholder: "VD: Ốp lát, thiết bị vệ sinh" },
+            { label: "Ảnh hưởng tiến độ", kind: "select", options: ["Không ảnh hưởng", "Cần cộng tiến độ", "Cần điều chỉnh kế hoạch"] }
+          ] },
+          { title: "Nội dung và chi phí", fields: [
+            { label: "Nội dung phát sinh", kind: "textarea", placeholder: "Ghi rõ yêu cầu thay đổi, phạm vi và lý do phát sinh.", wide: true },
+            { label: "Chi phí tạm tính", kind: "money", placeholder: "0" },
+            { label: "Kết quả cần xác nhận", kind: "textarea", placeholder: "CDT xác nhận chi phí, tiến độ, phạm vi hoặc phương án xử lý.", wide: true }
+          ] }
+        ]
+      },
+      {
+        id: "cdt-note",
+        label: "Thêm phiếu Yêu cầu ghi chú của CDT",
+        type: "Phiếu Yêu cầu ghi chú của CDT",
+        codePrefix: "GC-CDT",
+        title: "Tạo phiếu Yêu cầu ghi chú của CDT",
+        note: "Ghi nhận ghi chú, chỉ đạo hoặc yêu cầu bổ sung thông tin từ CDT.",
+        fullTemplate: "cdt-note",
+        sections: [
+          { title: "Thông tin ghi chú", fields: [
+            { label: "Dự án", placeholder: "VD: VPH" },
+            { label: "Ngày nhận", kind: "date", value: "today" },
+            { label: "Người gửi phía CDT", placeholder: "Nhập tên người gửi" },
+            { label: "Kênh ghi nhận", kind: "select", options: ["Zalo", "Email", "Gặp trực tiếp", "Điện thoại", "Biên bản"] },
+            { label: "Mức độ", kind: "select", options: ["Cần xử lý", "Cần phản hồi", "Thông tin", "Gấp"] },
+            { label: "Phụ trách xử lý", kind: "select", options: ["DINH Công Hoàng", "Bùi Xuân Dũng", "Nguyễn Hoàng Hải"] }
+          ] },
+          { title: "Nội dung xử lý", fields: [
+            { label: "Nội dung ghi chú của CDT", kind: "textarea", placeholder: "Nhập nguyên văn hoặc tóm tắt rõ yêu cầu/ghi chú của CDT.", wide: true },
+            { label: "Kết quả mong muốn", kind: "textarea", placeholder: "CDT cần nhận phản hồi gì: ảnh xác nhận, phương án, báo giá, bản vẽ hoặc biên bản.", wide: true }
+          ] }
+        ]
+      },
+      {
+        id: "cdt-approval",
+        label: "Thêm phiếu Yêu cầu cần CDT phê duyệt",
+        type: "Phiếu Yêu cầu cần CDT phê duyệt",
+        codePrefix: "PD-CDT",
+        title: "Tạo phiếu Yêu cầu cần CDT phê duyệt",
+        note: "Trình CDT duyệt vật tư, biện pháp, bản vẽ, chi phí hoặc tiến độ trước khi triển khai.",
+        fullTemplate: "cdt-approval",
+        sections: [
+          { title: "Thông tin phê duyệt", fields: [
+            { label: "Dự án", placeholder: "VD: 38TQK" },
+            { label: "Ngày gửi", kind: "date", value: "today" },
+            { label: "Nội dung cần duyệt", placeholder: "VD: mẫu vật liệu, báo giá, bản vẽ" },
+            { label: "Hạng mục thi công", placeholder: "VD: Gỗ nội thất" },
+            { label: "Chủ trì dự án", kind: "select", options: ["DINH Công Hoàng", "Bùi Xuân Dũng", "Nguyễn Hoàng Hải"] },
+            { label: "Deadline CDT duyệt", kind: "date", value: "today" }
+          ] },
+          { title: "Hồ sơ trình duyệt", fields: [
+            { label: "Lý do cần phê duyệt", kind: "textarea", placeholder: "Nêu lý do, ảnh hưởng nếu chưa duyệt, rủi ro tiến độ/chi phí/chất lượng.", wide: true },
+            { label: "Hồ sơ gửi kèm", kind: "file", placeholder: "Ảnh hiện trạng, bản vẽ, mẫu vật tư, báo giá." },
+            { label: "Kết quả phê duyệt", kind: "textarea", placeholder: "Chờ duyệt, đã duyệt, cần chỉnh sửa hoặc từ chối.", wide: true }
+          ] }
+        ]
+      },
+      {
+        id: "issue",
+        label: "Thêm phiếu Vấn đề sự cố",
+        type: "Phiếu Vấn đề sự cố",
+        codePrefix: "SC",
+        title: "Tạo phiếu Vấn đề sự cố",
+        note: "Ghi nhận lỗi thi công, rủi ro chất lượng/an toàn hoặc sự cố cần xử lý.",
+        fullTemplate: "issue",
+        sections: [
+          { title: "Thông tin sự cố", fields: [
+            { label: "Dự án", placeholder: "VD: Hoàng Đạo Thúy -17T5" },
+            { label: "Ngày ghi nhận", kind: "date", value: "today" },
+            { label: "Nguồn phát hiện", kind: "select", options: ["Chủ trì dự án", "Nhật ký thi công", "CDT phản ánh", "Nhà thầu báo", "Nhân sự công trường"] },
+            { label: "Mức độ", kind: "select", options: ["Cần xử lý ngay", "Khẩn cấp", "Ảnh hưởng chất lượng", "Ảnh hưởng tiến độ", "Theo dõi"] },
+            { label: "Người phụ trách xử lý", kind: "select", options: ["DINH Công Hoàng", "Bùi Xuân Dũng", "Nguyễn Hoàng Hải"] },
+            { label: "Hạn xử lý", kind: "date", value: "today" }
+          ] },
+          { title: "Xử lý và đóng phiếu", fields: [
+            { label: "Nội dung vấn đề / sự cố", kind: "textarea", placeholder: "Mô tả rõ vấn đề, thời điểm phát hiện, ai phát hiện và hiện trạng.", wide: true },
+            { label: "Biện pháp xử lý", kind: "textarea", placeholder: "Ghi phương án khắc phục, người thực hiện, deadline và cách nghiệm thu lại.", wide: true },
+            { label: "Kết quả", kind: "textarea", placeholder: "Đã xử lý, chờ nghiệm thu lại, còn tồn tại hoặc cần CDT xác nhận.", wide: true }
+          ] }
+        ]
+      }
+    ]
+  }
+];
+const DASHBOARD_VOUCHER_FORM_DEFS = new Map(DASHBOARD_VOUCHER_FORM_GROUPS.flatMap((group) => group.items.map((item) => [item.id, item])));
+function dashboardVoucherFormToday() {
+  return new Date().toISOString().slice(0, 10);
 }
-function dashboardApprovalRows(items) {
-  return items.length ? items.map((item) => `<tr class="${escapeHtml(item.tone || "")}" ${dashboardLinkAttr(item)}><td><b>${escapeHtml(item.type)}</b><small>${escapeHtml(item.code || "")}</small></td><td>${escapeHtml(item.title)}</td><td>${escapeHtml(item.detail || "")}</td><td><i class="dashboard-priority ${escapeHtml(item.tone || "")}">${escapeHtml(item.status || "Cần duyệt")}</i></td><td>${dashboardSourceButton(item, "Xét duyệt")}</td></tr>`).join("") : `<tr><td colspan="5" class="dashboard-empty">Không có phiếu đang chờ duyệt.</td></tr>`;
+function dashboardVoucherFormCode(def) {
+  return `${def.codePrefix || "PH"}-${new Date().getFullYear()}-${String(Date.now()).slice(-4)}`;
 }
-function dashboardWarningRows(items) {
-  return items.length ? items.map((item) => `<tr class="${escapeHtml(item.tone || "")}" ${dashboardLinkAttr(item)}><td><i class="dashboard-dot ${escapeHtml(item.tone || "")}"></i></td><td><b>${escapeHtml(item.title)}</b><small>${escapeHtml(item.detail || "")}</small></td><td>${escapeHtml(item.source || "")}</td><td>${dashboardSourceButton(item, "Kiểm tra")}</td></tr>`).join("") : `<tr><td colspan="4" class="dashboard-empty">Không có cảnh báo nổi bật.</td></tr>`;
+function dashboardVoucherFormValue(field = {}) {
+  if (field.value === "today") return dashboardVoucherFormToday();
+  return field.value || "";
+}
+function dashboardVoucherFieldMarkup(field = {}, index = 0) {
+  const name = `field-${index}`;
+  const cls = field.wide || field.kind === "file" ? "wide" : "";
+  const value = dashboardVoucherFormValue(field);
+  const placeholder = field.placeholder ? ` placeholder="${escapeHtml(field.placeholder)}"` : "";
+  if (field.kind === "textarea") return `<label class="${cls}"><span>${escapeHtml(field.label)}</span><textarea name="${name}"${placeholder}>${escapeHtml(value)}</textarea></label>`;
+  if (field.kind === "select") return `<label class="${cls}"><span>${escapeHtml(field.label)}</span><select name="${name}">${(field.options || []).map((option) => `<option value="${escapeHtml(option)}" ${option === value ? "selected" : ""}>${escapeHtml(option)}</option>`).join("")}</select></label>`;
+  if (field.kind === "file") return `<label class="wide dashboard-voucher-upload"><span>${escapeHtml(field.label)}</span><input name="${name}" type="file" multiple><em>${escapeHtml(field.placeholder || "Đính kèm ảnh, file hoặc video liên quan.")}</em></label>`;
+  const type = field.kind === "date" || field.kind === "time" ? field.kind : "text";
+  const inputMode = field.kind === "money" ? ' inputmode="numeric"' : "";
+  return `<label class="${cls}"><span>${escapeHtml(field.label)}</span><input name="${name}" type="${type}"${inputMode}${placeholder} value="${escapeHtml(value)}"></label>`;
+}
+function dashboardVoucherSectionMarkup(section = {}, sectionIndex = 0) {
+  const fields = section.fields || [];
+  return `<section class="dashboard-voucher-form-card"><h4>${escapeHtml(section.title || `Mục ${sectionIndex + 1}`)}</h4><div class="dashboard-voucher-form-grid">${fields.map((field, index) => dashboardVoucherFieldMarkup(field, sectionIndex * 20 + index)).join("")}</div></section>`;
+}
+const DASHBOARD_FULL_FORM_PEOPLE = ["DINH Công Hoàng", "Bùi Xuân Dũng", "Nguyễn Hoàng Hải", "Bùi Vũ Kiên", "Hoàng Thu Mai"];
+const DASHBOARD_FULL_FORM_CATEGORIES = ["KHẢO SÁT - ĐO ĐẠC", "ỐP LÁT", "GỖ NỘI THẤT", "THIẾT BỊ ĐIỆN", "THẠCH CAO", "KHÁC"];
+const DASHBOARD_FULL_FORM_TASKS = ["Chưa liên kết công việc", "Khảo sát hiện trạng", "Thi công thô", "Hoàn thiện nội thất", "Nghiệm thu"];
+function dashboardVoucherFullGrid(fields = [], baseIndex = 0) {
+  return `<div class="dashboard-voucher-form-grid">${fields.map((field, index) => dashboardVoucherFieldMarkup(field, baseIndex + index)).join("")}</div>`;
+}
+function dashboardVoucherFullIntro(def) {
+  return `<section class="dashboard-voucher-form-intro dashboard-voucher-full-intro"><b>${escapeHtml(def.type)}</b><span>${escapeHtml(def.note || "")}</span></section>`;
+}
+function dashboardVoucherFullCard(title, fields = [], baseIndex = 0, extra = "") {
+  return `<section class="dashboard-voucher-form-card"><h4>${escapeHtml(title)}</h4>${dashboardVoucherFullGrid(fields, baseIndex)}${extra}</section>`;
+}
+function dashboardVoucherCostTable(title, rows, totals, notePlaceholder, buttonLabel = "+ Thêm dòng") {
+  const body = rows.map((row, index) => `<tr><td>${index + 1}</td><td><input value="${escapeHtml(row[0])}"></td><td><input value="${escapeHtml(row[1])}"></td><td><input inputmode="decimal" value="${escapeHtml(row[2])}"></td><td><input inputmode="numeric" value="${escapeHtml(row[3])}"></td><td>${escapeHtml(row[4])}</td></tr>`).join("");
+  return `<section class="dashboard-voucher-form-card dashboard-voucher-table-card"><header><h4>${escapeHtml(title)}</h4><button type="button">${escapeHtml(buttonLabel)}</button></header>
+    <div class="dashboard-voucher-table-scroll"><table><thead><tr><th>STT</th><th>Nội dung</th><th>ĐVT</th><th>Khối lượng</th><th>Đơn giá</th><th>Thành tiền</th></tr></thead><tbody>${body}</tbody></table></div>
+    <div class="dashboard-voucher-total-grid">${totals.map(([label, value]) => `<p><span>${escapeHtml(label)}</span><b>${escapeHtml(value)}</b></p>`).join("")}</div>
+    <label class="dashboard-voucher-wide-label"><span>Ghi chú chi phí</span><textarea placeholder="${escapeHtml(notePlaceholder)}"></textarea></label>
+  </section>`;
+}
+function dashboardVoucherAttachmentBox(title, desc, button = "Chọn ảnh") {
+  return `<section class="dashboard-voucher-attachment"><header><b>${escapeHtml(title)}</b><span>Chưa có ảnh</span></header><div><strong>${escapeHtml(desc)}</strong><small>Kéo thả ảnh vào đây hoặc chọn từ máy.</small></div><footer><button type="button">${escapeHtml(button)}</button></footer></section>`;
+}
+function dashboardVoucherConfirmationGrid() {
+  return `<section class="dashboard-voucher-confirm-grid">
+    <article><header><h4>CDT</h4><span>Chưa xác nhận</span></header><p>Bắt buộc có ảnh xác nhận yêu cầu phát sinh từ Chủ đầu tư.</p>${dashboardVoucherAttachmentBox("Ảnh xác nhận CDT", "Ảnh chụp xác nhận, chữ ký hoặc nội dung trao đổi đã chốt.", "Upload ảnh CDT")}</article>
+    <article><header><h4>Chủ trì dự án</h4><span>Chưa xác nhận</span></header><p>Chủ trì dự án xác nhận đã kiểm tra phạm vi, chi phí và ảnh hưởng tiến độ.</p>${dashboardVoucherAttachmentBox("Ảnh xác nhận Chủ trì dự án", "Ảnh chụp xác nhận, chữ ký hoặc nội dung trao đổi đã chốt.", "Upload ảnh Chủ trì dự án")}</article>
+  </section>`;
+}
+function dashboardVoucherChecklist(title, items, buttonLabel) {
+  return `<section class="dashboard-voucher-form-card dashboard-voucher-checklist-card"><header><h4>${escapeHtml(title)}</h4><button type="button">${escapeHtml(buttonLabel)}</button></header><div class="dashboard-voucher-checklist">${items.map((item, index) => `<label><input type="checkbox" ${index < 2 ? "checked" : ""}><span>${escapeHtml(item)}</span></label>`).join("")}</div></section>`;
+}
+function dashboardVoucherApprovalFlow() {
+  return `<section class="dashboard-voucher-form-card dashboard-voucher-approval-flow"><h4>Luồng duyệt</h4><div>
+    <article><b>1. Lập phiếu</b><select>${DASHBOARD_FULL_FORM_PEOPLE.map((person) => `<option>${escapeHtml(person)}</option>`).join("")}</select><span>Người chuẩn bị nội dung, hồ sơ và ảnh gửi kèm.</span></article>
+    <article><b>2. Kiểm tra nội bộ</b><select>${DASHBOARD_FULL_FORM_PEOPLE.map((person) => `<option>${escapeHtml(person)}</option>`).join("")}</select><span>Chủ trì dự án kiểm tra trước khi gửi CDT.</span></article>
+    <article><b>3. CDT phê duyệt</b><input placeholder="Tên người duyệt phía CDT"><span>Người đại diện CDT xác nhận kết quả cuối cùng.</span></article>
+  </div><label class="dashboard-voucher-wide-label"><span>Kênh gửi duyệt</span><input placeholder="VD: Zalo nhóm dự án, email, biên bản họp..."></label></section>`;
+}
+function dashboardVoucherFullCdtChange(def) {
+  return `<div class="dashboard-voucher-full-template cdt-change-template">${dashboardVoucherFullIntro(def)}
+    ${dashboardVoucherFullCard("Thông tin phiếu", [
+      { label: "Mã phiếu", value: dashboardVoucherFormCode(def) },
+      { label: "Ngày ghi nhận", kind: "date", value: "today" },
+      { label: "Dự án", value: "Dự án xây dựng" },
+      { label: "Người lập phiếu", value: state.account?.loginId || "HoangDINH" },
+      { label: "CDT / Người yêu cầu", placeholder: "Nhập tên người yêu cầu phía CDT" },
+      { label: "Chủ trì dự án", kind: "select", options: DASHBOARD_FULL_FORM_PEOPLE },
+      { label: "Nội dung phát sinh", value: "Bổ sung/điều chỉnh hạng mục theo yêu cầu của CDT", wide: true },
+      { label: "Mô tả yêu cầu", kind: "textarea", placeholder: "Ghi rõ hiện trạng, yêu cầu thay đổi, phạm vi ảnh hưởng và lý do phát sinh.", wide: true }
+    ])}
+    ${dashboardVoucherFullCard("Hạng mục thi công và phạm vi", [
+      { label: "Hạng mục thi công", kind: "select", options: DASHBOARD_FULL_FORM_CATEGORIES },
+      { label: "Công việc liên quan", kind: "select", options: DASHBOARD_FULL_FORM_TASKS },
+      { label: "Khu vực / vị trí", placeholder: "VD: Phòng khách, WC master, ban công..." },
+      { label: "Mức ảnh hưởng tiến độ", kind: "select", options: ["Không ảnh hưởng", "Cần cộng tiến độ", "Cần điều chỉnh thứ tự thi công"] },
+      { label: "Phạm vi thi công", kind: "textarea", placeholder: "Nêu rõ khối lượng, khu vực, điều kiện thi công, nhà thầu/NCC liên quan.", wide: true }
+    ], 40)}
+    ${dashboardVoucherCostTable("Chi phí phát sinh", [["Khảo sát bổ sung, tháo dỡ phạm vi phát sinh", "công", "1", "2.500.000", "2.500.000 đ"], ["Vật tư hoàn thiện theo yêu cầu CDT", "gói", "1", "12.500.000", "12.500.000 đ"], ["Nhân công thi công và vệ sinh hoàn trả", "công", "3", "1.800.000", "5.400.000 đ"]], [["Tạm tính", "20.400.000 đ"], ["VAT dự kiến", "1.632.000 đ"], ["Tổng dự kiến", "22.032.000 đ"]], "Ghi rõ căn cứ báo giá, tạm tính/chốt giá, điều kiện thanh toán và phần chi phí chưa chắc chắn.")}
+    ${dashboardVoucherConfirmationGrid()}
+    ${dashboardVoucherFullCard("Ghi chú và hình ảnh gửi kèm", [
+      { label: "Ghi chú", kind: "textarea", placeholder: "Ghi chú trao đổi với CDT, phương án xử lý, người chịu trách nhiệm và deadline phản hồi.", wide: true }
+    ], 80, dashboardVoucherAttachmentBox("Hình ảnh / hồ sơ gửi kèm", "Ảnh hiện trạng, ảnh yêu cầu CDT, file chụp báo giá hoặc nội dung trao đổi."))}
+  </div>`;
+}
+function dashboardVoucherFullCdtNote(def) {
+  return `<div class="dashboard-voucher-full-template cdt-note-template">${dashboardVoucherFullIntro(def)}
+    ${dashboardVoucherFullCard("Thông tin phiếu", [
+      { label: "Mã phiếu", value: dashboardVoucherFormCode(def) },
+      { label: "Ngày nhận", kind: "date", value: "today" },
+      { label: "Dự án", value: "Dự án xây dựng" },
+      { label: "Người lập phiếu", value: state.account?.loginId || "HoangDINH" },
+      { label: "Người gửi phía CDT", placeholder: "Nhập tên người gửi / đại diện CDT" },
+      { label: "Kênh ghi nhận", kind: "select", options: ["Zalo", "Email", "Gặp trực tiếp", "Điện thoại", "Biên bản"] },
+      { label: "Mức độ", kind: "select", options: ["Cần xử lý", "Cần phản hồi", "Thông tin", "Gấp"] },
+      { label: "Trạng thái", kind: "select", options: ["Mới ghi nhận", "Đang xử lý", "Chờ CDT phản hồi", "Đã phản hồi"] },
+      { label: "Nội dung ghi chú của CDT", kind: "textarea", placeholder: "Nhập nguyên văn hoặc tóm tắt rõ yêu cầu/ghi chú của CDT.", wide: true }
+    ])}
+    ${dashboardVoucherFullCard("Phân loại và xử lý", [
+      { label: "Hạng mục thi công", kind: "select", options: DASHBOARD_FULL_FORM_CATEGORIES },
+      { label: "Công việc liên quan", kind: "select", options: DASHBOARD_FULL_FORM_TASKS },
+      { label: "Vị trí / khu vực", placeholder: "VD: Phòng khách, WC master, ban công..." },
+      { label: "Phụ trách xử lý", kind: "select", options: DASHBOARD_FULL_FORM_PEOPLE },
+      { label: "Deadline phản hồi", kind: "date", value: "today" },
+      { label: "Người kiểm tra", kind: "select", options: DASHBOARD_FULL_FORM_PEOPLE },
+      { label: "Kết quả mong muốn", kind: "textarea", placeholder: "Nêu rõ CDT cần nhận phản hồi gì: ảnh xác nhận, phương án xử lý, báo giá, bản vẽ hay biên bản.", wide: true }
+    ], 40)}
+    ${dashboardVoucherChecklist("Danh sách nhiệm vụ bổ sung", ["Tạo nhiệm vụ bổ sung cho Chủ trì dự án", "Đưa vào danh sách nhiệm vụ theo yêu cầu ghi chú của CDT", "Theo dõi trong nhật ký thi công ngày gần nhất", "Cần phản hồi lại CDT bằng ảnh hoặc biên bản"], "+ Tạo nhiệm vụ")}
+    ${dashboardVoucherFullCard("Ghi chú nội bộ", [
+      { label: "Ghi chú", kind: "textarea", placeholder: "Ghi chú cho Chủ trì dự án, đội thi công hoặc người phụ trách phản hồi CDT.", wide: true }
+    ], 80)}
+    ${dashboardVoucherFullCard("Phản hồi và hình ảnh gửi kèm", [
+      { label: "Nội dung phản hồi dự kiến", kind: "textarea", placeholder: "Nhập nội dung sẽ phản hồi lại CDT sau khi kiểm tra.", wide: true }
+    ], 100, dashboardVoucherAttachmentBox("Hình ảnh / nội dung CDT gửi kèm", "Ảnh chụp trao đổi, ảnh hiện trạng, yêu cầu CDT hoặc tài liệu cần lưu theo phiếu.", "Chọn ảnh"))}
+  </div>`;
+}
+function dashboardVoucherFullCdtApproval(def) {
+  return `<div class="dashboard-voucher-full-template cdt-approval-template">${dashboardVoucherFullIntro(def)}
+    ${dashboardVoucherFullCard("Thông tin phê duyệt", [
+      { label: "Mã phiếu", value: dashboardVoucherFormCode(def) },
+      { label: "Ngày gửi", kind: "date", value: "today" },
+      { label: "Dự án", value: "Dự án xây dựng" },
+      { label: "Người lập phiếu", value: state.account?.loginId || "HoangDINH" },
+      { label: "Hạng mục thi công", kind: "select", options: DASHBOARD_FULL_FORM_CATEGORIES },
+      { label: "Công việc liên quan", kind: "select", options: DASHBOARD_FULL_FORM_TASKS },
+      { label: "Chủ trì dự án", kind: "select", options: DASHBOARD_FULL_FORM_PEOPLE },
+      { label: "Deadline CDT duyệt", kind: "date", value: "today" },
+      { label: "Nội dung cần phê duyệt", kind: "textarea", placeholder: "Ghi rõ nội dung cần CDT xác nhận trước khi thi công/mua vật tư/chốt phương án.", wide: true },
+      { label: "Lý do cần phê duyệt", kind: "textarea", placeholder: "Nêu lý do, ảnh hưởng nếu chưa duyệt, rủi ro tiến độ/chi phí/chất lượng.", wide: true }
+    ])}
+    ${dashboardVoucherApprovalFlow()}
+    ${dashboardVoucherCostTable("Chi phí / giá trị liên quan", [["Hồ sơ / phương án cần CDT phê duyệt", "gói", "1", "0", "0 đ"], ["Mẫu vật tư hoặc biện pháp thi công", "gói", "1", "0", "0 đ"]], [["Tạm tính", "0 đ"], ["Dự phòng", "0 đ"], ["Tổng trình duyệt", "0 đ"]], "Ghi rõ chi phí là tạm tính, chờ báo giá hay đã chốt.")}
+    ${dashboardVoucherFullCard("Hồ sơ gửi kèm", [], 120, dashboardVoucherAttachmentBox("Ảnh / tài liệu trình duyệt", "Ảnh hiện trạng, bản vẽ, mẫu vật tư, báo giá hoặc nội dung trao đổi cần CDT duyệt.", "Chọn ảnh"))}
+  </div>`;
+}
+function dashboardVoucherFullIssue(def) {
+  return `<div class="dashboard-voucher-full-template issue-template">${dashboardVoucherFullIntro(def)}
+    ${dashboardVoucherFullCard("Thông tin sự cố", [
+      { label: "Mã phiếu", value: dashboardVoucherFormCode(def) },
+      { label: "Ngày ghi nhận", kind: "date", value: "today" },
+      { label: "Dự án", value: "Dự án xây dựng" },
+      { label: "Người ghi nhận", value: state.account?.loginId || "HoangDINH" },
+      { label: "Nguồn phát hiện", kind: "select", options: ["Chủ trì dự án", "Nhật ký thi công", "CDT phản ánh", "Nhà thầu báo", "Nhân sự công trường"] },
+      { label: "Mức độ", kind: "select", options: ["Cần xử lý ngay", "Khẩn cấp", "Ảnh hưởng chất lượng", "Ảnh hưởng tiến độ", "Theo dõi"] },
+      { label: "Trạng thái", kind: "select", options: ["Mới ghi nhận", "Đang xử lý", "Chờ nghiệm thu lại", "Đã xử lý"] },
+      { label: "Hạn xử lý", kind: "date", value: "today" },
+      { label: "Nội dung vấn đề / sự cố", kind: "textarea", placeholder: "Mô tả rõ vấn đề, thời điểm phát hiện, ai phát hiện và hiện trạng tại công trường.", wide: true }
+    ])}
+    ${dashboardVoucherFullCard("Phân loại và trách nhiệm", [
+      { label: "Hạng mục thi công", kind: "select", options: DASHBOARD_FULL_FORM_CATEGORIES },
+      { label: "Công việc liên quan", kind: "select", options: DASHBOARD_FULL_FORM_TASKS },
+      { label: "Vị trí / khu vực", placeholder: "VD: WC master, trần phòng khách, ban công..." },
+      { label: "Người phụ trách xử lý", kind: "select", options: DASHBOARD_FULL_FORM_PEOPLE },
+      { label: "Đơn vị liên quan", placeholder: "Nhà thầu / NCC / đội thi công liên quan" },
+      { label: "Người xác nhận đóng phiếu", kind: "select", options: DASHBOARD_FULL_FORM_PEOPLE },
+      { label: "Ảnh hưởng", kind: "textarea", placeholder: "Nêu ảnh hưởng tới an toàn, chất lượng, tiến độ, chi phí, CDT hoặc hạng mục liền kề.", wide: true }
+    ], 40)}
+    ${dashboardVoucherChecklist("Hành động xử lý", ["Dừng khu vực thi công có rủi ro", "Thông báo Chủ trì dự án kiểm tra ngay", "Giao người xử lý và deadline khắc phục", "Yêu cầu ảnh xác nhận sau xử lý"], "+ Tạo nhiệm vụ xử lý")}
+    ${dashboardVoucherFullCard("Nguyên nhân và biện pháp", [
+      { label: "Nguyên nhân tạm xác định", kind: "textarea", placeholder: "Ghi nguyên nhân dự kiến hoặc điều kiện cần kiểm tra thêm.", wide: true },
+      { label: "Biện pháp xử lý / phòng ngừa", kind: "textarea", placeholder: "Ghi phương án khắc phục, người thực hiện, deadline và cách nghiệm thu lại.", wide: true }
+    ], 80)}
+    ${dashboardVoucherFullCard("Ảnh hiện trường và hồ sơ kèm theo", [], 120, `${dashboardVoucherAttachmentBox("Ảnh hiện trường / bằng chứng sự cố", "Ảnh hiện trạng, vị trí phát sinh, lỗi thi công, biên bản hoặc nội dung phản ánh.", "Chọn ảnh hiện trường")}${dashboardVoucherAttachmentBox("Ảnh sau xử lý / xác nhận đóng phiếu", "Ảnh khắc phục, ảnh nghiệm thu lại hoặc xác nhận của Chủ trì dự án/CDT.", "Chọn ảnh xác nhận")}`)}
+  </div>`;
+}
+function dashboardVoucherFullForm(def) {
+  if (def.fullTemplate === "cdt-change") return dashboardVoucherFullCdtChange(def);
+  if (def.fullTemplate === "cdt-note") return dashboardVoucherFullCdtNote(def);
+  if (def.fullTemplate === "cdt-approval") return dashboardVoucherFullCdtApproval(def);
+  if (def.fullTemplate === "issue") return dashboardVoucherFullIssue(def);
+  return "";
+}
+function dashboardVoucherFormBody(def) {
+  const full = dashboardVoucherFullForm(def);
+  if (full) return full;
+  const commonFields = [
+    { label: "Mã phiếu", value: dashboardVoucherFormCode(def) },
+    { label: "Loại phiếu", value: def.type },
+    { label: "Ngày lập", kind: "date", value: "today" },
+    { label: "Người lập phiếu", value: state.account?.staffName || state.account?.loginId || "Tài khoản hiện tại" }
+  ];
+  return `<section class="dashboard-voucher-form-intro"><b>${escapeHtml(def.type)}</b><span>${escapeHtml(def.note || "")}</span></section>
+    <section class="dashboard-voucher-form-card"><h4>Thông tin chung</h4><div class="dashboard-voucher-form-grid">${commonFields.map((field, index) => dashboardVoucherFieldMarkup(field, index)).join("")}</div></section>
+    ${(def.sections || []).map(dashboardVoucherSectionMarkup).join("")}`;
+}
+function dashboardVoucherFormModal() {
+  return `<div class="modal-backdrop dashboard-voucher-form-backdrop" id="dashboard-voucher-form-modal">
+    <section class="dashboard-voucher-form-modal" role="dialog" aria-modal="true" aria-labelledby="dashboard-voucher-form-title">
+      <header><div><small data-voucher-form-kind>Form mẫu phiếu</small><h2 id="dashboard-voucher-form-title" data-voucher-form-title>Form mẫu</h2><p data-voucher-form-note></p></div><button type="button" data-action="close-voucher-form">×</button></header>
+      <form id="dashboard-voucher-form"><div data-voucher-form-body></div><footer><button type="button" class="btn secondary" data-action="close-voucher-form">Đóng</button><button class="btn">Lưu bản nháp</button></footer></form>
+    </section>
+  </div>`;
+}
+function openDashboardVoucherForm(id) {
+  const def = DASHBOARD_VOUCHER_FORM_DEFS.get(id);
+  const modal = $("#dashboard-voucher-form-modal");
+  if (!def || !modal) return;
+  modal.dataset.currentVoucherForm = id;
+  modal.querySelector("[data-voucher-form-kind]").textContent = def.type;
+  modal.querySelector("[data-voucher-form-title]").textContent = def.title;
+  modal.querySelector("[data-voucher-form-note]").textContent = def.note || "";
+  modal.querySelector("[data-voucher-form-body]").innerHTML = dashboardVoucherFormBody(def);
+  modal.classList.add("open");
+  modal.querySelector("input, select, textarea")?.focus();
+}
+function closeDashboardVoucherForm() {
+  $("#dashboard-voucher-form-modal")?.classList.remove("open");
+}
+function dashboardVoucherDateObject(value) {
+  const parts = financeDateParts(value);
+  if (parts) return new Date(parts.year, parts.month - 1, parts.day);
+  const parsed = new Date(value || "");
+  if (Number.isFinite(parsed.getTime())) return new Date(parsed.getFullYear(), parsed.getMonth(), parsed.getDate());
+  return dashboardTodayDate();
+}
+function dashboardVoucherSortValue(item = {}) {
+  return dashboardVoucherDateObject(item.createdAt || item.date).getTime();
+}
+function dashboardVoucherDateLabel(item = {}) {
+  return financeDate(item.createdAt || item.date) || dashboardDisplayDate(dashboardVoucherDateObject(item.createdAt || item.date));
+}
+function dashboardVoucherNeedsApproval(item = {}) {
+  if (dashboardVoucherIsLocallyApproved(item)) return false;
+  if (item.pending === true) return true;
+  if (item.pending === false) return false;
+  const text = plainVietnamese(item.status);
+  return ["can duyet", "cho duyet", "chua duyet", "can kiem tra", "can xu ly", "can phan hoi", "cho xac nhan", "cho cdt", "den han", "chua thu", "sap vuot", "vuot ngan sach", "khong on"].some((needle) => text.includes(needle));
+}
+function dashboardVoucherTone(item = {}) {
+  if (dashboardVoucherIsLocallyApproved(item)) return "ok";
+  const text = plainVietnamese(item.status);
+  if (["tu choi", "khong on", "vuot", "qua han"].some((needle) => text.includes(needle))) return "danger";
+  if (dashboardVoucherNeedsApproval(item)) return "warning";
+  if (["hop le", "da duyet", "da ghi nhan", "da nhan", "da xuat dung", "hoan thanh", "da xu ly", "da phan hoi", "da xong"].some((needle) => text.includes(needle))) return "ok";
+  return "";
+}
+function dashboardVoucherStatusLabel(item = {}) {
+  if (dashboardVoucherIsLocallyApproved(item)) return "Đã duyệt";
+  return item.status || (dashboardVoucherNeedsApproval(item) ? "Cần duyệt" : "Đã ghi nhận");
+}
+function dashboardVoucherTypeKey(type = "") {
+  return plainVietnamese(type).replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "voucher";
+}
+function dashboardVoucherApprovalKey(item = {}) {
+  return `${item.type || ""}::${item.code || ""}::${item.createdAt || item.date || ""}`;
+}
+function dashboardVoucherApprovedKeys() {
+  if (dashboardVoucherApprovedCache) return dashboardVoucherApprovedCache;
+  try {
+    const saved = JSON.parse(localStorage.getItem(DASHBOARD_VOUCHER_APPROVAL_STORAGE) || "[]");
+    dashboardVoucherApprovedCache = new Set(Array.isArray(saved) ? saved : []);
+  } catch {
+    dashboardVoucherApprovedCache = new Set();
+  }
+  return dashboardVoucherApprovedCache;
+}
+function dashboardStoreVoucherApprovedKeys(keys) {
+  dashboardVoucherApprovedCache = keys;
+  localStorage.setItem(DASHBOARD_VOUCHER_APPROVAL_STORAGE, JSON.stringify([...keys]));
+}
+function dashboardVoucherIsLocallyApproved(item = {}) {
+  return dashboardVoucherApprovedKeys().has(dashboardVoucherApprovalKey(item));
+}
+function dashboardMarkVoucherApproved(item = {}) {
+  const keys = dashboardVoucherApprovedKeys();
+  keys.add(dashboardVoucherApprovalKey(item));
+  dashboardStoreVoucherApprovedKeys(keys);
+}
+function dashboardVoucherCollapsedMap() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(DASHBOARD_VOUCHER_COLLAPSE_STORAGE) || "{}");
+    return saved && typeof saved === "object" ? saved : {};
+  } catch {
+    return {};
+  }
+}
+function dashboardVoucherCollapsed(type = "") {
+  return Boolean(dashboardVoucherCollapsedMap()[dashboardVoucherTypeKey(type)]);
+}
+function dashboardSetVoucherCollapsed(type = "", collapsed = false) {
+  const key = dashboardVoucherTypeKey(type);
+  const map = dashboardVoucherCollapsedMap();
+  if (collapsed) map[key] = true;
+  else delete map[key];
+  localStorage.setItem(DASHBOARD_VOUCHER_COLLAPSE_STORAGE, JSON.stringify(map));
+}
+function dashboardVoucherCode(prefix, index) {
+  return `${prefix}-${String(index + 1).padStart(4, "0")}`;
+}
+function dashboardFinanceVoucherStatus(row = []) {
+  const raw = String(row[9] || row[10] || "").trim();
+  if (dashboardTextHas(raw, ["Cần duyệt", "Chờ duyệt", "Chưa duyệt", "Từ chối"])) return raw;
+  if (raw && !dashboardTextHas(raw, ["Không", "Nguồn Excel"])) return raw;
+  return "Đã ghi nhận";
+}
+function dashboardProjectLinkFor(projectIndex, projectCode, fallbackLink = "projects-overview") {
+  const project = dashboardProjectFor(projectIndex, projectCode);
+  return project?.id ? { projectId: project.id } : { link: fallbackLink };
+}
+function dashboardBuildVoucherRows({ financeData, materialsRows, attendanceRecords, overtimeRows, leaveRows, riskProjects, financeIssueRows, dueDebtRows, projectIndex }) {
+  const transactions = Array.isArray(financeData.transactions) ? financeData.transactions : [];
+  const vouchers = [];
+  transactions.filter((row) => row[1] === "Chi").forEach((row, index) => {
+    const projectLink = row[2] === FINANCE_PROJECT_GROUP ? dashboardProjectLinkFor(projectIndex, row[3], "finance-projects") : { link: row[2] === FINANCE_OPERATION_GROUP ? "finance-ledome" : "finance-overview" };
+    const status = dashboardFinanceVoucherStatus(row);
+    vouchers.push({
+      type: "Phiếu chi",
+      code: dashboardVoucherCode("PC", index),
+      createdAt: row[0],
+      source: row[2] === FINANCE_PROJECT_GROUP ? "Tài chính dự án" : "Tài chính",
+      owner: row[5] || "Kế toán",
+      title: row[6] || row[4] || "Khoản chi",
+      detail: `${row[3] || "Chưa phân loại"} · ${row[4] || "Khác"} · ${dashboardMoney(row[7])}`,
+      status,
+      link: projectLink.projectId ? undefined : (projectLink.link || (row[2] === FINANCE_OPERATION_GROUP ? "finance-ledome" : "finance-overview")),
+      projectId: projectLink.projectId,
+      projectView: projectLink.projectId ? "cash" : ""
+    });
+  });
+  (materialsRows || []).forEach((row, index) => {
+    const projectLink = dashboardProjectLinkFor(projectIndex, row.project, "materials");
+    const issued = dashboardTextHas(row.status, ["Đã xuất dùng"]);
+    vouchers.push({
+      type: issued ? "Phiếu xuất kho" : "Phiếu nhập kho",
+      code: row.id ? `${issued ? "XK" : "NK"}-${row.id}` : dashboardVoucherCode(issued ? "XK" : "NK", index),
+      createdAt: row.date,
+      source: "Kho",
+      owner: row.supplier || row.location || "Kho",
+      title: row.item || "Vật tư",
+      detail: `${row.project || row.location || "Không gắn dự án"} · ${materialQuantity(row.quantity)} ${row.unit || ""} · ${row.note || row.category || ""}`,
+      status: row.status || (issued ? "Đã xuất dùng" : "Đã nhận"),
+      link: projectLink.projectId ? undefined : "materials",
+      projectId: projectLink.projectId,
+      projectView: projectLink.projectId ? (issued ? "material-issue-slip" : "material-slip") : ""
+    });
+  });
+  (attendanceRecords || []).forEach((record) => {
+    vouchers.push({
+      type: "Phiếu chấm công",
+      code: record.id,
+      createdAt: record.capturedAt,
+      source: "Chấm công",
+      owner: record.employeeName,
+      title: record.employeeName,
+      detail: `${record.type === "check-out" ? "Check-out" : "Check-in"} · ${record.siteName || ""}`,
+      status: record.status || "Cần duyệt",
+      link: "hrm-attendance"
+    });
+  });
+  (overtimeRows || []).forEach((row) => {
+    vouchers.push({
+      type: "Phiếu Overtime",
+      code: row[0],
+      createdAt: row[2],
+      source: "Nhân sự",
+      owner: row[1],
+      title: row[7] || "Làm thêm giờ",
+      detail: `${row[3]} · ${row[4]}-${row[5]} · ${row[6]} giờ`,
+      status: row[8],
+      link: "hrm-overtime"
+    });
+  });
+  (leaveRows || []).forEach((row) => {
+    vouchers.push({
+      type: "Phiếu xin nghỉ phép",
+      code: row[0],
+      createdAt: row[2],
+      source: "Nhân sự",
+      owner: row[1],
+      title: row[1] || "Nhân sự xin nghỉ",
+      detail: `${row[2]}${row[3] && row[3] !== row[2] ? ` - ${row[3]}` : ""} · ${row[4]} ngày · ${row[5] || row[6] || "Nghỉ phép"}`,
+      status: row[7],
+      link: "hrm-leave"
+    });
+  });
+  transactions.filter((row) => row[2] === FINANCE_PROJECT_GROUP && dashboardTextHas([row[6], row[9], row[10]].join(" "), ["Phát sinh"])).forEach((row, index) => {
+    const project = dashboardProjectFor(projectIndex, row[3]);
+    vouchers.push({
+      type: "Phiếu Yêu cầu Phát sinh của CDT",
+      code: dashboardVoucherCode("PS-CDT", index),
+      createdAt: row[0],
+      source: "Dự án",
+      owner: row[5] || "CDT",
+      title: row[6] || row[4] || "Phát sinh dự án",
+      detail: `${row[3]} · ${row[4] || "Phát sinh"} · ${dashboardMoney(row[7])}`,
+      status: "Cần duyệt",
+      pending: true,
+      projectId: project?.id,
+      projectView: project?.id ? "rfi" : "",
+      link: project?.id ? undefined : "projects-overview"
+    });
+  });
+  (dueDebtRows || []).filter((row) => dashboardTextHas(row[1], ["Phải thu"])).forEach((row, index) => {
+    const project = dashboardProjectFor(projectIndex, row[2]);
+    vouchers.push({
+      type: "Phiếu Yêu cầu ghi chú của CDT",
+      code: dashboardVoucherCode("GC-CDT", index),
+      createdAt: row[0],
+      source: "Công nợ CDT",
+      owner: row[3] || "CDT",
+      title: row[5] || "Yêu cầu phản hồi công nợ",
+      detail: `${row[2]} · còn ${dashboardMoney(row[8])} · ${dashboardDueLabel(row[9], row[10])}`,
+      status: row[10] || "Cần phản hồi",
+      pending: !dashboardGoodStatus(row[10]),
+      projectId: project?.id,
+      projectView: project?.id ? "owner-request" : "",
+      link: project?.id ? undefined : "finance-projects"
+    });
+  });
+  (financeIssueRows || []).forEach(({ row, project }, index) => {
+    vouchers.push({
+      type: "Phiếu Yêu cầu cần CDT phê duyệt",
+      code: dashboardVoucherCode("PD-CDT", index),
+      createdAt: row[0] || dashboardTodayDate(),
+      source: "Tài chính dự án",
+      owner: row[2] || "CDT",
+      title: row[1] || row[0],
+      detail: `${row[13] || "Cần rà soát"} · lợi nhuận ${dashboardCompactMoney(row[10])}`,
+      status: dashboardGoodStatus(row[13]) ? "Đã duyệt" : "Cần duyệt",
+      pending: !dashboardGoodStatus(row[13]),
+      projectId: project?.id,
+      projectView: project?.id ? "rfa" : "",
+      link: project?.id ? undefined : "finance-projects"
+    });
+  });
+  (riskProjects || []).forEach((project, index) => {
+    vouchers.push({
+      type: "Phiếu Vấn đề sự cố",
+      code: dashboardVoucherCode("SC", index),
+      createdAt: project.startDate || dashboardTodayDate(),
+      source: "Dự án",
+      owner: project.manager || project.commander || "Chủ trì dự án",
+      title: project.name,
+      detail: `${project.health || "Theo dõi"} · thực tế ${Number(project.progress || 0)}% / kế hoạch ${projectPlanProgress(project)}%`,
+      status: dashboardGoodStatus(project.health) ? "Đã xử lý" : "Cần xử lý",
+      pending: !dashboardGoodStatus(project.health),
+      projectId: project.id,
+      projectView: "issues"
+    });
+  });
+  return vouchers.sort((a, b) => Number(dashboardVoucherNeedsApproval(b)) - Number(dashboardVoucherNeedsApproval(a)) || dashboardVoucherSortValue(a) - dashboardVoucherSortValue(b) || String(a.code).localeCompare(String(b.code), "vi", { numeric: true }));
+}
+function dashboardVoucherRows(items) {
+  return items.length ? items.map((item) => {
+    const tone = dashboardVoucherTone(item);
+    return `<tr class="${escapeHtml(tone)}" ${dashboardLinkAttr(item)}><td><b>${escapeHtml(item.type)}</b><small>${escapeHtml(item.code || "")}</small></td><td>${escapeHtml(dashboardVoucherDateLabel(item))}</td><td><b>${escapeHtml(item.title || "")}</b><small>${escapeHtml(item.detail || "")}</small></td><td>${escapeHtml(item.owner || "")}</td><td>${escapeHtml(item.source || "")}</td><td><i class="dashboard-priority ${escapeHtml(tone)}">${escapeHtml(dashboardVoucherStatusLabel(item))}</i></td><td>${dashboardSourceButton(item, "Mở")}</td></tr>`;
+  }).join("") : `<tr><td colspan="7" class="dashboard-empty">Chưa có phiếu nào trong hệ thống.</td></tr>`;
+}
+function dashboardVoucherWithinWeek(item = {}, anchorDate = dashboardTodayDate()) {
+  const created = dashboardVoucherDateObject(item.createdAt || item.date);
+  return created >= dashboardAddDays(anchorDate, -6) && created <= dashboardAddDays(anchorDate, 1);
+}
+function dashboardVoucherSort(a, b) {
+  return Number(dashboardVoucherNeedsApproval(b)) - Number(dashboardVoucherNeedsApproval(a)) || dashboardVoucherSortValue(a) - dashboardVoucherSortValue(b) || String(a.code || "").localeCompare(String(b.code || ""), "vi", { numeric: true });
+}
+function dashboardVoucherCardRow(item = {}) {
+  const tone = dashboardVoucherTone(item);
+  const pending = dashboardVoucherNeedsApproval(item);
+  const approve = pending ? `<button type="button" class="approve" data-voucher-approve="${escapeHtml(dashboardVoucherApprovalKey(item))}">Duyệt</button>` : `<button type="button" disabled>Đã duyệt</button>`;
+  return `<article class="dashboard-voucher-item ${escapeHtml(tone)}">
+    <div><b>${escapeHtml(item.title || item.type || "")}</b><small>${escapeHtml([item.code, dashboardVoucherDateLabel(item), item.owner].filter(Boolean).join(" · "))}</small><p>${escapeHtml(item.detail || item.source || "")}</p><i class="dashboard-priority ${escapeHtml(tone)}">${escapeHtml(dashboardVoucherStatusLabel(item))}</i></div>
+    <aside>${approve}${dashboardSourceButton(item, "Mở")}</aside>
+  </article>`;
+}
+function dashboardVoucherCard(type, items) {
+  const rows = items.filter((item) => item.type === type).sort(dashboardVoucherSort);
+  const latestDate = rows.reduce((latest, item) => {
+    const date = dashboardVoucherDateObject(item.createdAt || item.date);
+    return date > latest ? date : latest;
+  }, dashboardAddDays(dashboardTodayDate(), -3650));
+  const visibleRows = rows.filter((item) => dashboardVoucherWithinWeek(item, latestDate));
+  const pending = rows.filter(dashboardVoucherNeedsApproval).length;
+  const collapsed = dashboardVoucherCollapsed(type);
+  const tone = pending ? "warning" : rows.length ? "ok" : "empty";
+  const body = visibleRows.length ? visibleRows.map(dashboardVoucherCardRow).join("") : `<p class="dashboard-voucher-empty">${rows.length ? "Không có phiếu mới trong 7 ngày gần nhất." : "Chưa có phiếu."}</p>`;
+  return `<article class="dashboard-voucher-card ${tone} ${collapsed ? "collapsed" : ""}" data-voucher-card="${escapeHtml(dashboardVoucherTypeKey(type))}">
+    <header><div><h4>${escapeHtml(type)}</h4><span>${pending ? `${pending} chưa duyệt` : rows.length ? `${rows.length} phiếu` : "Chưa có phiếu"}</span></div><button type="button" data-voucher-toggle="${escapeHtml(type)}">${collapsed ? "Unhide" : "Hide"}</button></header>
+    ${collapsed ? "" : `<div class="dashboard-voucher-list">${body}</div>`}
+  </article>`;
+}
+function dashboardVoucherCards(items) {
+  return `<div class="dashboard-voucher-grid">${DASHBOARD_VOUCHER_TYPE_DEFS.map((type) => dashboardVoucherCard(type, items)).join("")}</div>`;
+}
+function dashboardFindVoucherByKey(key = "") {
+  return dashboardVoucherCache.find((item) => dashboardVoucherApprovalKey(item) === key);
+}
+async function dashboardApproveVoucher(key = "") {
+  const item = dashboardFindVoucherByKey(key);
+  if (!item) return;
+  if (item.type === "Phiếu chấm công" && item.code) {
+    await api(`/attendance/records/${encodeURIComponent(item.code)}/approve`, { method: "POST" });
+  } else if (item.type === "Phiếu Overtime" && item.code) {
+    loadHrmOvertime();
+    const row = HRM_OVERTIME.find((entry) => entry[0] === item.code);
+    if (row) {
+      row[8] = "Hợp lệ";
+      row[9] = Math.round(Number(row[6] || 0) * OVERTIME_RATE_PER_HOUR);
+      saveHrmOvertime();
+    } else dashboardMarkVoucherApproved(item);
+  } else if (item.type === "Phiếu xin nghỉ phép" && item.code) {
+    loadHrmLeave();
+    const row = HRM_LEAVE.find((entry) => entry[0] === item.code);
+    if (row) {
+      row[7] = "Hợp lệ";
+      saveHrmLeave();
+    } else dashboardMarkVoucherApproved(item);
+  } else dashboardMarkVoucherApproved(item);
+  await projectLanding();
+}
+function dashboardVoucherSummary(items) {
+  return `<div class="dashboard-voucher-summary">${DASHBOARD_VOUCHER_TYPE_DEFS.map((type) => {
+    const rows = items.filter((item) => item.type === type);
+    const pending = rows.filter(dashboardVoucherNeedsApproval).length;
+    const tone = pending ? "warning" : rows.length ? "ok" : "empty";
+    return `<article class="${tone}"><small>${escapeHtml(type)}</small><b>${rows.length}</b><span>${pending ? `${pending} chưa duyệt` : rows.length ? "Đã ghi nhận" : "Chưa có phiếu"}</span></article>`;
+  }).join("")}</div>`;
 }
 function dashboardTodayDate() {
   const now = new Date();
@@ -347,6 +1173,7 @@ function dashboardWeekStart(date) {
 }
 function dashboardTaskPeriod(mode = ui.myTaskView) {
   const today = dashboardTodayDate();
+  if (mode === "day") return { start: today, end: today, days: [today] };
   if (mode === "month") {
     const start = new Date(today.getFullYear(), today.getMonth(), 1);
     const end = new Date(today.getFullYear(), today.getMonth() + 1, 0);
@@ -535,11 +1362,11 @@ function dashboardMyTasks(projects = []) {
     .sort((a, b) => (a.startDate || a.dueDate) - (b.startDate || b.dueDate) || String(a.title).localeCompare(String(b.title), "vi"));
 }
 function dashboardMyTaskCard(task) {
-  const dateLabel = task.type === "main"
-    ? `${dashboardDisplayDate(task.startDate)} - ${dashboardDisplayDate(task.endDate)}`
-    : dashboardDisplayDate(task.dueDate);
-  const tone = task.type === "supplemental" ? "warning" : task.progress >= 100 ? "ok" : "";
-  return `<article class="dashboard-my-task-card ${escapeHtml(task.type)} ${escapeHtml(tone)}" data-project="${escapeHtml(task.projectId)}" data-project-view="${escapeHtml(task.view || "gantt")}"><b>${escapeHtml(task.title)}</b><small>${escapeHtml(task.projectName)} · ${escapeHtml(task.source)}</small><footer><span>${escapeHtml(dateLabel)}</span><i>${escapeHtml(task.status || "Theo dõi")}</i></footer></article>`;
+  const start = task.startDate || task.dueDate || dashboardTodayDate();
+  const end = task.endDate || task.dueDate || start;
+  const dateLabel = end > start ? `${dashboardDisplayDate(start)} - ${dashboardDisplayDate(end)}` : dashboardDisplayDate(start);
+  const tone = dashboardVoucherTone(task) || (task.type === "supplemental" ? "warning" : task.progress >= 100 ? "ok" : "");
+  return `<article class="dashboard-my-task-card ${escapeHtml(task.type || "")} ${escapeHtml(tone)}" ${dashboardLinkAttr(task)}><b>${escapeHtml(task.title)}</b><small>${escapeHtml([task.voucherType || task.source, task.detail].filter(Boolean).join(" · "))}</small><footer><span>${escapeHtml(dateLabel)}</span><i>${escapeHtml(dashboardVoucherStatusLabel(task))}</i></footer></article>`;
 }
 function dashboardMyTasksPanel(tasks) {
   const period = dashboardTaskPeriod(ui.myTaskView);
@@ -551,8 +1378,33 @@ function dashboardMyTasksPanel(tasks) {
     const classes = [dashboardDateKey(day) === todayKey ? "today" : "", day.getDay() === 0 || day.getDay() === 6 ? "weekend" : ""].filter(Boolean).join(" ");
     return `<article class="dashboard-my-task-day ${classes}"><header><b>${weekdays[day.getDay()]}</b><span>${String(day.getDate()).padStart(2, "0")}/${String(day.getMonth() + 1).padStart(2, "0")}</span></header><div>${dayTasks.map(dashboardMyTaskCard).join("") || "<p>Không có nhiệm vụ</p>"}</div></article>`;
   }).join("");
-  return `<section class="dashboard-panel dashboard-my-tasks-panel"><header><div><h3>Nhiệm vụ của tôi</h3><p>Nhiệm vụ chính từ bảng tiến độ và nhiệm vụ bổ sung được giao thêm cho account hiện tại.</p></div><div class="dashboard-task-controls"><button type="button" class="${ui.myTaskView === "week" ? "active" : ""}" data-my-task-view="week">Tuần</button><button type="button" class="${ui.myTaskView === "month" ? "active" : ""}" data-my-task-view="month">Tháng</button><span>${visibleTasks.length} việc</span></div></header><div class="dashboard-task-scroll"><div class="dashboard-my-task-grid ${ui.myTaskView === "month" ? "month" : "week"}">${dayCards}</div></div></section>`;
+  return `<section class="dashboard-panel dashboard-my-tasks-panel"><header><div><h3>Nhiệm vụ của tôi</h3><p>Tổng hợp các phiếu cần duyệt ở danh sách bên dưới. Phiếu đã duyệt không hiển thị trong bảng này.</p></div><div class="dashboard-task-controls"><button type="button" class="${ui.myTaskView === "day" ? "active" : ""}" data-my-task-view="day">Ngày</button><button type="button" class="${ui.myTaskView === "week" ? "active" : ""}" data-my-task-view="week">Tuần</button><button type="button" class="${ui.myTaskView === "month" ? "active" : ""}" data-my-task-view="month">Tháng</button><span>${visibleTasks.length} việc</span></div></header><div class="dashboard-task-scroll"><div class="dashboard-my-task-grid ${ui.myTaskView === "month" ? "month" : ui.myTaskView === "day" ? "day" : "week"}">${dayCards}</div></div></section>`;
 }
+function dashboardVoucherTasks(vouchers = []) {
+  return vouchers.filter(dashboardVoucherNeedsApproval).map((voucher) => {
+    const dueDate = dashboardVoucherDateObject(voucher.createdAt || voucher.date);
+    return {
+      ...voucher,
+      id: voucher.code,
+      type: "voucher",
+      voucherType: voucher.type,
+      startDate: dueDate,
+      endDate: dueDate,
+      dueDate,
+      status: dashboardVoucherStatusLabel(voucher)
+    };
+  });
+}
+
+function dashboardQuickAccessPanel() {
+  const groups = DASHBOARD_VOUCHER_FORM_GROUPS.map((group) => [group.title, group.items]).filter(([, items]) => items.length);
+  const total = groups.reduce((sum, [, items]) => sum + items.length, 0);
+  return `<section class="dashboard-panel dashboard-quick-access-panel">
+    <header><div><h3>Truy cập nhanh</h3><p>Mở nhanh các chức vụ dùng thường xuyên.</p></div><span>${total} mục</span></header>
+    <div class="dashboard-quick-access-columns">${groups.map(([title, items]) => `<section><b>${escapeHtml(title)}</b>${items.map((item) => `<button type="button" data-dashboard-voucher-form="${escapeHtml(item.id)}"><i></i><span>${escapeHtml(item.label)}</span></button>`).join("")}</section>`).join("")}</div>
+  </section>`;
+}
+
 function dashboardMoney(value) {
   return `${money(Number(value || 0))} đ`;
 }
@@ -560,17 +1412,65 @@ function dashboardCompactMoney(value) {
   return `${financeCompactMoney(Number(value || 0))} đ`;
 }
 
+function dashboardTeamChatTime(value) {
+  const date = new Date(value || "");
+  if (!Number.isFinite(date.getTime())) return "";
+  return date.toLocaleString("vi-VN", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+}
+
+function dashboardTeamChatMessages(rows = []) {
+  if (!rows.length) return `<p class="dashboard-team-chat-empty">Chưa có tin nhắn.</p>`;
+  return rows.map((row) => {
+    const own = row.staffCode && row.staffCode === state.account?.staffCode;
+    const agent = row.source === "agent";
+    return `<article class="dashboard-team-chat-message ${own ? "own" : ""} ${agent ? "agent" : ""}">
+      <header><b>${escapeHtml(agent ? "Agent" : row.author || row.loginId || "Thành viên")}</b><time>${escapeHtml(dashboardTeamChatTime(row.createdAt))}</time></header>
+      <p>${escapeHtml(row.text || "")}</p>
+    </article>`;
+  }).join("");
+}
+
+function dashboardTeamChatPanel(rows = []) {
+  return `<section class="dashboard-panel dashboard-team-chat-panel" data-team-chat-panel data-agent-ready="true">
+    <header><div><h3>Chat chung</h3><p>Trao đổi nhanh giữa các thành viên Le Dome.</p></div><span>${rows.length} tin nhắn</span></header>
+    <div class="dashboard-team-chat-body" id="team-chat-messages">${dashboardTeamChatMessages(rows)}</div>
+    <form class="dashboard-team-chat-form" id="team-chat-form">
+      <input name="text" autocomplete="off" maxlength="2000" placeholder="Nhập tin nhắn...">
+      <button type="submit">Gửi</button>
+    </form>
+  </section>`;
+}
+
+function dashboardScrollTeamChat() {
+  const box = $("#team-chat-messages");
+  if (box) box.scrollTop = box.scrollHeight;
+}
+
+async function dashboardRefreshTeamChat() {
+  const response = await api("/team-chat");
+  const rows = Array.isArray(response.data) ? response.data : [];
+  const body = $("#team-chat-messages");
+  const count = document.querySelector("[data-team-chat-panel] > header span");
+  if (body) body.innerHTML = dashboardTeamChatMessages(rows);
+  if (count) count.textContent = `${rows.length} tin nhắn`;
+  dashboardScrollTeamChat();
+}
+
 async function projectLanding() {
   setTitle("projects", "");
   const projectBody = await api("/projects");
   const sourceProjects = activeProjectsOnly(projectBody.data || []);
   const projectIndex = dashboardProjectIndex(sourceProjects);
-  const [financeData, materialsRows, attendanceRuntime] = await Promise.all([
+  const [financeData, materialsRows, attendanceRuntime, teamChatRuntime] = await Promise.all([
     hasClientPermission("finance.view") ? loadFinanceData() : normalizeFinanceData({}),
     hasClientPermission("materials.view") ? loadMaterialsRows() : Promise.resolve([]),
-    hasClientPermission("hrm.view") ? api("/attendance/records").catch(() => ({ data: [] })) : Promise.resolve({ data: [] })
+    hasClientPermission("hrm.view") ? api("/attendance/records").catch(() => ({ data: [] })) : Promise.resolve({ data: [] }),
+    api("/team-chat").catch(() => ({ data: [] }))
   ]);
-  if (hasClientPermission("hrm.view")) loadHrmOvertime();
+  if (hasClientPermission("hrm.view")) {
+    loadHrmOvertime();
+    loadHrmLeave();
+  }
 
   const totalProjects = sourceProjects.length;
   const statusRows = ["Kế hoạch", "Đang thực hiện", "Tạm dừng", "Hoàn thành"]
@@ -603,73 +1503,21 @@ async function projectLanding() {
   const attendanceRecords = Array.isArray(attendanceRuntime.data) ? attendanceRuntime.data : [];
   const pendingAttendance = attendanceRecords.filter((record) => dashboardTextHas(record.status, ["Cần duyệt", "Cần kiểm tra"]));
   const pendingOvertime = hasClientPermission("hrm.view") ? HRM_OVERTIME.filter((row) => dashboardTextHas(row[8], ["Cần duyệt"])) : [];
-  const pendingApprovals = [
-    ...pendingAttendance.map((record) => ({
-      type: "Chấm công",
-      code: record.id,
-      title: record.employeeName,
-      detail: `${record.type === "check-out" ? "Check-out" : "Check-in"} · ${record.siteName || ""}`,
-      status: record.status,
-      tone: "warning",
-      link: "hrm-attendance"
-    })),
-    ...pendingOvertime.map((row) => ({
-      type: "Overtime",
-      code: row[0],
-      title: row[1],
-      detail: `${row[3]} · ${row[2]} · ${row[6]} giờ`,
-      status: row[8],
-      tone: "warning",
-      link: "hrm-overtime"
-    }))
-  ];
-
-  const warningItems = [
-    ...riskProjects.map((project) => ({
-      title: project.name,
-      detail: `${project.health || "Theo dõi"} · thực tế ${Number(project.progress || 0)}% / kế hoạch ${projectPlanProgress(project)}%`,
-      source: "Dự án",
-      tone: dashboardTextHas(project.health, ["Chậm", "Rủi ro"]) ? "danger" : "warning",
-      projectId: project.id
-    })),
-    ...financeIssueRows.map(({ row, project }) => ({
-      title: row[1] || row[0],
-      detail: `${row[13] || "Cần rà soát"} · lợi nhuận ${dashboardCompactMoney(row[10])}`,
-      source: "Tài chính dự án",
-      tone: Number(row[10] || 0) < 0 ? "danger" : "warning",
-      projectId: project?.id,
-      link: "finance-projects"
-    })),
-    ...dueDebtRows.map((row) => {
-      const project = dashboardProjectFor(projectIndex, row[2]);
-      return {
-        title: `${row[1]} · ${row[2]}`,
-        detail: `${row[5]} · còn ${dashboardMoney(row[8])} · ${dashboardDueLabel(row[9], row[10])}`,
-        source: "Công nợ dự án",
-        tone: dashboardDaysUntil(row[9]) !== null && dashboardDaysUntil(row[9]) < 0 ? "danger" : "warning",
-        projectId: project?.id,
-        link: "finance-projects"
-      };
-    }),
-    ...materialIssues.map((row) => ({
-      title: row.item || row.id,
-      detail: `${row.project || row.location || "Kho"} · ${row.note || row.status}`,
-      source: "Kho vật tư",
-      tone: "warning",
-      link: "materials"
-    }))
-  ].sort((a, b) => dashboardToneRank(a.tone) - dashboardToneRank(b.tone));
-
-  const taskItems = [
-    ...pendingApprovals.map((item) => ({ title: item.title, detail: item.detail, source: item.type, priority: "Cần duyệt", due: "Hôm nay", tone: "warning", link: item.link })),
-    ...dueDebtRows.map((row) => {
-      const project = dashboardProjectFor(projectIndex, row[2]);
-      return { title: `${row[1]} ${row[2]}`, detail: `${row[5]} · còn ${dashboardMoney(row[8])}`, source: "Tài chính", priority: "Cao", due: dashboardDueLabel(row[9], row[10]), tone: dashboardDaysUntil(row[9]) !== null && dashboardDaysUntil(row[9]) < 0 ? "danger" : "warning", projectId: project?.id, link: "finance-projects" };
-    }),
-    ...materialIssues.map((row) => ({ title: row.item || row.id, detail: `${row.project || row.location || "Kho"} · ${row.note || row.status}`, source: "Kho", priority: "Kiểm tra", due: "Hôm nay", tone: "warning", link: "materials" })),
-    ...riskProjects.map((project) => ({ title: project.name, detail: `${project.health || "Theo dõi"} · tiến độ ${project.progress || 0}%`, source: "Dự án", priority: dashboardTextHas(project.health, ["Chậm", "Rủi ro"]) ? "Cao" : "Theo dõi", due: "Trong tuần", tone: dashboardTextHas(project.health, ["Chậm", "Rủi ro"]) ? "danger" : "warning", projectId: project.id }))
-  ].slice(0, 12);
-  const myTasks = dashboardMyTasks(sourceProjects);
+  const voucherRows = dashboardBuildVoucherRows({
+    financeData,
+    materialsRows,
+    attendanceRecords,
+    overtimeRows: hasClientPermission("hrm.view") ? HRM_OVERTIME : [],
+    leaveRows: hasClientPermission("hrm.view") ? HRM_LEAVE : [],
+    riskProjects,
+    financeIssueRows,
+    dueDebtRows,
+    projectIndex
+  });
+  dashboardVoucherCache = voucherRows;
+  const pendingVoucherRows = voucherRows.filter(dashboardVoucherNeedsApproval);
+  const myTasks = dashboardVoucherTasks(voucherRows);
+  const teamChatRows = Array.isArray(teamChatRuntime.data) ? teamChatRuntime.data : [];
 
   const todayLabel = new Date().toLocaleDateString("vi-VN", { weekday: "long", day: "2-digit", month: "2-digit", year: "numeric" });
   $("#app").innerHTML = `
@@ -680,46 +1528,19 @@ async function projectLanding() {
       <button class="btn" data-action="create-project">+ Dự án</button>
       <div class="menu-wrap"><button class="btn" data-action="toggle-utility">Tiện ích⌄</button><div class="tool-menu right" id="utility-menu"><button data-dashboard-link="catalog">Cấu hình dữ liệu</button><button data-dashboard-link="drive">Mở Drive</button><button data-dashboard-link="standards">Quy chuẩn</button></div></div>
     </div>
-    <header class="dashboard-head"><div><h2>Dashboard điều hành</h2><p>Tổng hợp từ Dự án, Tài chính, Nhân sự, Kho và Phiếu chấm công. Bấm vào từng số hoặc dòng để mở đúng nguồn dữ liệu.</p></div><time>${escapeHtml(todayLabel)}</time></header>
-    <div class="dashboard-kpis">
-      ${dashboardKpi("Tổng dự án", String(totalProjects), `${activeCount} đang triển khai · ${averageProgress}% tiến độ TB`, "projects-overview")}
-      ${dashboardKpi("Dự án cần chú ý", String(riskProjects.length), `${dashboardPercent(riskProjects.length, totalProjects)} tổng dự án`, "projects-overview", riskProjects.length ? "warning" : "")}
-      ${dashboardKpi("Chấm công cần duyệt", String(pendingAttendance.length), "Phiếu điện thoại chưa hợp lệ", "hrm-attendance", pendingAttendance.length ? "warning" : "")}
-      ${dashboardKpi("OT cần duyệt", String(pendingOvertime.length), "Phiếu overtime chờ xác nhận", "hrm-overtime", pendingOvertime.length ? "warning" : "")}
-      ${dashboardKpi("Công nợ đến hạn", String(dueDebtRows.length), `Phải thu/trả còn ${dashboardCompactMoney(debtRows.reduce((sum, row) => sum + Number(row[8] || 0), 0))}`, "finance-projects", dueDebtRows.length ? "danger" : "")}
-      ${dashboardKpi("Vật tư cần kiểm tra", String(materialIssues.length), `${materialsRows.length || 0} dòng vật tư đang ghi nhận`, "materials", materialIssues.length ? "warning" : "")}
-    </div>
+    <header class="dashboard-head"><div><h2>Dashboard điều hành</h2><p>Tổng hợp danh sách phiếu từ Tài chính, Kho, Chấm công, Overtime, Xin nghỉ phép và các phiếu CDT / sự cố. Phiếu chưa duyệt được ưu tiên trước, trong cùng nhóm phiếu tạo trước nằm trước.</p></div><time>${escapeHtml(todayLabel)}</time></header>
+    ${dashboardQuickAccessPanel()}
     ${dashboardMyTasksPanel(myTasks)}
-    <div class="dashboard-layout">
-      <section class="dashboard-panel dashboard-wide">
-        <header><div><h3>Việc cần làm</h3><p>Các việc phát sinh từ phiếu chờ duyệt, công nợ đến hạn, vật tư cần kiểm tra và dự án có rủi ro.</p></div><span>${taskItems.length} việc</span></header>
-        <div class="dashboard-table-wrap"><table class="dashboard-table"><thead><tr><th>Nội dung</th><th>Nguồn</th><th>Ưu tiên</th><th>Hạn</th><th></th></tr></thead><tbody>${dashboardActionRows(taskItems)}</tbody></table></div>
-      </section>
-      <section class="dashboard-panel">
-        <header><div><h3>Phiếu cần duyệt</h3><p>Không trộn số liệu demo. Danh sách lấy từ Chấm công và Overtime.</p></div><span>${pendingApprovals.length} phiếu</span></header>
-        <div class="dashboard-table-wrap"><table class="dashboard-table"><thead><tr><th>Loại phiếu</th><th>Người gửi</th><th>Nội dung</th><th>Trạng thái</th><th></th></tr></thead><tbody>${dashboardApprovalRows(pendingApprovals)}</tbody></table></div>
-      </section>
-      <section class="dashboard-panel dashboard-alert-panel">
-        <header><div><h3>Cảnh báo lưu ý</h3><p>Rủi ro tiến độ, tài chính, công nợ và vật tư được gom về đây để xử lý nhanh.</p></div><span>${warningItems.length} cảnh báo</span></header>
-        <div class="dashboard-table-wrap"><table class="dashboard-table"><thead><tr><th></th><th>Cảnh báo</th><th>Nguồn</th><th></th></tr></thead><tbody>${dashboardWarningRows(warningItems.slice(0, 12))}</tbody></table></div>
-      </section>
-      <section class="dashboard-panel dashboard-finance-panel">
-        <header><div><h3>Tài chính dự án</h3><p>Số liệu lấy từ module Tài chính > Dự án.</p></div><button type="button" data-dashboard-link="finance-projects">Mở chi tiết</button></header>
-        <div class="dashboard-money-grid">
-          <p><span>Thu dự án</span><b class="positive">${dashboardMoney(financeIncome)}</b></p>
-          <p><span>Chi dự án</span><b class="negative">${dashboardMoney(financeExpense)}</b></p>
-          <p><span>Lợi nhuận</span><b class="${financeProfit < 0 ? "negative" : "positive"}">${dashboardMoney(financeProfit)}</b></p>
-          <p><span>Phải thu</span><b>${dashboardMoney(financeReceivable)}</b></p>
-          <p><span>Phải trả</span><b>${dashboardMoney(financePayable)}</b></p>
-          <p><span>Dự án có cảnh báo</span><b>${financeIssueRows.length}</b></p>
-        </div>
-      </section>
-      ${dashboardStatusBreakdown("Trạng thái dự án", statusRows.concat(extraStatuses), totalProjects)}
-      ${dashboardStatusBreakdown("Tình trạng dự án", healthRows, totalProjects)}
-    </div>
+    <section class="dashboard-panel dashboard-voucher-panel">
+      <header><div><h3>Danh sách phiếu</h3><p>Gồm Phiếu chấm công, Overtime, Xin nghỉ phép, Giao nhiệm vụ, Nhật ký thi công, Kho, Phiếu chi, các phiếu CDT và Phiếu Vấn đề sự cố.</p></div><span>${pendingVoucherRows.length} chưa duyệt / ${voucherRows.length} phiếu</span></header>
+      ${dashboardVoucherCards(voucherRows)}
+    </section>
+    ${dashboardTeamChatPanel(teamChatRows)}
     ${projectModal()}
+    ${dashboardVoucherFormModal()}
     </section>`;
   bindLanding();
+  dashboardScrollTeamChat();
 }
 
 function projectModal() {
@@ -736,6 +1557,21 @@ function projectModal() {
 
 function bindLanding() {
   $("#app").onclick = (event) => {
+    const voucherToggle = event.target.closest("[data-voucher-toggle]");
+    if (voucherToggle) {
+      dashboardSetVoucherCollapsed(voucherToggle.dataset.voucherToggle, !dashboardVoucherCollapsed(voucherToggle.dataset.voucherToggle));
+      return projectLanding();
+    }
+    const voucherApprove = event.target.closest("[data-voucher-approve]");
+    if (voucherApprove) {
+      event.stopPropagation();
+      voucherApprove.disabled = true;
+      voucherApprove.textContent = "Đang duyệt...";
+      return dashboardApproveVoucher(voucherApprove.dataset.voucherApprove).catch((error) => {
+        alert(error.message || "Không duyệt được phiếu.");
+        return projectLanding();
+      });
+    }
     const taskView = event.target.closest("[data-my-task-view]")?.dataset.myTaskView;
     if (taskView) {
       ui.myTaskView = taskView;
@@ -745,6 +1581,9 @@ function bindLanding() {
     if (taskCard) return void (location.href = `/constructions/detail/${taskCard.dataset.project}/?view=${encodeURIComponent(taskCard.dataset.projectView)}`);
     const card = event.target.closest("[data-project]");
     if (card) return void (location.href = `/constructions/detail/${card.dataset.project}/`);
+    const dashboardVoucherForm = event.target.closest("[data-dashboard-voucher-form]")?.dataset.dashboardVoucherForm;
+    if (dashboardVoucherForm) return openDashboardVoucherForm(dashboardVoucherForm);
+    if (event.target.id === "dashboard-voucher-form-modal") return closeDashboardVoucherForm();
     const dashboardLink = event.target.closest("[data-dashboard-link]")?.dataset.dashboardLink;
     if (dashboardLink) return void (location.hash = dashboardLink);
     const template = event.target.closest("[data-template]")?.dataset.template;
@@ -764,6 +1603,8 @@ function bindLanding() {
     if (action === "reload") return projectLanding();
     if (action === "sort-dir") { ui.sortDir = ui.sortDir === "desc" ? "asc" : "desc"; return projectLanding(); }
     if (action === "hide-welcome") { ui.hiddenWelcome = true; return projectLanding(); }
+    if (action === "focus-team-chat") return document.querySelector("[data-team-chat-panel]")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    if (action === "close-voucher-form") return closeDashboardVoucherForm();
     if (action === "create-project") return $("#project-modal").classList.add("open");
     if (action === "close-modal") return $("#project-modal").classList.remove("open");
     if (action === "new-project") return $("#project-form").classList.add("open");
@@ -780,6 +1621,33 @@ function bindLanding() {
     if (!button) return;
     ui.dateRange = button.innerText;
     projectLanding();
+  };
+  const teamChatForm = $("#team-chat-form");
+  if (teamChatForm) teamChatForm.onsubmit = async (event) => {
+    event.preventDefault();
+    const input = teamChatForm.elements.text;
+    const button = teamChatForm.querySelector("button[type='submit']");
+    const text = String(input.value || "").trim();
+    if (!text) return input.focus();
+    button.disabled = true;
+    button.textContent = "Đang gửi";
+    try {
+      await api("/team-chat", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text }) });
+      teamChatForm.reset();
+      await dashboardRefreshTeamChat();
+    } catch (error) {
+      alert(error.message || "Không gửi được tin nhắn.");
+    } finally {
+      button.disabled = false;
+      button.textContent = "Gửi";
+      input.focus();
+    }
+  };
+  const voucherForm = $("#dashboard-voucher-form");
+  if (voucherForm) voucherForm.onsubmit = (event) => {
+    event.preventDefault();
+    alert("Đã lưu bản nháp phiếu mẫu.");
+    closeDashboardVoucherForm();
   };
   const projectForm = $("#project-form");
   const syncProjectDuration = () => {
@@ -1053,10 +1921,12 @@ const CATALOG_FALLBACK = {
   constructionCategories: ["KHẢO SÁT - ĐO ĐẠC", "CHE PHỦ", "PHÁ DỠ", "VẬN CHUYỂN", "XÂY TRÁT", "CHỐNG THẤM", "ĐIỆN NƯỚC", "PCCC / AN TOÀN KỸ THUẬT", "ĐIỀU HÒA", "THIẾT BỊ THÔNG MINH - MẠNG - CAMERA", "THẠCH CAO", "ỐP LÁT", "ĐÁ", "SƠN BẢ", "SÀN GỖ - SÀN NHỰA", "CỬA", "NHÔM KÍNH", "SẮT", "GỖ NỘI THẤT", "RÈM", "CÂY - TIỂU CẢNH", "BIỂN BẢNG LOGO", "DEFECT CHẤM VÁ", "VỆ SINH CN", "KHÁC"],
   materialCategories: ["VẬT LIỆU HOÀN THIỆN", "PHỤ KIỆN ĐỒ NỘI THẤT", "THIẾT BỊ CHIẾU SÁNG", "THIẾT BỊ BẾP", "THIẾT BỊ VỆ SINH", "ĐÈN DECOR", "ĐỒ DECOR", "ĐỒ DECOR BẾP", "CHĂN GA ĐỆM", "ĐỒ THỦ CÔNG", "KHÁC"],
   contractTypes: ["Hợp đồng thiết kế", "Hợp đồng thi công", "Hợp đồng thiết kế thi công", "Hợp đồng phát sinh"],
+  voucherTypes: APP_VOUCHER_TYPE_DEFAULTS,
   overtimeVoucherTypes: ["Phiếu OT ngày thường", "Phiếu OT cuối tuần", "Phiếu OT ngày lễ", "Phiếu OT bổ sung"],
   paymentVoucherTypes: ["Phiếu chi dự án", "Phiếu chi vận hành", "Phiếu chi tạm ứng", "Phiếu chi hoàn ứng", "Phiếu chi khác"],
   attendanceVoucherTypes: ["Check-in", "Check-out", "Phiếu bổ sung công", "Phiếu điều chỉnh công"],
   inventoryReceiptTypes: ["Nhập mua mới", "Nhập hoàn trả", "Nhập điều chuyển", "Nhập tồn đầu kỳ"],
+  inventoryIssueTypes: ["Xuất dùng thi công", "Xuất điều chuyển", "Xuất trả NCC", "Xuất hao hụt / hủy"],
   warehouseList: ["Kho VP", "Kho dự án", "Kho công trình", "Kho tạm"],
   cdtChangeRequestTypes: ["Phát sinh khối lượng", "Thay đổi vật liệu", "Thay đổi thiết kế", "Bổ sung hạng mục"],
   cdtNoteRequestTypes: ["Ghi chú hiện trạng", "Ghi chú nghiệm thu", "Ghi chú vật tư", "Ghi chú tiến độ"],
@@ -1081,10 +1951,12 @@ function normalizeCatalogData(input = {}) {
     constructionCategories: catalogList(input.constructionCategories, CATALOG_FALLBACK.constructionCategories),
     materialCategories: catalogList(input.materialCategories, CATALOG_FALLBACK.materialCategories),
     contractTypes: catalogList(input.contractTypes, CATALOG_FALLBACK.contractTypes),
+    voucherTypes: catalogList(input.voucherTypes, CATALOG_FALLBACK.voucherTypes),
     overtimeVoucherTypes: catalogList(input.overtimeVoucherTypes, CATALOG_FALLBACK.overtimeVoucherTypes),
     paymentVoucherTypes: catalogList(input.paymentVoucherTypes, CATALOG_FALLBACK.paymentVoucherTypes),
     attendanceVoucherTypes: catalogList(input.attendanceVoucherTypes, CATALOG_FALLBACK.attendanceVoucherTypes),
     inventoryReceiptTypes: catalogList(input.inventoryReceiptTypes, CATALOG_FALLBACK.inventoryReceiptTypes),
+    inventoryIssueTypes: catalogList(input.inventoryIssueTypes, CATALOG_FALLBACK.inventoryIssueTypes),
     warehouseList: catalogList(input.warehouseList, CATALOG_FALLBACK.warehouseList),
     cdtChangeRequestTypes: catalogList(input.cdtChangeRequestTypes, CATALOG_FALLBACK.cdtChangeRequestTypes),
     cdtNoteRequestTypes: catalogList(input.cdtNoteRequestTypes, CATALOG_FALLBACK.cdtNoteRequestTypes),
@@ -1140,6 +2012,12 @@ const CATALOG_LIST_CONFIG = {
     placeholder: "VD: Hợp đồng bảo trì",
     preserveCase: true
   },
+  voucherTypes: {
+    title: "Danh sách phiếu",
+    note: "Tập hợp tên tất cả các loại phiếu xuất hiện trong app để đối chiếu, lọc và phân luồng.",
+    placeholder: "VD: Phiếu bảo hành",
+    preserveCase: true
+  },
   overtimeVoucherTypes: {
     title: "Danh sách Phiếu Overtime",
     note: "Dùng cho module Nhân sự > Phiếu Overtime và các bước xét duyệt OT.",
@@ -1162,6 +2040,12 @@ const CATALOG_LIST_CONFIG = {
     title: "Danh sách Phiếu nhập kho",
     note: "Dùng cho quy trình nhập kho vật tư, thiết bị và điều chuyển tồn.",
     placeholder: "VD: Nhập bảo hành trả về",
+    preserveCase: true
+  },
+  inventoryIssueTypes: {
+    title: "Danh sách Phiếu xuất kho",
+    note: "Dùng cho quy trình xuất kho vật tư, thiết bị đưa vào thi công hoặc điều chuyển khỏi kho.",
+    placeholder: "VD: Xuất dùng thi công",
     preserveCase: true
   },
   warehouseList: {
@@ -1195,8 +2079,44 @@ const CATALOG_LIST_CONFIG = {
     preserveCase: true
   }
 };
-const CATALOG_PAGE_LIST_TYPES = ["projectList", "partnerCustomers", "partnerContractors", "partnerSuppliers", "constructionCategories", "materialCategories", "contractTypes", "overtimeVoucherTypes", "paymentVoucherTypes", "attendanceVoucherTypes", "inventoryReceiptTypes", "warehouseList", "cdtChangeRequestTypes", "cdtNoteRequestTypes", "cdtApprovalRequestTypes", "incidentIssueTypes"];
+const CATALOG_PAGE_LIST_TYPES = ["projectList", "partnerCustomers", "partnerContractors", "partnerSuppliers", "constructionCategories", "materialCategories", "contractTypes", "voucherTypes", "overtimeVoucherTypes", "paymentVoucherTypes", "attendanceVoucherTypes", "inventoryReceiptTypes", "inventoryIssueTypes", "warehouseList", "cdtChangeRequestTypes", "cdtNoteRequestTypes", "cdtApprovalRequestTypes", "incidentIssueTypes"];
 const FINANCE_CAPITAL_CATEGORY_OPTIONS = ["NGÂN HÀNG", "KHÁC"];
+let lastRoutePage = "";
+
+function catalogDefaultCollapsedState(keys = CATALOG_PAGE_LIST_TYPES) {
+  return Object.fromEntries(keys.map((key) => [key, true]));
+}
+
+function collapseCatalogPagePanels() {
+  state.catalogCollapsed = { ...(state.catalogCollapsed || {}), ...catalogDefaultCollapsedState() };
+  persistCatalogCollapsed();
+}
+
+function normalizeCatalogOrder(order = [], types = CATALOG_PAGE_LIST_TYPES) {
+  const allowed = new Set(types);
+  const seen = new Set();
+  const normalized = [];
+  (Array.isArray(order) ? order : []).forEach((type) => {
+    if (!allowed.has(type) || seen.has(type)) return;
+    seen.add(type);
+    normalized.push(type);
+  });
+  types.forEach((type) => {
+    if (!seen.has(type)) normalized.push(type);
+  });
+  return normalized;
+}
+
+function catalogOrderedTypes() {
+  state.catalogOrder = normalizeCatalogOrder(state.catalogOrder);
+  return state.catalogOrder;
+}
+
+function persistCatalogOrder() {
+  try {
+    localStorage.setItem(CATALOG_ORDER_STORAGE, JSON.stringify(state.catalogOrder || []));
+  } catch {}
+}
 const TRANSACTION_FLOW_LIST_CONFIG = {
   financeFlowTypes: {
     field: "types",
@@ -4169,6 +5089,12 @@ const HRM_OVERTIME = [
   ["OT-005","Đỗ Mạnh Hùng","01/06/2026","Căn hộ duplex Mandarine","18:15","20:15",2,"Kiểm kê vật tư phát sinh cuối ngày","Từ chối",0]
 ];
 const HRM_OVERTIME_STORAGE = "ledome.hrmOvertime.v1";
+const HRM_LEAVE = [
+  ["NP-001","Bùi Xuân Dũng","10/06/2026","10/06/2026",1,"Nghỉ phép cá nhân","Việc gia đình","Cần duyệt","DINH Công Hoàng"],
+  ["NP-002","Nguyễn Hoàng Hải","12/06/2026","13/06/2026",2,"Nghỉ phép năm","Việc cá nhân đã bàn giao hồ sơ PN ADINH","Hợp lệ","Bùi Xuân Dũng"],
+  ["NP-003","Hoàng Thu Mai","18/06/2026","18/06/2026",1,"Nghỉ không lương","Khám sức khỏe định kỳ","Cần duyệt","DINH Công Hoàng"]
+];
+const HRM_LEAVE_STORAGE = "ledome.hrmLeave.v1";
 const OVERTIME_RATE_PER_HOUR = 130000;
 const HRM_PAYROLL = [
   { department: "BAN LÃNH ĐẠO", order: 1, staffCode: "NS001", name: "DINH Công Hoàng", title: "Giám đốc", agreedSalary: 15000000, workDays: 23, project: "", contract: "", rate: "", revenue: 0, projectBonus: 0, transportAllowance: 0, tax: 0 },
@@ -4489,6 +5415,60 @@ function saveHrmOvertime() {
   localStorage.setItem(HRM_OVERTIME_STORAGE, JSON.stringify(HRM_OVERTIME));
 }
 
+function loadHrmLeave() {
+  if (HRM_LEAVE.loaded) return;
+  HRM_LEAVE.loaded = true;
+  try {
+    const saved = JSON.parse(localStorage.getItem(HRM_LEAVE_STORAGE) || "[]");
+    if (Array.isArray(saved) && saved.length) HRM_LEAVE.splice(0, HRM_LEAVE.length, ...saved);
+  } catch {}
+}
+
+function saveHrmLeave() {
+  localStorage.setItem(HRM_LEAVE_STORAGE, JSON.stringify(HRM_LEAVE));
+}
+
+function leaveDayCount(from, to) {
+  const start = projectDateObject(from);
+  const end = projectDateObject(to || from);
+  if (!start || !end) return 1;
+  return Math.max(1, Math.round((end - start) / 86400000) + 1);
+}
+
+function hrmLeaveRow(row) {
+  const pending = row[7] === "Cần duyệt";
+  return `<tr><td><b>${escapeHtml(row[0])}</b></td><td>${escapeHtml(row[1])}</td><td>${escapeHtml(row[2])}</td><td>${escapeHtml(row[3])}</td><td><strong>${escapeHtml(row[4])} ngày</strong></td><td>${escapeHtml(row[5])}</td><td class="overtime-reason">${escapeHtml(row[6])}</td><td>${escapeHtml(row[8] || "")}</td><td>${hrmStatus(row[7])}</td><td class="overtime-actions">${pending ? `<button class="hrm-view approve" data-hrm="approve-leave" data-code="${escapeHtml(row[0])}">Xét duyệt</button><button class="hrm-view reject" data-hrm="reject-leave" data-code="${escapeHtml(row[0])}">Từ chối</button>` : `<button class="hrm-view" data-hrm="view-leave" data-code="${escapeHtml(row[0])}">Chi tiết</button>`}</td></tr>`;
+}
+
+function hrmLeaveModal() {
+  const staffOptions = staffPeople().map((person) => `<option value="${escapeHtml(person.staffName)}">${escapeHtml(person.staffCode)} · ${escapeHtml(person.staffName)}</option>`).join("");
+  const today = new Date().toISOString().slice(0, 10);
+  return `<div class="directory-modal overtime-modal" id="hrm-leave-modal"><form id="hrm-leave-form"><header><h3>Tạo phiếu xin nghỉ</h3><button type="button" data-hrm="close-leave">×</button></header>
+    <label>Nhân sự<select name="staff" required>${staffOptions}</select></label>
+    <label>Từ ngày<input name="fromDate" type="date" value="${today}" required></label>
+    <label>Đến ngày<input name="toDate" type="date" value="${today}" required></label>
+    <label>Loại nghỉ<select name="leaveType"><option>Nghỉ phép năm</option><option>Nghỉ phép cá nhân</option><option>Nghỉ không lương</option><option>Nghỉ ốm</option><option>Khác</option></select></label>
+    <label>Cấp trên duyệt<select name="approver"><option>DINH Công Hoàng</option><option>Bùi Xuân Dũng</option><option>Hoàng Thu Mai</option></select></label>
+    <label class="directory-form-wide">Lý do xin nghỉ<textarea name="reason" required placeholder="Nêu rõ lý do xin nghỉ"></textarea></label>
+    <label class="directory-form-wide">Bàn giao công việc<textarea name="handover" placeholder="Ghi người nhận bàn giao, việc đang xử lý và deadline liên quan"></textarea></label>
+    <section class="overtime-form-note directory-form-wide"><b>Luồng duyệt</b><span>Sau khi gửi, phiếu vào trạng thái Cần duyệt. Chỉ phiếu Hợp lệ mới được tính là ngày nghỉ hợp lệ trong bảng công.</span></section>
+    <footer><button type="button" class="btn secondary" data-hrm="close-leave">Đóng</button><button class="btn">Gửi phiếu</button></footer></form></div>`;
+}
+
+async function hrmLeave() {
+  await loadOrgStaff();
+  loadHrmLeave();
+  setTitle("hrm-leave", "");
+  const approvedRows = HRM_LEAVE.filter((row) => row[7] === "Hợp lệ");
+  const totalDays = approvedRows.reduce((sum, row) => sum + Number(row[4] || 0), 0);
+  const pending = HRM_LEAVE.filter((row) => row[7] === "Cần duyệt").length;
+  const rejected = HRM_LEAVE.filter((row) => row[7] === "Từ chối").length;
+  $("#app").innerHTML = `<section class="hrm-page">${hrmHeader("▤ Phiếu xin nghỉ","Phiếu xin nghỉ phép, nghỉ cá nhân hoặc nghỉ không lương. Chỉ phiếu đã duyệt mới tính là nghỉ hợp lệ.",'<button class="btn" data-hrm="add-leave">＋ Tạo phiếu</button>')}${hrmStats([["Tổng phiếu",HRM_LEAVE.length,"Trong tháng 06 / 2026"],["Ngày nghỉ hợp lệ",`${attendanceWork(totalDays)} ngày`,`${approvedRows.length} phiếu đã duyệt`],["Cần duyệt",pending,"Chờ cấp trên xác nhận"],["Từ chối",rejected,"Không tính vào công hợp lệ"]])}
+  <div class="hrm-tools"><input placeholder="⌕ Tìm nhân sự, loại nghỉ hoặc lý do"><input type="month" value="2026-06"><select><option>Tất cả trạng thái</option><option>Cần duyệt</option><option>Hợp lệ</option><option>Từ chối</option></select><button>↻ Tải lại</button></div>
+  <div class="hrm-table-wrap"><table class="hrm-table payroll-table overtime-table"><thead><tr><th>Mã phiếu</th><th>Nhân sự</th><th>Từ ngày</th><th>Đến ngày</th><th>Số ngày</th><th>Loại nghỉ</th><th>Lý do / bàn giao</th><th>Người duyệt</th><th>Trạng thái</th><th></th></tr></thead><tbody>${HRM_LEAVE.map((row) => hrmLeaveRow(row)).join("")}</tbody><tfoot><tr><td colspan="4">Tổng ngày nghỉ hợp lệ</td><td>${attendanceWork(totalDays)} ngày</td><td colspan="5">${approvedRows.length} phiếu đã duyệt</td></tr></tfoot></table></div>${hrmLeaveModal()}</section>`;
+  bindHrm("leave");
+}
+
 function loadHrmPayroll() {
   if (HRM_PAYROLL.loaded) return;
   HRM_PAYROLL.loaded = true;
@@ -4656,6 +5636,7 @@ function bindHrm(type, attendanceRows = HRM_ATTENDANCE) {
     }
     if (action === "close") return $("#hrm-staff-modal").classList.remove("open");
     if (action === "close-overtime") return $("#hrm-overtime-modal")?.classList.remove("open");
+    if (action === "close-leave") return $("#hrm-leave-modal")?.classList.remove("open");
     if (action === "close-evidence") return $("#hrm-evidence").classList.remove("open");
     if (action === "close-private") return $("#staff-private-modal")?.remove();
     if (action === "staff-private") {
@@ -4719,6 +5700,14 @@ function bindHrm(type, attendanceRows = HRM_ATTENDANCE) {
       if (date) date.value = new Date().toISOString().slice(0, 10);
       return $("#hrm-overtime-modal")?.classList.add("open");
     }
+    if (action === "add-leave") {
+      $("#hrm-leave-form")?.reset();
+      const today = new Date().toISOString().slice(0, 10);
+      const form = $("#hrm-leave-form");
+      if (form?.elements.fromDate) form.elements.fromDate.value = today;
+      if (form?.elements.toDate) form.elements.toDate.value = today;
+      return $("#hrm-leave-modal")?.classList.add("open");
+    }
     if (action === "approve-overtime") {
       const row = HRM_OVERTIME.find((item) => item[0] === event.target.closest("[data-code]").dataset.code);
       if (row) {
@@ -4741,6 +5730,26 @@ function bindHrm(type, attendanceRows = HRM_ATTENDANCE) {
       const row = HRM_OVERTIME.find((item) => item[0] === event.target.closest("[data-code]").dataset.code);
       if (row) alert(`${row[0]} - ${row[1]}\n${row[2]} · ${row[3]}\n${row[4]} - ${row[5]} (${row[6]} giờ)\nTrạng thái: ${row[8]}\nLý do: ${row[7]}`);
     }
+    if (action === "approve-leave") {
+      const row = HRM_LEAVE.find((item) => item[0] === event.target.closest("[data-code]").dataset.code);
+      if (row) {
+        row[7] = "Hợp lệ";
+        saveHrmLeave();
+      }
+      return hrmLeave();
+    }
+    if (action === "reject-leave") {
+      const row = HRM_LEAVE.find((item) => item[0] === event.target.closest("[data-code]").dataset.code);
+      if (row) {
+        row[7] = "Từ chối";
+        saveHrmLeave();
+      }
+      return hrmLeave();
+    }
+    if (action === "view-leave") {
+      const row = HRM_LEAVE.find((item) => item[0] === event.target.closest("[data-code]").dataset.code);
+      if (row) alert(`${row[0]} - ${row[1]}\n${row[2]} - ${row[3]} (${row[4]} ngày)\nLoại nghỉ: ${row[5]}\nTrạng thái: ${row[7]}\nLý do / bàn giao: ${row[6]}`);
+    }
   };
   if (type === "staff") $("#hrm-staff-form").onsubmit = async (event) => {
     event.preventDefault();
@@ -4762,6 +5771,16 @@ function bindHrm(type, attendanceRows = HRM_ATTENDANCE) {
     HRM_OVERTIME.unshift([code, data.staff, overtimeDisplayDate(data.date), data.project, data.start, data.end, hours, data.reason, "Cần duyệt", Math.round(hours * OVERTIME_RATE_PER_HOUR)]);
     saveHrmOvertime();
     hrmOvertime();
+  };
+  if (type === "leave") $("#hrm-leave-form").onsubmit = (event) => {
+    event.preventDefault();
+    const data = Object.fromEntries(new FormData(event.currentTarget));
+    const days = leaveDayCount(data.fromDate, data.toDate);
+    const code = `NP-${String(HRM_LEAVE.length + 1).padStart(3, "0")}`;
+    const note = [data.reason, data.handover ? `Bàn giao: ${data.handover}` : ""].filter(Boolean).join(" · ");
+    HRM_LEAVE.unshift([code, data.staff, projectDateDisplayValue(data.fromDate), projectDateDisplayValue(data.toDate), days, data.leaveType, note, "Cần duyệt", data.approver]);
+    saveHrmLeave();
+    hrmLeave();
   };
   if (type === "payroll") bindPayrollEditors();
 }
@@ -4844,12 +5863,30 @@ function updateAccountRowAccess(row) {
   setAccountPermissionEditor(row, permissions);
 }
 
+let accountSaveNotice = null;
+function accountSaveTimeLabel() {
+  return new Date().toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+}
+function accountSaveStatusMarkup() {
+  const notice = accountSaveNotice;
+  return `<div class="account-save-status ${escapeHtml(notice?.type || "")}" data-account-save-status role="status" aria-live="polite" ${notice ? "" : "hidden"}>${notice ? `<b>${escapeHtml(notice.message)}</b><span>${escapeHtml(notice.time || "")}</span>` : ""}</div>`;
+}
+function setAccountSaveStatus(type, message) {
+  accountSaveNotice = { type, message, time: accountSaveTimeLabel() };
+  const box = document.querySelector("[data-account-save-status]");
+  if (!box) return;
+  box.hidden = false;
+  box.className = `account-save-status ${type}`;
+  box.innerHTML = `<b>${escapeHtml(message)}</b><span>${escapeHtml(accountSaveNotice.time)}</span>`;
+}
+
 async function configAccounts() {
   await loadAccounts();
   setTitle("accounts", "");
   const activeCount = LEDOME_ACCOUNTS.filter((account) => account.active).length;
   $("#app").innerHTML = `<section class="account-page">
     <header class="account-head"><div><h2>▣ Tài khoản</h2><p>Quản lý tài khoản đăng nhập và phân quyền cho nhân sự Le Dome</p></div><button class="btn" data-account="save">Lưu thay đổi</button></header>
+    ${accountSaveStatusMarkup()}
     <div class="account-summary"><article><small>Tổng tài khoản</small><b>${LEDOME_ACCOUNTS.length}</b><span>Theo nhân sự thật, không theo số vị trí kiêm nhiệm</span></article><article><small>Đang hoạt động</small><b>${activeCount}</b><span>Có thể đăng nhập</span></article><article><small>Cấp quyền</small><b>5</b><span>Admin, Lãnh đạo, Trưởng phòng, Nhân viên, Guest</span></article></div>
     ${accountAccessCards()}
     <div class="account-tools"><span>RBAC theo cấp và quyền chi tiết theo từng tài khoản.</span><button data-account="reset">Tạo lại mặc định</button></div>
@@ -4887,24 +5924,41 @@ function bindAccounts() {
     }
     const action = event.target.closest("[data-account]")?.dataset.account;
     if (action === "save") {
-      LEDOME_ACCOUNTS = [...document.querySelectorAll(".account-table tbody tr")].map((row) => {
-        const previous = LEDOME_ACCOUNTS.find((account) => account.staffCode === row.dataset.staff);
-        const accessLevel = row.querySelector('[name="accessLevel"]').value;
-        return {
-          ...previous,
-          loginId: row.querySelector('[name="loginId"]').value.trim(),
-          newPassword: row.querySelector('[name="newPassword"]').value,
-          active: row.querySelector('[name="active"]').checked,
-          accessLevel,
-          accessScope: ACCOUNT_ACCESS_BY_KEY[accessLevel].scope,
-          permissions: accountPermissionsFromRow(row)
-        };
-      });
-      await saveAccounts();
-      state.account = LEDOME_ACCOUNTS.find((account) => account.staffCode === state.account?.staffCode) || state.account;
-      if (state.account) localStorage.setItem(AUTH_STORAGE, JSON.stringify({ staffCode: state.account.staffCode, loginId: state.account.loginId }));
-      updateUserChrome();
-      return configAccounts();
+      const button = event.target.closest("[data-account]");
+      if (button.disabled) return;
+      const previousText = button.textContent;
+      button.disabled = true;
+      button.classList.add("is-saving");
+      button.textContent = "Đang lưu...";
+      setAccountSaveStatus("saving", "Đang lưu thay đổi tài khoản...");
+      try {
+        LEDOME_ACCOUNTS = [...document.querySelectorAll(".account-table tbody tr")].map((row) => {
+          const previous = LEDOME_ACCOUNTS.find((account) => account.staffCode === row.dataset.staff);
+          const accessLevel = row.querySelector('[name="accessLevel"]').value;
+          return {
+            ...previous,
+            loginId: row.querySelector('[name="loginId"]').value.trim(),
+            newPassword: row.querySelector('[name="newPassword"]').value,
+            active: row.querySelector('[name="active"]').checked,
+            accessLevel,
+            accessScope: ACCOUNT_ACCESS_BY_KEY[accessLevel].scope,
+            permissions: accountPermissionsFromRow(row)
+          };
+        });
+        await saveAccounts();
+        state.account = LEDOME_ACCOUNTS.find((account) => account.staffCode === state.account?.staffCode) || state.account;
+        if (state.account) localStorage.setItem(AUTH_STORAGE, JSON.stringify({ staffCode: state.account.staffCode, loginId: state.account.loginId }));
+        updateUserChrome();
+        setAccountSaveStatus("success", `Đã lưu ${LEDOME_ACCOUNTS.length} tài khoản thành công.`);
+        return configAccounts();
+      } catch (error) {
+        console.warn("Cannot save accounts", error);
+        setAccountSaveStatus("error", `Không lưu được thay đổi: ${error.message || "Lỗi không xác định"}`);
+        button.disabled = false;
+        button.classList.remove("is-saving");
+        button.textContent = previousText || "Lưu thay đổi";
+      }
+      return;
     }
     if (action === "reset" && confirm("Tạo lại toàn bộ tài khoản về ID mặc định và pass = 1?")) {
       await resetDefaultAccounts();
@@ -4929,6 +5983,10 @@ function persistCatalogCollapsed() {
 
 function catalogToggleButton(key, collapsed = catalogCollapsed(key)) {
   return `<button type="button" class="catalog-toggle" data-catalog-toggle="${escapeHtml(key)}" aria-expanded="${collapsed ? "false" : "true"}">${collapsed ? "Unhide" : "Hide"}</button>`;
+}
+
+function catalogPanelActions(key, collapsed = catalogCollapsed(key), draggable = false) {
+  return `<div class="catalog-panel-actions">${catalogToggleButton(key, collapsed)}${draggable ? `<button type="button" class="catalog-drag-handle" draggable="true" data-catalog-drag-handle="${escapeHtml(key)}" title="Kéo để đổi vị trí" aria-label="Kéo để đổi vị trí">↕</button>` : ""}</div>`;
 }
 
 function catalogValuesForType(type) {
@@ -5010,7 +6068,7 @@ function catalogEditorList(type) {
   const collapsed = catalogCollapsed(type);
   const projectList = type === "projectList";
   return `<section class="catalog-panel ${projectList ? "catalog-project-panel" : ""} ${collapsed ? "collapsed" : ""} ${config.preserveCase ? "preserve-case" : ""}" data-catalog-panel="${type}">
-    <header><div><h3>${escapeHtml(config.title)}</h3><span>${catalogValuesForType(type).length} mục đang lưu</span></div>${catalogToggleButton(type, collapsed)}</header>
+    <header><div><h3>${escapeHtml(config.title)}</h3><span>${catalogValuesForType(type).length} mục đang lưu</span></div>${catalogPanelActions(type, collapsed, true)}</header>
     ${collapsed ? "" : `<div class="catalog-panel-body">
       <p>${escapeHtml(config.note)}</p>
       ${projectList ? "" : `<div class="catalog-add-row"><input data-catalog-new="${type}" placeholder="${escapeHtml(config.placeholder)}"><button data-catalog-add="${type}">Thêm</button></div>`}
@@ -5025,7 +6083,7 @@ function catalogFlowList(type) {
   const readOnly = config.readOnly;
   const collapsed = catalogCollapsed(type);
   return `<div class="catalog-flow-list ${collapsed ? "collapsed" : ""} ${config.preserveCase ? "preserve-case" : ""}" data-catalog-panel="${type}">
-    <header><div><strong>${escapeHtml(config.title)}</strong><span>${catalogValuesForType(type).length} mục</span></div>${catalogToggleButton(type, collapsed)}</header>
+    <header><div><strong>${escapeHtml(config.title)}</strong><span>${catalogValuesForType(type).length} mục</span></div>${catalogPanelActions(type, collapsed)}</header>
     ${collapsed ? "" : `<div class="catalog-flow-body">
       ${readOnly ? "" : `<div class="catalog-add-row"><input data-catalog-new="${type}" placeholder="${escapeHtml(config.placeholder)}"><button data-catalog-add="${type}">Thêm</button></div>`}
       <div class="catalog-list">${rows.map(({ item, index }) => catalogChipMarkup(type, item, index)).join("") || `<em>Không có mục phù hợp.</em>`}</div>
@@ -5071,7 +6129,7 @@ function catalogFlowPanel() {
   const total = TRANSACTION_FLOW_LIST_TYPES.reduce((sum, type) => sum + catalogValuesForType(type).length, 0);
   const collapsed = catalogCollapsed("transactionFlow");
   return `<section class="catalog-panel catalog-flow-panel ${collapsed ? "collapsed" : ""}">
-    <header><div><h3>Phân luồng giao dịch</h3><span>${total} mục đang lưu</span></div>${catalogToggleButton("transactionFlow", collapsed)}</header>
+    <header><div><h3>Phân luồng giao dịch</h3><span>${total} mục đang lưu</span></div>${catalogPanelActions("transactionFlow", collapsed)}</header>
     ${collapsed ? "" : `<div class="catalog-panel-body">
       <p>Dùng cho bộ lọc và form giao dịch tài chính theo cấu trúc phụ thuộc Loại -> Nhóm -> Chủ đề -> Hạng mục -> Đối tượng.</p>
       ${catalogDependencyGrid()}
@@ -5085,13 +6143,13 @@ function inventoryProcessPanel() {
     ["1", "NCC giao hàng", "NCC vận chuyển Thiết bị Vật tư đến Kho VP hoặc Kho dự án theo nhu cầu nhận hàng."],
     ["2", "Lập Phiếu nhập kho", "Người nhận tạo Phiếu nhập kho để xác nhận số lượng, hạng mục, NCC, vị trí lưu và dự án liên quan."],
     ["3", "Bảo quản vật tư", "Người làm phiếu chịu trách nhiệm bảo quản Thiết bị Vật tư mình đã nhận cho tới khi bàn giao hoặc đưa vào sử dụng."],
-    ["4", "Ghi nhận sử dụng", "Khi cần sử dụng, người dùng ghi chú Vật tư thiết bị đã dùng trong Phiếu Nhật ký thi công."]
+    ["4", "Lập Phiếu xuất kho", "Khi cần đưa vật tư/thiết bị vào sử dụng, người dùng lập Phiếu xuất kho để ghi nhận kho xuất, người nhận, số lượng và hạng mục thi công liên quan."]
   ];
   return `<section class="catalog-panel inventory-process-panel">
     <header><div><h3>Quy trình Xuất nhập kho</h3><span>Áp dụng cho Thiết bị Vật tư nhận từ NCC</span></div></header>
     <div class="catalog-panel-body">
       <div class="inventory-process-flow">${steps.map(([index, title, text]) => `<article><b>${index}</b><strong>${escapeHtml(title)}</strong><p>${escapeHtml(text)}</p></article>`).join("")}</div>
-      <div class="inventory-process-note"><b>Nguyên tắc trách nhiệm</b><span>Phiếu nhập kho là căn cứ xác nhận người nhận và nơi lưu. Phiếu Nhật ký thi công là căn cứ ghi nhận vật tư thiết bị đã được đưa vào sử dụng.</span></div>
+      <div class="inventory-process-note"><b>Nguyên tắc trách nhiệm</b><span>Phiếu nhập kho là căn cứ xác nhận người nhận và nơi lưu. Phiếu xuất kho là căn cứ ghi nhận vật tư thiết bị đã được đưa vào thi công và đối chiếu trong Phiếu Nhật ký thi công.</span></div>
     </div>
   </section>`;
 }
@@ -5149,7 +6207,7 @@ async function configCatalog(reload = true) {
   $("#app").innerHTML = `<section class="catalog-page">
     <header class="catalog-head"><div><h2>▰ Cơ sở dữ liệu</h2><p>Nguồn dữ liệu chuẩn cho Hợp đồng, Nhà thầu, Nhà cung cấp và các màn dự án.</p></div><button class="btn" data-catalog-save>Lưu cơ sở dữ liệu</button></header>
     <div class="catalog-tools"><input data-catalog-search value="${escapeHtml(state.catalogQuery)}" placeholder="⌕ Tìm danh mục"><button data-catalog-reset>Khôi phục mặc định</button></div>
-    <div class="catalog-grid">${CATALOG_PAGE_LIST_TYPES.map(catalogEditorList).join("")}</div>
+    <div class="catalog-grid">${catalogOrderedTypes().map(catalogEditorList).join("")}</div>
   </section>`;
   bindCatalog();
 }
@@ -5181,6 +6239,72 @@ function collectCatalogPanel(type) {
 function refreshCatalogFromDom() {
   [...Object.keys(CATALOG_LIST_CONFIG), ...TRANSACTION_FLOW_LIST_TYPES].forEach((type) => {
     setCatalogValuesForType(type, collectCatalogPanel(type));
+  });
+}
+
+function clearCatalogDragState(grid) {
+  grid?.querySelectorAll(".catalog-panel.dragging,.catalog-panel.drag-over").forEach((panel) => panel.classList.remove("dragging", "drag-over"));
+}
+
+function moveCatalogPanel(sourceType, targetType) {
+  if (!sourceType || !targetType || sourceType === targetType) return false;
+  const order = [...catalogOrderedTypes()];
+  const fromIndex = order.indexOf(sourceType);
+  const targetIndex = order.indexOf(targetType);
+  if (fromIndex < 0 || targetIndex < 0) return false;
+  const [moved] = order.splice(fromIndex, 1);
+  order.splice(order.indexOf(targetType), 0, moved);
+  state.catalogOrder = order;
+  persistCatalogOrder();
+  return true;
+}
+
+function bindCatalogPanelDrag() {
+  const grid = document.querySelector(".catalog-grid");
+  if (!grid) return;
+  let draggingType = "";
+  grid.addEventListener("dragstart", (event) => {
+    const handle = event.target.closest("[data-catalog-drag-handle]");
+    if (!handle || !grid.contains(handle)) return;
+    draggingType = handle.dataset.catalogDragHandle;
+    const panel = handle.closest(".catalog-panel[data-catalog-panel]");
+    if (!panel) return;
+    refreshCatalogFromDom();
+    panel.classList.add("dragging");
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", draggingType);
+  });
+  grid.addEventListener("dragover", (event) => {
+    if (!draggingType) return;
+    const panel = event.target.closest(".catalog-panel[data-catalog-panel]");
+    if (!panel || !grid.contains(panel) || panel.dataset.catalogPanel === draggingType) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+    grid.querySelectorAll(".catalog-panel.drag-over").forEach((item) => {
+      if (item !== panel) item.classList.remove("drag-over");
+    });
+    panel.classList.add("drag-over");
+  });
+  grid.addEventListener("dragleave", (event) => {
+    const panel = event.target.closest(".catalog-panel[data-catalog-panel]");
+    if (panel && !panel.contains(event.relatedTarget)) panel.classList.remove("drag-over");
+  });
+  grid.addEventListener("drop", (event) => {
+    const panel = event.target.closest(".catalog-panel[data-catalog-panel]");
+    const sourceType = event.dataTransfer.getData("text/plain") || draggingType;
+    const targetType = panel?.dataset.catalogPanel || "";
+    if (panel && grid.contains(panel) && moveCatalogPanel(sourceType, targetType)) {
+      event.preventDefault();
+      clearCatalogDragState(grid);
+      draggingType = "";
+      void renderCatalogManagement(false);
+      return;
+    }
+    clearCatalogDragState(grid);
+  });
+  grid.addEventListener("dragend", () => {
+    draggingType = "";
+    clearCatalogDragState(grid);
   });
 }
 
@@ -5257,6 +6381,7 @@ function bindCatalog() {
       scheduleCatalogAutosave();
     }
   };
+  bindCatalogPanelDrag();
 }
 
 async function loadSession() {
@@ -5461,6 +6586,8 @@ async function refreshProjectNav() {
 async function route() {
   if (!state.account && !(await requireLogin())) return;
   state.page = location.hash.slice(1) || "projects";
+  const enteringCatalog = state.page === "catalog" && lastRoutePage !== "catalog";
+  lastRoutePage = state.page;
   if (["finance-operations","finance-payroll","finance-funds"].includes(state.page)) {
     location.hash = "finance-overview";
     return;
@@ -5498,8 +6625,12 @@ async function route() {
     if (state.page === "hrm-staff") return hrmStaff();
     if (state.page === "hrm-attendance") return hrmAttendance();
     if (state.page === "hrm-overtime") return hrmOvertime();
+    if (state.page === "hrm-leave") return hrmLeave();
     if (state.page === "hrm-payroll") return hrmPayroll();
-    if (state.page === "catalog") return configCatalog();
+    if (state.page === "catalog") {
+      if (enteringCatalog) collapseCatalogPagePanels();
+      return configCatalog();
+    }
     if (state.page === "processes") return configProcesses();
     if (state.page === "standards") return renderStandards();
     if (state.page === "accounts") return configAccounts();
@@ -5516,9 +6647,14 @@ async function init() {
     state.navCollapsed = {};
   }
   try {
-    state.catalogCollapsed = JSON.parse(localStorage.getItem(CATALOG_COLLAPSE_STORAGE) || "{}");
+    state.catalogCollapsed = { ...catalogDefaultCollapsedState(), ...(JSON.parse(localStorage.getItem(CATALOG_COLLAPSE_STORAGE) || "{}") || {}) };
   } catch {
-    state.catalogCollapsed = {};
+    state.catalogCollapsed = catalogDefaultCollapsedState();
+  }
+  try {
+    state.catalogOrder = normalizeCatalogOrder(JSON.parse(localStorage.getItem(CATALOG_ORDER_STORAGE) || "[]"));
+  } catch {
+    state.catalogOrder = normalizeCatalogOrder();
   }
   sidebarHidden = localStorage.getItem(SIDEBAR_VISIBILITY_STORAGE) === "1";
   setSidebarHidden(sidebarHidden, false);

@@ -4,6 +4,7 @@ data/
 backups/
 logs/
 *.log
+.tmp/
 /*.png
 .constructflow.pid
 .edge-fastwork.pid

@@ -265,10 +265,12 @@ test("catalog API includes and persists project list", async () => {
   assert.ok(Array.isArray(catalog.data.projectList));
   assert.ok(catalog.data.projectList.length > 0);
   [
+    "voucherTypes",
     "overtimeVoucherTypes",
     "paymentVoucherTypes",
     "attendanceVoucherTypes",
     "inventoryReceiptTypes",
+    "inventoryIssueTypes",
     "warehouseList",
     "cdtChangeRequestTypes",
     "cdtNoteRequestTypes",
@@ -577,6 +579,74 @@ test("created, updated and deleted projects stay in sync across project APIs", a
   assert.equal(afterDeleteDetail.status, 404);
 });
 
+test("project group chat stores shared messages", async () => {
+  const text = `Tin nhắn chung ${Date.now()}`;
+  const created = await authed(`${origin}/api/v1/projects/p1/chat`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ text })
+  });
+  assert.equal(created.status, 201);
+  const message = await created.json();
+  assert.equal(message.projectId, "p1");
+  assert.equal(message.text, text);
+  assert.ok(message.author);
+
+  const list = await authed(`${origin}/api/v1/projects/p1/chat`).then((res) => res.json());
+  assert.ok(list.data.some((item) => item.id === message.id && item.text === text));
+
+  const uploaded = await authed(`${origin}/api/v1/projects/p1/chat/files?name=chat-photo.jpg`, {
+    method: "POST",
+    body: Buffer.from("chat-image")
+  });
+  assert.equal(uploaded.status, 201);
+  const fileMessage = await uploaded.json();
+  assert.equal(fileMessage.projectId, "p1");
+  assert.equal(fileMessage.attachments.length, 1);
+  assert.equal(fileMessage.attachments[0].category, "image");
+  assert.ok(fileMessage.attachments[0].expiresAt);
+
+  const opened = await authed(`${origin}${fileMessage.attachments[0].url}`);
+  assert.equal(opened.status, 200);
+  assert.match(opened.headers.get("content-type"), /image\/jpeg/);
+
+  const revoked = await authed(`${origin}/api/v1/projects/p1/chat/${message.id}`, { method: "DELETE" }).then((res) => res.json());
+  assert.ok(revoked.data.revokedAt);
+  assert.equal(revoked.data.text, "");
+
+  const empty = await authed(`${origin}/api/v1/projects/p1/chat`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ text: "   " })
+  });
+  assert.equal(empty.status, 400);
+});
+
+test("team chat stores dashboard messages", async () => {
+  const text = `Chat dashboard ${Date.now()}`;
+  const created = await authed(`${origin}/api/v1/team-chat`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ text })
+  });
+  assert.equal(created.status, 201);
+  const message = await created.json();
+  assert.equal(message.channel, "dashboard");
+  assert.equal(message.source, "member");
+  assert.equal(message.text, text);
+  assert.ok(message.author);
+
+  const list = await authed(`${origin}/api/v1/team-chat`).then((res) => res.json());
+  assert.ok(list.data.some((item) => item.id === message.id && item.text === text));
+
+  const empty = await authed(`${origin}/api/v1/team-chat`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ text: "   " })
+  });
+  assert.equal(empty.status, 400);
+});
+
 test("3D design files support proposal, concept and final marker", async () => {
   const projectId = `design-${Date.now()}`;
   const proposal = await authed(`${origin}/api/v1/projects/${projectId}/design-3d-files?kind=proposal&name=proposal.jpg`, {
@@ -602,6 +672,23 @@ test("3D design files support proposal, concept and final marker", async () => {
 test("landing page and project detail clients expose expected workflows", async () => {
   const appScript = await fetch(`${origin}/app.js`).then((res) => res.text());
   assert.match(appScript, /dashboardMyTasksPanel/);
+  assert.match(appScript, /dashboardVoucherCards/);
+  assert.match(appScript, /dashboardQuickAccessPanel/);
+  assert.match(appScript, /dashboard-quick-access-columns/);
+  assert.match(appScript, /dashboardVoucherFormModal/);
+  assert.match(appScript, /data-dashboard-voucher-form/);
+  assert.match(appScript, /id: "attendance"/);
+  assert.match(appScript, /Phiếu giao nhiệm vụ/);
+  assert.match(appScript, /dashboardVoucherFullCdtChange/);
+  assert.match(appScript, /Hạng mục thi công và phạm vi/);
+  assert.match(appScript, /dashboardVoucherApprovalFlow/);
+  assert.match(appScript, /Hành động xử lý/);
+  assert.doesNotMatch(appScript, /Thêm phiếu nhật ký thi công/);
+  assert.match(appScript, /dashboardTeamChatPanel/);
+  assert.match(appScript, /team-chat-form/);
+  assert.match(appScript, /\/team-chat/);
+  assert.match(appScript, /data-voucher-toggle/);
+  assert.match(appScript, /data-voucher-approve/);
   assert.match(appScript, /data-my-task-view="week"/);
   assert.match(appScript, /data-project-view/);
   assert.match(appScript, /data-action="create-project"/);
@@ -615,10 +702,13 @@ test("landing page and project detail clients expose expected workflows", async 
   assert.match(script, /data-project-info-delete/);
   assert.match(script, /Dòng tiền dự án/);
   assert.match(script, /Truy cập nhanh/);
+  assert.doesNotMatch(script, /Thêm phiếu nhật ký thi công/);
+  assert.doesNotMatch(script, /data-form="diary"/);
   assert.match(script, /Theo dõi chi phí dự án/);
   assert.match(script, /Vật liệu nhập vượt/);
   assert.match(script, /Nhân công cần dùng trong 7 ngày tới/);
-  assert.match(script, /data-view-link="debt-owner"/);
+  assert.match(script, /data-app-link="hrm-overtime"/);
+  assert.match(script, /data-view-link="rfi"/);
   assert.match(script, /showView\(view\)/);
   assert.match(script, /ganttView/);
   assert.match(script, /taskFormModal/);

@@ -30,6 +30,9 @@ const technicalFilesDir = dataPath("technical-files");
 const technicalMetaFile = dataPath("runtime-technical-meta.json");
 const accountsFile = dataPath("runtime-accounts.json");
 const diaryReportsFile = dataPath("runtime-diary-reports.json");
+const projectChatFile = dataPath("runtime-project-chat.json");
+const teamChatFile = dataPath("runtime-team-chat.json");
+const projectChatFilesDir = dataPath("project-chat-files");
 const partnersFile = dataPath("runtime-partners.json");
 const catalogFile = dataPath("runtime-catalog.json");
 const materialsFile = dataPath("runtime-materials.json");
@@ -46,7 +49,8 @@ let testBackups = [];
 const uploadMaxBytes = positiveNumber(process.env.UPLOAD_MAX_BYTES, 25 * 1024 * 1024);
 const sessionTtlMs = positiveNumber(process.env.SESSION_TTL_HOURS, 12) * 60 * 60 * 1000;
 const driveRetentionMs = positiveNumber(process.env.DRIVE_RETENTION_DAYS, 7) * 24 * 60 * 60 * 1000;
-const allowedUploadExtensions = new Set([".pdf", ".png", ".jpg", ".jpeg", ".webp", ".mp4", ".mov", ".doc", ".docx", ".xls", ".xlsx", ".csv", ".ppt", ".pptx", ".txt", ".md", ".note", ".dwg", ".zip", ".rar"]);
+const chatFileRetentionMs = positiveNumber(process.env.CHAT_FILE_RETENTION_DAYS, 7) * 24 * 60 * 60 * 1000;
+const allowedUploadExtensions = new Set([".pdf", ".png", ".jpg", ".jpeg", ".gif", ".webp", ".mp4", ".mov", ".webm", ".doc", ".docx", ".xls", ".xlsx", ".csv", ".ppt", ".pptx", ".txt", ".md", ".note", ".dwg", ".zip", ".rar"]);
 
 // New Dossier configurations for stages
 const dossierConfigs = {
@@ -762,7 +766,16 @@ function technicalProjectDir(projectId) {
   return path.join(technicalFilesDir, safeFileName(projectId));
 }
 
+function projectChatProjectDir(projectId) {
+  return path.join(projectChatFilesDir, safeFileName(projectId));
+}
+
 function driveFileDisplayName(storedName) {
+  const parts = String(storedName || "").split("__");
+  return parts.length > 2 ? parts.slice(2).join("__") : String(storedName || "");
+}
+
+function projectChatFileDisplayName(storedName) {
   const parts = String(storedName || "").split("__");
   return parts.length > 2 ? parts.slice(2).join("__") : String(storedName || "");
 }
@@ -906,6 +919,54 @@ function driveStoredTarget(storedName) {
 }
 
 function sendDriveStoredFile(res, info, disposition = "attachment") {
+  res.writeHead(200, {
+    "content-type": mime[path.extname(info.displayName).toLowerCase()] || "application/octet-stream",
+    "content-disposition": `${disposition}; filename*=UTF-8''${encodeURIComponent(info.displayName)}`,
+    "cache-control": "no-store",
+    "x-content-type-options": "nosniff"
+  });
+  return fs.createReadStream(info.target).pipe(res);
+}
+
+function projectChatFileUrl(projectId, storedName) {
+  return `/api/v1/projects/${encodeURIComponent(projectId)}/chat/file?storedName=${encodeURIComponent(storedName)}`;
+}
+
+function purgeExpiredProjectChatFiles(projectId) {
+  const dirs = projectId ? [projectChatProjectDir(projectId)] : fs.existsSync(projectChatFilesDir)
+    ? fs.readdirSync(projectChatFilesDir, { withFileTypes: true }).filter((entry) => entry.isDirectory()).map((entry) => path.join(projectChatFilesDir, entry.name))
+    : [];
+  const cutoff = Date.now() - chatFileRetentionMs;
+  dirs.forEach((dir) => {
+    if (!fs.existsSync(dir)) return;
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      if (!entry.isFile()) continue;
+      const target = path.join(dir, entry.name);
+      try {
+        if (fs.statSync(target).mtimeMs < cutoff) fs.unlinkSync(target);
+      } catch {
+        // Another request may have removed the file already.
+      }
+    }
+  });
+}
+
+function projectChatFileTarget(projectId, storedName) {
+  purgeExpiredProjectChatFiles(projectId);
+  const clean = safeFileName(storedName);
+  if (!clean) return null;
+  const target = path.join(projectChatProjectDir(projectId), clean);
+  if (!fs.existsSync(target)) return null;
+  const stats = fs.statSync(target);
+  if (stats.mtimeMs + chatFileRetentionMs <= Date.now()) {
+    try { fs.unlinkSync(target); } catch {}
+    return null;
+  }
+  const displayName = projectChatFileDisplayName(clean);
+  return { storedName: clean, target, displayName, size: stats.size, category: fileCategory(displayName), updatedAt: stats.mtime.toISOString(), expiresAt: new Date(stats.mtimeMs + chatFileRetentionMs).toISOString() };
+}
+
+function sendProjectChatFile(res, info, disposition = "inline") {
   res.writeHead(200, {
     "content-type": mime[path.extname(info.displayName).toLowerCase()] || "application/octet-stream",
     "content-disposition": `${disposition}; filename*=UTF-8''${encodeURIComponent(info.displayName)}`,
@@ -1414,10 +1475,25 @@ const catalogSeed = {
     "Hợp đồng thiết kế thi công",
     "Hợp đồng phát sinh"
   ],
+  voucherTypes: [
+    "Phiếu chấm công",
+    "Phiếu Overtime",
+    "Phiếu xin nghỉ phép",
+    "Phiếu giao nhiệm vụ",
+    "Phiếu Nhật ký thi công",
+    "Phiếu nhập kho",
+    "Phiếu xuất kho",
+    "Phiếu chi",
+    "Phiếu Yêu cầu Phát sinh của CDT",
+    "Phiếu Yêu cầu ghi chú của CDT",
+    "Phiếu Yêu cầu cần CDT phê duyệt",
+    "Phiếu Vấn đề sự cố"
+  ],
   overtimeVoucherTypes: ["Phiếu OT ngày thường", "Phiếu OT cuối tuần", "Phiếu OT ngày lễ", "Phiếu OT bổ sung"],
   paymentVoucherTypes: ["Phiếu chi dự án", "Phiếu chi vận hành", "Phiếu chi tạm ứng", "Phiếu chi hoàn ứng", "Phiếu chi khác"],
   attendanceVoucherTypes: ["Check-in", "Check-out", "Phiếu bổ sung công", "Phiếu điều chỉnh công"],
   inventoryReceiptTypes: ["Nhập mua mới", "Nhập hoàn trả", "Nhập điều chuyển", "Nhập tồn đầu kỳ"],
+  inventoryIssueTypes: ["Xuất dùng thi công", "Xuất điều chuyển", "Xuất trả NCC", "Xuất hao hụt / hủy"],
   warehouseList: ["Kho VP", "Kho dự án", "Kho công trình", "Kho tạm"],
   cdtChangeRequestTypes: ["Phát sinh khối lượng", "Thay đổi vật liệu", "Thay đổi thiết kế", "Bổ sung hạng mục"],
   cdtNoteRequestTypes: ["Ghi chú hiện trạng", "Ghi chú nghiệm thu", "Ghi chú vật tư", "Ghi chú tiến độ"],
@@ -1448,10 +1524,12 @@ function normalizeCatalog(input = {}) {
     constructionCategories: catalogList(input.constructionCategories, catalogSeed.constructionCategories),
     materialCategories: catalogList(input.materialCategories, catalogSeed.materialCategories),
     contractTypes: catalogList(input.contractTypes, catalogSeed.contractTypes),
+    voucherTypes: catalogList(input.voucherTypes, catalogSeed.voucherTypes),
     overtimeVoucherTypes: catalogList(input.overtimeVoucherTypes, catalogSeed.overtimeVoucherTypes),
     paymentVoucherTypes: catalogList(input.paymentVoucherTypes, catalogSeed.paymentVoucherTypes),
     attendanceVoucherTypes: catalogList(input.attendanceVoucherTypes, catalogSeed.attendanceVoucherTypes),
     inventoryReceiptTypes: catalogList(input.inventoryReceiptTypes, catalogSeed.inventoryReceiptTypes),
+    inventoryIssueTypes: catalogList(input.inventoryIssueTypes, catalogSeed.inventoryIssueTypes),
     warehouseList: catalogList(input.warehouseList, catalogSeed.warehouseList),
     cdtChangeRequestTypes: catalogList(input.cdtChangeRequestTypes, catalogSeed.cdtChangeRequestTypes),
     cdtNoteRequestTypes: catalogList(input.cdtNoteRequestTypes, catalogSeed.cdtNoteRequestTypes),
@@ -1577,6 +1655,44 @@ function attendanceEmployeeOptions() {
 }
 function readDiaryReports() { return readJsonFile(diaryReportsFile, {}); }
 function writeDiaryReports(data) { writeJsonAtomic(diaryReportsFile, data); }
+function readProjectChat() { return readJsonFile(projectChatFile, {}); }
+function writeProjectChat(data) { writeJsonAtomic(projectChatFile, data); }
+function readTeamChat() {
+  const rows = readJsonFile(teamChatFile, []);
+  return Array.isArray(rows) ? rows.slice(-200) : [];
+}
+function writeTeamChat(rows) {
+  writeJsonAtomic(teamChatFile, (Array.isArray(rows) ? rows : []).slice(-200));
+}
+function projectChatPublicMessage(projectId, message) {
+  if (message?.revokedAt) return { ...message, text: "", attachments: [], attachmentExpired: false };
+  const sourceAttachments = Array.isArray(message?.attachments) ? message.attachments : [];
+  const attachments = sourceAttachments.map((attachment) => {
+    const info = projectChatFileTarget(projectId, attachment.storedName);
+    if (!info) return null;
+    return {
+      storedName: info.storedName,
+      name: attachment.name || info.displayName,
+      category: attachment.category || info.category,
+      size: Number(attachment.size || info.size) || 0,
+      uploadedAt: attachment.uploadedAt || info.updatedAt,
+      expiresAt: info.expiresAt,
+      url: projectChatFileUrl(projectId, info.storedName)
+    };
+  }).filter(Boolean);
+  return { ...message, attachments, attachmentExpired: sourceAttachments.length > 0 && attachments.length === 0 };
+}
+function projectChatMessages(projectId) {
+  const data = readProjectChat();
+  const rows = data[String(projectId || "")];
+  if (!Array.isArray(rows)) return [];
+  const messages = rows.map((message) => projectChatPublicMessage(projectId, message)).slice(-200);
+  if (JSON.stringify(rows) !== JSON.stringify(messages)) {
+    data[String(projectId || "")] = messages;
+    writeProjectChat(data);
+  }
+  return messages;
+}
 
 const runtimeProjects = loadRuntimeProjects();
 const runtimeProjectUpdates = loadRuntimeProjectUpdates();
@@ -1842,10 +1958,147 @@ function api(req, res, pathname) {
       });
     }
   }
+  const projectChatFileViewMatch = pathname.match(/^\/api\/v1\/projects\/([^/]+)\/chat\/file$/);
+  if (projectChatFileViewMatch && req.method === "GET") {
+    const projectId = projectChatFileViewMatch[1];
+    const project = projectDetail[projectId] || dashboardProjects.find((item) => item.id === projectId);
+    if (!project) return json(res, 404, { error: "Project not found" });
+    if (!requireAccount(req, res, "projects.view")) return;
+    const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
+    const info = projectChatFileTarget(projectId, url.searchParams.get("storedName"));
+    if (!info) return json(res, 404, { error: "File not found or expired" });
+    return sendProjectChatFile(res, info, url.searchParams.get("download") ? "attachment" : "inline");
+  }
+  const projectChatUploadMatch = pathname.match(/^\/api\/v1\/projects\/([^/]+)\/chat\/files$/);
+  if (projectChatUploadMatch && req.method === "POST") {
+    const projectId = projectChatUploadMatch[1];
+    const project = projectDetail[projectId] || dashboardProjects.find((item) => item.id === projectId);
+    if (!project) return json(res, 404, { error: "Project not found" });
+    const account = requireAccount(req, res, "projects.upload");
+    if (!account) return;
+    const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
+    const name = safeFileName(url.searchParams.get("name"));
+    if (!name) return json(res, 400, { error: "File name is required" });
+    const uploadError = validateUploadName(name);
+    if (uploadError) return json(res, 400, { error: uploadError });
+    const dir = projectChatProjectDir(projectId);
+    fs.mkdirSync(dir, { recursive: true });
+    const storedName = `chat__${Date.now()}-${crypto.randomBytes(4).toString("hex")}__${name}`;
+    const target = path.join(dir, storedName);
+    return handleUpload(req, res, target, () => {
+      const stats = fs.statSync(target);
+      const attachment = {
+        storedName,
+        name,
+        category: fileCategory(name),
+        size: stats.size,
+        uploadedAt: new Date().toISOString(),
+        expiresAt: new Date(Date.now() + chatFileRetentionMs).toISOString(),
+        url: projectChatFileUrl(projectId, storedName)
+      };
+      const data = readProjectChat();
+      const list = Array.isArray(data[projectId]) ? data[projectId] : [];
+      const message = {
+        id: `msg-${Date.now()}-${crypto.randomBytes(3).toString("hex")}`,
+        projectId,
+        author: account.staffName || account.loginId || "User",
+        loginId: account.loginId,
+        staffCode: account.staffCode,
+        text: String(url.searchParams.get("text") || "").trim().slice(0, 2000),
+        attachments: [attachment],
+        createdAt: new Date().toISOString()
+      };
+      data[projectId] = [...list, message].slice(-200);
+      writeProjectChat(data);
+      return json(res, 201, projectChatPublicMessage(projectId, message));
+    });
+  }
+  const projectChatRevokeMatch = pathname.match(/^\/api\/v1\/projects\/([^/]+)\/chat\/([^/]+)$/);
+  if (projectChatRevokeMatch && req.method === "DELETE") {
+    const [, projectId, messageId] = projectChatRevokeMatch;
+    const project = projectDetail[projectId] || dashboardProjects.find((item) => item.id === projectId);
+    if (!project) return json(res, 404, { error: "Project not found" });
+    const account = requireAccount(req, res, "projects.view");
+    if (!account) return;
+    const data = readProjectChat();
+    const list = Array.isArray(data[projectId]) ? data[projectId] : [];
+    const index = list.findIndex((message) => message.id === messageId);
+    if (index < 0) return json(res, 404, { error: "Message not found" });
+    const message = list[index];
+    const canRevoke = String(message.loginId || "").toLowerCase() === String(account.loginId || "").toLowerCase() || hasPermission(account, "projects.edit") || hasPermission(account, "config.accounts");
+    if (!canRevoke) return json(res, 403, { error: "Không có quyền thu hồi tin nhắn này" });
+    (Array.isArray(message.attachments) ? message.attachments : []).forEach((attachment) => {
+      const clean = safeFileName(attachment.storedName);
+      if (!clean) return;
+      try { fs.rmSync(path.join(projectChatProjectDir(projectId), clean), { force: true }); } catch {}
+    });
+    list[index] = { ...message, text: "", attachments: [], revokedAt: message.revokedAt || new Date().toISOString(), revokedBy: account.loginId };
+    data[projectId] = list;
+    writeProjectChat(data);
+    return json(res, 200, { data: projectChatPublicMessage(projectId, list[index]) });
+  }
+  const projectChatMatch = pathname.match(/^\/api\/v1\/projects\/([^/]+)\/chat$/);
+  if (projectChatMatch) {
+    const projectId = projectChatMatch[1];
+    const project = projectDetail[projectId] || dashboardProjects.find((item) => item.id === projectId);
+    if (!project) return json(res, 404, { error: "Project not found" });
+    const account = requireAccount(req, res, "projects.view");
+    if (!account) return;
+    if (req.method === "GET") return json(res, 200, { data: projectChatMessages(projectId) });
+    if (req.method === "POST") {
+      return readJson(req, (error, input) => {
+        if (error) return json(res, 400, { error: error.message });
+        const text = String(input.text || "").trim().slice(0, 2000);
+        if (!text) return json(res, 400, { error: "Message text is required" });
+        const data = readProjectChat();
+        const list = Array.isArray(data[projectId]) ? data[projectId] : [];
+        const message = {
+          id: `msg-${Date.now()}-${crypto.randomBytes(3).toString("hex")}`,
+          projectId,
+          author: account.staffName || account.loginId || "User",
+          loginId: account.loginId,
+          staffCode: account.staffCode,
+          text,
+          attachments: [],
+          createdAt: new Date().toISOString()
+        };
+        data[projectId] = [...list, message].slice(-200);
+        writeProjectChat(data);
+        return json(res, 201, message);
+      });
+    }
+    return json(res, 405, { error: "Method not allowed" });
+  }
   const mutatingRequest = !["GET", "HEAD", "OPTIONS"].includes(req.method);
   const requiredPermission = permissionForRequest(pathname, req.method);
   if (mutatingRequest && requiredPermission && !requireAccount(req, res, requiredPermission)) return;
   if (/\/download$/.test(pathname) && requiredPermission && !requireAccount(req, res, requiredPermission)) return;
+  if (pathname === "/api/v1/team-chat") {
+    const account = requireAccount(req, res);
+    if (!account) return;
+    if (req.method === "GET") return json(res, 200, { data: readTeamChat() });
+    if (req.method === "POST") {
+      return readJson(req, (error, input) => {
+        if (error) return json(res, 400, { error: error.message });
+        const text = String(input.text || "").trim().slice(0, 2000);
+        if (!text) return json(res, 400, { error: "Message text is required" });
+        const rows = readTeamChat();
+        const message = {
+          id: `team-${Date.now()}-${crypto.randomBytes(3).toString("hex")}`,
+          channel: "dashboard",
+          source: input.source === "agent" ? "agent" : "member",
+          author: account.staffName || account.loginId || "User",
+          loginId: account.loginId,
+          staffCode: account.staffCode,
+          text,
+          createdAt: new Date().toISOString()
+        };
+        writeTeamChat([...rows, message]);
+        return json(res, 201, message);
+      });
+    }
+    return json(res, 405, { error: "Method not allowed" });
+  }
   if (pathname === "/api/v1/navigation") return json(res, 200, navigation);
   if (pathname === "/api/v1/dashboard") return json(res, 200, dashboard);
   if (pathname === "/api/v1/dashboard/projects") return json(res, 200, { data: activeProjectList(dashboardProjects) });
@@ -2555,7 +2808,7 @@ function staticFile(req, res, pathname) {
       .pipe(res);
   }
   if (requested === "/constructions/detail/index.html") {
-    const html = fs.readFileSync(filename, "utf8").replace(/\/construction\.js(?:\?v=\d+)?/g, "/construction.js?v=182");
+    const html = fs.readFileSync(filename, "utf8").replace(/\/construction\.js(?:\?v=\d+)?/g, "/construction.js?v=194");
     res.writeHead(200, { "content-type": mime[".html"], "cache-control": "no-cache" });
     return res.end(html);
   }
