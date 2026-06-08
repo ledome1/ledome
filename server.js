@@ -1479,7 +1479,7 @@ const catalogSeed = {
     "Phiếu chấm công",
     "Phiếu Overtime",
     "Phiếu xin nghỉ phép",
-    "Phiếu giao nhiệm vụ",
+    "Phiếu nhiệm vụ",
     "Phiếu Nhật ký thi công",
     "Phiếu nhập kho",
     "Phiếu xuất kho",
@@ -2808,7 +2808,7 @@ function staticFile(req, res, pathname) {
       .pipe(res);
   }
   if (requested === "/constructions/detail/index.html") {
-    const html = fs.readFileSync(filename, "utf8").replace(/\/construction\.js(?:\?v=\d+)?/g, "/construction.js?v=194");
+    const html = fs.readFileSync(filename, "utf8").replace(/\/construction\.js(?:\?v=\d+)?/g, "/construction.js?v=195");
     res.writeHead(200, { "content-type": mime[".html"], "cache-control": "no-cache" });
     return res.end(html);
   }

@@ -678,7 +678,7 @@ test("landing page and project detail clients expose expected workflows", async 
   assert.match(appScript, /dashboardVoucherFormModal/);
   assert.match(appScript, /data-dashboard-voucher-form/);
   assert.match(appScript, /id: "attendance"/);
-  assert.match(appScript, /Phiếu giao nhiệm vụ/);
+  assert.match(appScript, /Phiếu nhiệm vụ/);
   assert.match(appScript, /dashboardVoucherFullCdtChange/);
   assert.match(appScript, /Hạng mục thi công và phạm vi/);
   assert.match(appScript, /dashboardVoucherApprovalFlow/);

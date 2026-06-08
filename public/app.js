@@ -327,7 +327,7 @@ const APP_VOUCHER_TYPE_DEFAULTS = [
   "Phiếu chấm công",
   "Phiếu Overtime",
   "Phiếu xin nghỉ phép",
-  "Phiếu giao nhiệm vụ",
+  "Phiếu nhiệm vụ",
   "Phiếu Nhật ký thi công",
   "Phiếu nhập kho",
   "Phiếu xuất kho",
@@ -341,7 +341,7 @@ const DASHBOARD_VOUCHER_TYPE_DEFS = [
   "Phiếu chấm công",
   "Phiếu Overtime",
   "Phiếu xin nghỉ phép",
-  "Phiếu giao nhiệm vụ",
+  "Phiếu nhiệm vụ",
   "Phiếu Nhật ký thi công",
   "Phiếu nhập kho",
   "Phiếu xuất kho",
@@ -423,10 +423,10 @@ const DASHBOARD_VOUCHER_FORM_GROUPS = [
       },
       {
         id: "task",
-        label: "Thêm phiếu giao nhiệm vụ",
-        type: "Phiếu giao nhiệm vụ",
+        label: "Thêm phiếu nhiệm vụ",
+        type: "Phiếu nhiệm vụ",
         codePrefix: "NV",
-        title: "Tạo phiếu giao nhiệm vụ",
+        title: "Tạo phiếu nhiệm vụ",
         note: "Tạo đầu việc mới và gắn người thực hiện, hạn xử lý, kết quả cần đạt.",
         sections: [
           { title: "Thông tin nhiệm vụ", fields: [
