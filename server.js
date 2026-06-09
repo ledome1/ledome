@@ -3,7 +3,9 @@ const fs = require("node:fs");
 const path = require("node:path");
 const crypto = require("node:crypto");
 const zlib = require("node:zlib");
-const { URL } = require("node:url");
+const os = require("node:os");
+const { execFile } = require("node:child_process");
+const { URL, pathToFileURL } = require("node:url");
 const { dashboard, dashboardProjects, insight, projects, projectDetail, navigation } = require("./src/demo-data");
 
 const publicDir = path.join(__dirname, "public");
@@ -13,6 +15,12 @@ const positiveNumber = (value, fallback) => {
   const next = Number(value);
   return Number.isFinite(next) && next > 0 ? next : fallback;
 };
+const codeDateToken = (date = new Date()) => `${String(date.getDate()).padStart(2, "0")}${String(date.getMonth() + 1).padStart(2, "0")}`;
+const codeDateTokenForValue = (value, fallback = new Date()) => {
+  const date = value instanceof Date ? value : value ? new Date(value) : fallback;
+  return Number.isNaN(date.getTime()) ? codeDateToken(fallback) : codeDateToken(date);
+};
+const dateSequenceCode = (prefix = "LD", index = 0, date = new Date()) => `${prefix}-${codeDateToken(date)}-${String(index + 1).padStart(3, "0")}`;
 const dataDir = path.resolve(process.env.DATA_DIR || path.join(__dirname, "data"));
 const backupsDir = path.resolve(process.env.BACKUP_DIR || path.join(__dirname, "backups"));
 const dataPath = (...segments) => path.join(dataDir, ...segments);
@@ -22,6 +30,7 @@ const runtimeDeletedProjectsFile = dataPath("runtime-deleted-projects.json");
 const attendanceDataFile = dataPath("runtime-attendance.json");
 const contractFilesDir = dataPath("contract-files");
 const vendorContractFilesDir = dataPath("vendor-contract-files");
+const contractFileMetaFile = dataPath("runtime-contract-file-meta.json");
 const contractDraftsFile = dataPath("runtime-contract-drafts.json");
 const supplierInvoiceFilesDir = dataPath("supplier-invoice-files");
 const existingFilesDir = dataPath("existing-files");
@@ -42,6 +51,7 @@ const financeFile = dataPath("runtime-finance.json");
 const personalFinanceFile = dataPath("runtime-personal-finance.json");
 const driveFile = dataPath("runtime-drive.json");
 const driveFilesDir = dataPath("drive-files");
+const contractDraftTemplatesFile = dataPath("runtime-contract-draft-templates.json");
 const configDocumentsFile = dataPath("runtime-config-documents.json");
 const configDocumentFilesDir = dataPath("config-document-files");
 const orgStaffFile = dataPath("runtime-org-staff.json");
@@ -53,7 +63,9 @@ let testBackups = [];
 const uploadMaxBytes = positiveNumber(process.env.UPLOAD_MAX_BYTES, 25 * 1024 * 1024);
 const sessionTtlMs = positiveNumber(process.env.SESSION_TTL_HOURS, 12) * 60 * 60 * 1000;
 const driveRetentionMs = positiveNumber(process.env.DRIVE_RETENTION_DAYS, 7) * 24 * 60 * 60 * 1000;
+const contractDraftTemplateRetentionMs = positiveNumber(process.env.CONTRACT_DRAFT_TEMPLATE_RETENTION_HOURS, 1) * 60 * 60 * 1000;
 const chatFileRetentionMs = positiveNumber(process.env.CHAT_FILE_RETENTION_DAYS, 7) * 24 * 60 * 60 * 1000;
+const attendanceRetentionMs = positiveNumber(process.env.ATTENDANCE_RETENTION_DAYS, 60) * 24 * 60 * 60 * 1000;
 const allowedUploadExtensions = new Set([".pdf", ".png", ".jpg", ".jpeg", ".gif", ".webp", ".mp4", ".mov", ".webm", ".doc", ".docx", ".xls", ".xlsx", ".csv", ".ppt", ".pptx", ".txt", ".md", ".note", ".dwg", ".zip", ".rar"]);
 
 // New Dossier configurations for stages
@@ -81,7 +93,7 @@ const dossierConfigs = {
 };
 
 const attendanceFixedSites = [
-  { id: "ledome", name: "VP Le Dome", latitude: 21.052696, longitude: 105.789988, radiusMeters: 180, fixed: true },
+  { id: "ledome", name: "VP Le Dome", latitude: 21.0347135, longitude: 105.7844385, radiusMeters: 120, fixed: true },
   { id: "other", name: "Khác", radiusMeters: 0, fixed: true, requiresReview: true }
 ];
 const mime = {
@@ -653,9 +665,15 @@ function updateProject(id, input) {
   const detail = projectDetail[id] || dashboardProjects.find((item) => item.id === id);
   if (!detail) return null;
   const allowed = ["name", "code", "type", "buildingType", "group", "owner", "client", "location", "manager", "commander", "qs", "accountant", "startDate", "endDate", "duration", "description", "projectStageMode", "projectStage"];
+  const numericAllowed = ["latitude", "longitude", "attendanceRadiusMeters", "radiusMeters"];
   const changes = {};
   allowed.forEach((key) => {
     if (Object.hasOwn(input, key)) changes[key] = String(input[key] ?? "").trim();
+  });
+  numericAllowed.forEach((key) => {
+    if (!Object.hasOwn(input, key)) return;
+    const value = Number(input[key]);
+    if (Number.isFinite(value)) changes[key] = value;
   });
   if (Object.hasOwn(changes, "name") && !changes.name) return null;
   Object.assign(detail, changes);
@@ -737,8 +755,76 @@ function attendanceSiteHasGeofence(site) {
   return Boolean(site && Number.isFinite(Number(site.latitude)) && Number.isFinite(Number(site.longitude)) && Number(site.radiusMeters) > 0);
 }
 
+function attendanceSiteProjectId(site) {
+  return String(site?.projectId || "").trim();
+}
+
+function persistProjectGpsGeofence(projectId, latitude, longitude, radiusMeters = 250) {
+  const id = String(projectId || "").trim();
+  if (!id || !Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
+  const changes = { latitude, longitude, attendanceRadiusMeters: positiveNumber(radiusMeters, 250) };
+  const project = projects.find((item) => item.id === id);
+  const detail = projectDetail[id] || project;
+  const dashboardProject = dashboardProjects.find((item) => item.id === id);
+  [project, detail, dashboardProject].forEach((item) => {
+    if (item) Object.assign(item, changes);
+  });
+  runtimeProjectUpdates[id] = { ...(runtimeProjectUpdates[id] || {}), ...changes };
+  persistRuntimeProjectUpdates(runtimeProjectUpdates);
+  return attendanceProjectSite(detail || project || { id, ...changes });
+}
+
+function attendanceEnsureSiteGeofence(site, latitude, longitude, accuracy) {
+  return site;
+}
+
+function attendanceFacePassed(record) {
+  const status = String(record.faceStatus || "").trim();
+  if (status) return status === "Đạt";
+  return Boolean(record.hasFacePhoto || record.faceEvidence || record.facePhotoAt);
+}
+
+function attendanceApplyValidationStatus(record) {
+  const gpsPassed = record.insideGeofence === true || record.gpsStatus === "Đạt";
+  const facePassed = attendanceFacePassed(record);
+  record.faceStatus = facePassed ? "Đạt" : "Không đạt";
+  record.faceNote = facePassed ? "Ảnh xác thực đạt" : "Chưa có ảnh xác thực đạt";
+  if (record.approvedAt) {
+    record.status = "Hợp lệ";
+  } else {
+    record.status = gpsPassed && facePassed ? "Hợp lệ" : "Cần duyệt";
+  }
+  return record;
+}
+
+function attendanceApplyGpsResult(record, site) {
+  const hasGeofence = attendanceSiteHasGeofence(site);
+  const distance = hasGeofence ? distanceMeters({ latitude: Number(record.latitude), longitude: Number(record.longitude) }, site) : null;
+  const insideGeofence = hasGeofence ? distance <= site.radiusMeters : false;
+  record.distanceMeters = distance;
+  record.geofenceRadiusMeters = hasGeofence ? site.radiusMeters : null;
+  record.insideGeofence = insideGeofence;
+  record.gpsStatus = insideGeofence ? "Đạt" : "Không đạt";
+  record.gpsNote = insideGeofence ? "GPS chuẩn vị trí trong phạm vi cho phép" : hasGeofence ? "GPS ngoài phạm vi cho phép" : "Điểm chấm công chưa có phạm vi GPS";
+  return attendanceApplyValidationStatus(record);
+}
+
+function refreshAttendanceRecordsForSite(site) {
+  purgeExpiredAttendanceRecords();
+  let changed = false;
+  attendanceRecords.forEach((record) => {
+    if (record.siteId !== site.id || !Number.isFinite(Number(record.latitude)) || !Number.isFinite(Number(record.longitude))) return;
+    const before = JSON.stringify([record.distanceMeters, record.geofenceRadiusMeters, record.insideGeofence, record.gpsStatus, record.gpsNote, record.status]);
+    attendanceApplyGpsResult(record, site);
+    const after = JSON.stringify([record.distanceMeters, record.geofenceRadiusMeters, record.insideGeofence, record.gpsStatus, record.gpsNote, record.status]);
+    if (before !== after) changed = true;
+  });
+  if (changed) persistAttendanceRecords(attendanceRecords);
+}
+
 function loadAttendanceRecords() {
-  if (process.env.NODE_ENV === "test" || !fs.existsSync(attendanceDataFile)) return [];
+  if (process.env.NODE_ENV === "test") return readJsonFile(attendanceDataFile, []);
+  if (!fs.existsSync(attendanceDataFile)) return [];
   try {
     return JSON.parse(fs.readFileSync(attendanceDataFile, "utf8"));
   } catch {
@@ -747,8 +833,26 @@ function loadAttendanceRecords() {
 }
 
 function persistAttendanceRecords(records) {
-  if (process.env.NODE_ENV === "test") return;
+  if (process.env.NODE_ENV === "test") {
+    writeJsonAtomic(attendanceDataFile, records);
+    return;
+  }
   writeJsonAtomic(attendanceDataFile, records);
+}
+
+function attendanceRecordTime(record) {
+  const timestamp = Date.parse(record?.capturedAt || record?.approvedAt || record?.createdAt || "");
+  return Number.isFinite(timestamp) ? timestamp : Date.now();
+}
+
+function purgeExpiredAttendanceRecords() {
+  const cutoff = Date.now() - attendanceRetentionMs;
+  const before = attendanceRecords.length;
+  for (let index = attendanceRecords.length - 1; index >= 0; index -= 1) {
+    if (attendanceRecordTime(attendanceRecords[index]) < cutoff) attendanceRecords.splice(index, 1);
+  }
+  if (attendanceRecords.length !== before) persistAttendanceRecords(attendanceRecords);
+  return attendanceRecords;
 }
 
 function distanceMeters(from, to) {
@@ -890,6 +994,120 @@ function persistTechnicalMeta(meta) {
   writeJsonAtomic(technicalMetaFile, meta);
 }
 
+function loadContractFileMeta() {
+  return readJsonFile(contractFileMetaFile, {});
+}
+
+function persistContractFileMeta(meta) {
+  writeJsonAtomic(contractFileMetaFile, meta);
+}
+
+function contractFileMetaScope(vendor = false) {
+  return vendor ? "vendor" : "owner";
+}
+
+function contractFileMetaKey(projectId, storedName, vendor = false) {
+  return `${contractFileMetaScope(vendor)}::${safeFileName(projectId)}::${safeFileName(storedName)}`;
+}
+
+function contractFileMetaFor(projectId, storedName, vendor = false) {
+  const meta = loadContractFileMeta()[contractFileMetaKey(projectId, storedName, vendor)] || {};
+  return {
+    signedApproved: Boolean(meta.signedApproved),
+    signedApprovedAt: meta.signedApprovedAt || ""
+  };
+}
+
+function setContractFileSignedApproved(projectId, storedName, signedApproved, vendor = false) {
+  const cleanStoredName = safeFileName(storedName);
+  const dir = vendor ? vendorContractProjectDir(projectId) : contractProjectDir(projectId);
+  if (!cleanStoredName || !fs.existsSync(path.join(dir, cleanStoredName))) return null;
+  const meta = loadContractFileMeta();
+  const key = contractFileMetaKey(projectId, cleanStoredName, vendor);
+  if (signedApproved) {
+    meta[key] = { ...(meta[key] || {}), signedApproved: true, signedApprovedAt: new Date().toISOString() };
+  } else {
+    if (meta[key]) {
+      delete meta[key].signedApproved;
+      delete meta[key].signedApprovedAt;
+      if (!Object.keys(meta[key]).length) delete meta[key];
+    }
+  }
+  persistContractFileMeta(meta);
+  return vendor
+    ? listVendorContractFiles(projectId).find((item) => item.storedName === cleanStoredName)
+    : listContractFiles(projectId).find((item) => item.storedName === cleanStoredName);
+}
+
+function deleteContractFileMeta(projectId, storedName, vendor = false) {
+  const meta = loadContractFileMeta();
+  delete meta[contractFileMetaKey(projectId, storedName, vendor)];
+  persistContractFileMeta(meta);
+}
+
+function driveTypeFromFileName(name) {
+  const ext = path.extname(name).toLowerCase();
+  if (ext === ".pdf") return "PDF";
+  if ([".png", ".jpg", ".jpeg", ".webp", ".gif"].includes(ext)) return "Ảnh";
+  if ([".xls", ".xlsx", ".csv"].includes(ext)) return "Excel";
+  if ([".doc", ".docx"].includes(ext)) return "Word";
+  if ([".ppt", ".pptx"].includes(ext)) return "PowerPoint";
+  if (ext === ".zip") return "ZIP";
+  if (ext === ".rar") return "RAR";
+  return "File";
+}
+
+function nextDriveCode(rows) {
+  const token = codeDateToken();
+  const max = (Array.isArray(rows) ? rows : []).reduce((current, row) => {
+    const match = String(row?.[0] || "").match(new RegExp(`^DRV-${token}-(\\d+)$`));
+    return match ? Math.max(current, Number(match[1]) || 0) : current;
+  }, 0);
+  return `DRV-${token}-${String(max + 1).padStart(3, "0")}`;
+}
+
+function archiveContractFileToDrive(projectId, storedName, vendor = false) {
+  const cleanStoredName = safeFileName(storedName);
+  const sourceDir = vendor ? vendorContractProjectDir(projectId) : contractProjectDir(projectId);
+  const source = path.join(sourceDir, cleanStoredName);
+  if (!cleanStoredName || !fs.existsSync(source)) return null;
+  const parts = cleanStoredName.split("__");
+  const originalName = parts.length > 1 ? parts.slice(1).join("__") : cleanStoredName;
+  const project = contractProjectInfo(projectId);
+  const projectLabel = safeFileName(project.name || project.code || projectId) || safeFileName(projectId) || "DU_AN";
+  const now = new Date();
+  const updatedAt = now.toISOString();
+  const expiresAt = new Date(now.getTime() + driveRetentionMs).toISOString();
+  const folder = `HỢP ĐỒNG NHÁP/${projectLabel}/${vendor ? "NCC" : "CDT"}`;
+  const displayName = `${folder}/${originalName}`;
+  fs.mkdirSync(driveFilesDir, { recursive: true });
+  const driveStoredName = `drive__${Date.now()}-${crypto.randomBytes(4).toString("hex")}__${safeFileName(originalName)}`;
+  const target = path.join(driveFilesDir, driveStoredName);
+  fs.renameSync(source, target);
+  fs.utimesSync(target, now, now);
+  deleteContractFileMeta(projectId, cleanStoredName, vendor);
+  const stats = fs.statSync(target);
+  const rows = readDrive();
+  const row = [
+    nextDriveCode(rows),
+    displayName,
+    driveTypeFromFileName(originalName),
+    "HỢP ĐỒNG NHÁP",
+    folder,
+    "LE DOME",
+    updatedAt.slice(0, 10),
+    Math.max(1, Math.ceil(stats.size / 1024)),
+    "Toàn công ty",
+    `File hợp đồng đã xóa khỏi dự án, lưu nháp 7 ngày rồi tự xóa. Dự án: ${project.name || projectId}`,
+    driveStoredName,
+    updatedAt,
+    expiresAt
+  ];
+  rows.unshift(row);
+  writeDrive(rows);
+  return row;
+}
+
 // Generic Dossier helpers
 function getDossierConfig(type) {
   return dossierConfigs[type] || dossierConfigs["technical"];
@@ -897,17 +1115,11 @@ function getDossierConfig(type) {
 
 function loadDossierMeta(type) {
   const config = getDossierConfig(type);
-  if (process.env.NODE_ENV === "test" || !fs.existsSync(config.metaFile)) return {};
-  try {
-    return JSON.parse(fs.readFileSync(config.metaFile, "utf8"));
-  } catch {
-    return {};
-  }
+  return readJsonFile(config.metaFile, {});
 }
 
 function persistDossierMeta(type, meta) {
   const config = getDossierConfig(type);
-  if (process.env.NODE_ENV === "test") return;
   writeJsonAtomic(config.metaFile, meta);
 }
 
@@ -921,6 +1133,7 @@ function listDossierFiles(type, projectId) {
   if (!fs.existsSync(dir)) return [];
   const meta = loadDossierMeta(type)[projectId] || {};
   const sentInfo = meta.sent || {};
+  const approvedInfo = meta.signedApproved || {};
   return fs.readdirSync(dir, { withFileTypes: true }).filter((entry) => entry.isFile()).map((entry) => {
     const filename = entry.name;
     const stats = fs.statSync(path.join(dir, filename));
@@ -934,9 +1147,27 @@ function listDossierFiles(type, projectId) {
       category: fileCategory(name),
       size: stats.size,
       sent: sentInfo[filename] || null,
+      signedApproved: Boolean(approvedInfo[filename]),
+      signedApprovedAt: approvedInfo[filename]?.signedApprovedAt || "",
       updatedAt: stats.mtime.toISOString()
     };
   }).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+}
+
+function setDossierSignedApproved(type, projectId, storedName, signedApproved) {
+  const cleanStoredName = safeFileName(storedName);
+  const target = path.join(dossierProjectDir(type, projectId), cleanStoredName);
+  if (!cleanStoredName || !fs.existsSync(target)) return null;
+  const meta = loadDossierMeta(type);
+  if (!meta[projectId]) meta[projectId] = {};
+  if (!meta[projectId].signedApproved) meta[projectId].signedApproved = {};
+  if (signedApproved) {
+    meta[projectId].signedApproved[cleanStoredName] = { signedApprovedAt: new Date().toISOString() };
+  } else {
+    delete meta[projectId].signedApproved[cleanStoredName];
+  }
+  persistDossierMeta(type, meta);
+  return listDossierFiles(type, projectId).find((item) => item.storedName === cleanStoredName);
 }
 
 function fileCategory(filename) {
@@ -984,10 +1215,11 @@ function pruneExpiredDriveRows(rows) {
   const stored = new Set(listDriveStoredFiles().map((file) => file.storedName));
   const now = Date.now();
   return rows.filter((row) => {
+    if (String(row?.[11] || "") === "contract-template") return false;
     const storedName = row && row[10];
-    if (!storedName) return true;
     const expiresAt = Date.parse(row[12] || "");
     if (Number.isFinite(expiresAt) && expiresAt <= now) return false;
+    if (!storedName) return true;
     return stored.has(storedName);
   });
 }
@@ -1825,14 +2057,39 @@ function listContractFiles(projectId) {
     const filename = entry.name;
     const stats = fs.statSync(path.join(dir, filename));
     const separator = filename.indexOf("__");
+    const meta = contractFileMetaFor(projectId, filename);
     return {
       storedName: filename,
       kind: separator > 0 ? filename.slice(0, separator) : "contract",
       name: separator > 0 ? filename.slice(separator + 2) : filename,
       size: stats.size,
+      signedApproved: meta.signedApproved,
+      signedApprovedAt: meta.signedApprovedAt,
       updatedAt: stats.mtime.toISOString()
     };
   }).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+}
+
+function contractDuplicateStoredFile(projectId, storedName, dirFactory, listFactory) {
+  const clean = safeFileName(storedName);
+  const dir = dirFactory(projectId);
+  const source = path.join(dir, clean);
+  if (!clean || !fs.existsSync(source)) return null;
+  const separator = clean.indexOf("__");
+  const kind = separator > 0 ? clean.slice(0, separator) : "contract";
+  const originalName = separator > 0 ? clean.slice(separator + 2) : clean;
+  const ext = path.extname(originalName);
+  const base = ext ? originalName.slice(0, -ext.length) : originalName;
+  let index = 1;
+  let nextName = "";
+  let target = "";
+  do {
+    nextName = safeFileName(`${base} - copy${index > 1 ? ` ${index}` : ""}${ext}`);
+    target = path.join(dir, `${kind}__${nextName}`);
+    index += 1;
+  } while (fs.existsSync(target));
+  fs.copyFileSync(source, target);
+  return listFactory(projectId).find((item) => item.storedName === `${kind}__${nextName}`) || null;
 }
 
 function contractDraftType(value) {
@@ -1842,6 +2099,10 @@ function contractDraftType(value) {
 
 function contractDraftKey(projectId, type) {
   return `${safeFileName(projectId)}::${type}`;
+}
+
+function contractDraftCloneKey(projectId, type, cloneId) {
+  return `${safeFileName(projectId)}::${type}::${safeFileName(cloneId)}`;
 }
 
 function readContractDrafts() {
@@ -1855,7 +2116,7 @@ function writeContractDraft(projectId, type, payload) {
     projectId: safeFileName(projectId),
     type,
     updatedAt: new Date().toISOString(),
-    data: payload && typeof payload === "object" ? payload : {}
+    data: contractNormalizeDraftPayload(projectId, type, payload)
   };
   writeJsonAtomic(contractDraftsFile, drafts);
   return drafts[key];
@@ -1863,6 +2124,169 @@ function writeContractDraft(projectId, type, payload) {
 
 function readContractDraft(projectId, type) {
   return readContractDrafts()[contractDraftKey(projectId, type)] || null;
+}
+
+function contractProjectInfo(projectId) {
+  return projectDetail[projectId] || projects.find((item) => item.id === projectId) || dashboardProjects.find((item) => item.id === projectId) || {};
+}
+
+function contractProjectCodeToken(projectId, project = contractProjectInfo(projectId)) {
+  return String(project?.code || projectId || "DUAN")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[Đđ]/g, "D")
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, "")
+    .slice(0, 24) || "DUAN";
+}
+
+function contractDraftEstimatePrefix(type) {
+  return type === "estimate" ? "DT" : type === "variation-quote" ? "BGPS" : "BG";
+}
+
+function contractDraftEstimateNo(projectId, type, date = new Date()) {
+  return `${codeDateTokenForValue(date)}/${contractDraftEstimatePrefix(type)}/${contractProjectCodeToken(projectId)}`;
+}
+
+function contractStripLegacyLedomeCode(value) {
+  return String(value || "").trim().replace(/\/LEDOME_/gi, "/").replace(/(^|[\/._\-\s])LEDOME[_\-]/gi, "$1");
+}
+
+function contractNormalizeDraftEstimateNo(projectId, type, value, date = new Date()) {
+  const raw = contractStripLegacyLedomeCode(value);
+  const fallback = contractDraftEstimateNo(projectId, type, date);
+  if (!raw) return fallback;
+  const sequenceSlash = raw.match(/^(\d{1,3})\/(\d{4})\/(DT|BGPS|BG)\/(.+)$/i);
+  if (sequenceSlash) {
+    return `${codeDateTokenForValue(date)}/${sequenceSlash[3].toUpperCase()}/${contractStripLegacyLedomeCode(sequenceSlash[4])}`;
+  }
+  const directSlash = raw.match(/^(\d{4})\/(DT|BGPS|BG)\/(.+)$/i);
+  if (directSlash) {
+    const token = /^202\d$/.test(directSlash[1]) ? codeDateTokenForValue(date) : directSlash[1];
+    return `${token}/${directSlash[2].toUpperCase()}/${contractStripLegacyLedomeCode(directSlash[3])}`;
+  }
+  const dashed = raw.match(/^(\d{4})[-_.\s](DT|BGPS|BG)[-_.\s](.+)$/i);
+  if (dashed) {
+    const token = /^202\d$/.test(dashed[1]) ? codeDateTokenForValue(date) : dashed[1];
+    return `${token}/${dashed[2].toUpperCase()}/${contractStripLegacyLedomeCode(dashed[3])}`;
+  }
+  return /^(DT|BGPS|BG)[-_.\s]/i.test(raw) ? fallback : raw;
+}
+
+function contractNormalizeDraftPayload(projectId, type, payload = {}, { forceNewNo = false } = {}) {
+  const data = structuredClone(payload && typeof payload === "object" ? payload : {});
+  data.estimateNo = forceNewNo
+    ? contractDraftEstimateNo(projectId, type)
+    : contractNormalizeDraftEstimateNo(projectId, type, data.estimateNo, data.date || new Date());
+  return data;
+}
+
+function contractDraftDataForProject(projectId, type, sourceData = {}) {
+  const project = contractProjectInfo(projectId);
+  const data = contractNormalizeDraftPayload(projectId, type, sourceData, { forceNewNo: true });
+  if (project.name) data.projectName = project.name;
+  if (project.location) data.location = project.location;
+  data.date = new Date().toISOString().slice(0, 10);
+  return data;
+}
+
+function readContractDraftTemplatesRaw() {
+  return readJsonFile(contractDraftTemplatesFile, []);
+}
+
+function pruneExpiredContractDraftTemplates(items = []) {
+  const now = Date.now();
+  const rows = Array.isArray(items) ? items.filter((item) => {
+    if (!item || !contractDraftType(item.type) || !item.data) return false;
+    if (item.persistent || !item.expiresAt) return true;
+    const expires = new Date(item.expiresAt || 0).getTime();
+    return Number.isFinite(expires) && expires > now;
+  }) : [];
+  if (rows.length !== (Array.isArray(items) ? items.length : 0)) {
+    writeJsonAtomic(contractDraftTemplatesFile, rows);
+  }
+  return rows;
+}
+
+function readContractDraftTemplates() {
+  return pruneExpiredContractDraftTemplates(readContractDraftTemplatesRaw());
+}
+
+function writeContractDraftTemplates(items) {
+  const rows = pruneExpiredContractDraftTemplates(items);
+  writeJsonAtomic(contractDraftTemplatesFile, rows);
+  return rows;
+}
+
+function writeContractDraftTemplate(projectId, type, account, payload = null) {
+  const draftType = contractDraftType(type);
+  const draft = payload && typeof payload === "object" ? { data: contractNormalizeDraftPayload(projectId, draftType, payload) } : readContractDraft(projectId, draftType);
+  if (!draft?.data) return null;
+  const now = new Date();
+  const id = safeFileName(`${draftType}-${Date.now()}-${crypto.randomBytes(3).toString("hex")}`);
+  const project = contractProjectInfo(projectId);
+  const template = {
+    id,
+    sourceProjectId: safeFileName(projectId),
+    sourceProjectName: project.name || draft.data.projectName || "",
+    type: draftType,
+    name: draft.data.estimateNo || "",
+    createdAt: now.toISOString(),
+    persistent: true,
+    expiresAt: "",
+    createdBy: account?.staffName || account?.loginId || "LE DOME",
+    data: structuredClone(draft.data)
+  };
+  return writeContractDraftTemplates([template, ...readContractDraftTemplates().filter((item) => item.id !== id)])[0];
+}
+
+function importContractDraftTemplate(projectId, templateId) {
+  const templates = readContractDraftTemplates();
+  const template = templates.find((item) => item.id === safeFileName(templateId));
+  if (!template) return null;
+  const data = contractDraftDataForProject(projectId, template.type, template.data || {});
+  data.importedTemplateId = template.id;
+  data.importedTemplateSource = template.sourceProjectName || template.sourceProjectId || "";
+  const draft = writeContractDraft(projectId, template.type, data);
+  writeContractDraftTemplates(templates.map((item) => item.id === template.id ? {
+    ...item,
+    lastImportedAt: new Date().toISOString(),
+    lastImportedProjectId: safeFileName(projectId)
+  } : item));
+  return draft;
+}
+
+function listContractDraftClones(projectId, type) {
+  const cleanProjectId = safeFileName(projectId);
+  return Object.values(readContractDrafts())
+    .filter((draft) => draft && draft.projectId === cleanProjectId && draft.type === type && draft.cloneId)
+    .sort((a, b) => String(b.updatedAt || "").localeCompare(String(a.updatedAt || "")));
+}
+
+function readContractDraftClone(projectId, type, cloneId) {
+  return readContractDrafts()[contractDraftCloneKey(projectId, type, cloneId)] || null;
+}
+
+function writeContractDraftClone(projectId, type, cloneId, payload) {
+  const drafts = readContractDrafts();
+  const cleanCloneId = safeFileName(cloneId) || `clone-${Date.now()}-${crypto.randomBytes(2).toString("hex")}`;
+  const key = contractDraftCloneKey(projectId, type, cleanCloneId);
+  drafts[key] = {
+    id: cleanCloneId,
+    cloneId: cleanCloneId,
+    projectId: safeFileName(projectId),
+    type,
+    updatedAt: new Date().toISOString(),
+    data: contractNormalizeDraftPayload(projectId, type, payload)
+  };
+  writeJsonAtomic(contractDraftsFile, drafts);
+  return drafts[key];
+}
+
+function deleteContractDraftClone(projectId, type, cloneId) {
+  const drafts = readContractDrafts();
+  delete drafts[contractDraftCloneKey(projectId, type, cloneId)];
+  writeJsonAtomic(contractDraftsFile, drafts);
 }
 
 function deleteContractDraft(projectId, type) {
@@ -1935,12 +2359,81 @@ function contractSimplePdfBuffer(html) {
   return Buffer.from(pdf, "ascii");
 }
 
+function contractBrowserCandidates() {
+  const candidates = [
+    process.env.CHROME_PATH,
+    process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH,
+    "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
+    "C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe",
+    "C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe",
+    "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe",
+    "/usr/bin/google-chrome",
+    "/usr/bin/google-chrome-stable",
+    "/usr/bin/chromium",
+    "/usr/bin/chromium-browser",
+    "/usr/bin/microsoft-edge",
+    "/usr/bin/microsoft-edge-stable"
+  ].filter(Boolean);
+  return [...new Set(candidates)].filter((candidate) => {
+    try {
+      return fs.existsSync(candidate);
+    } catch {
+      return false;
+    }
+  });
+}
+
+function execFilePromise(file, args, options = {}) {
+  return new Promise((resolve, reject) => {
+    execFile(file, args, options, (error, stdout, stderr) => {
+      if (error) {
+        error.stdout = stdout;
+        error.stderr = stderr;
+        reject(error);
+      } else {
+        resolve({ stdout, stderr });
+      }
+    });
+  });
+}
+
+async function contractChromePdfBuffer(html) {
+  const browser = contractBrowserCandidates()[0];
+  if (!browser) return null;
+  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), "ledome-contract-pdf-"));
+  const htmlFile = path.join(workDir, "contract.html");
+  const pdfFile = path.join(workDir, "contract.pdf");
+  const profileDir = path.join(workDir, "profile");
+  try {
+    fs.writeFileSync(htmlFile, String(html || ""), "utf8");
+    await execFilePromise(browser, [
+      "--headless=new",
+      "--no-sandbox",
+      "--disable-gpu",
+      "--disable-dev-shm-usage",
+      "--no-first-run",
+      "--no-default-browser-check",
+      `--user-data-dir=${profileDir}`,
+      `--print-to-pdf=${pdfFile}`,
+      "--print-to-pdf-no-header",
+      pathToFileURL(htmlFile).href
+    ], { timeout: 45000, windowsHide: true });
+    if (!fs.existsSync(pdfFile)) return null;
+    const pdf = fs.readFileSync(pdfFile);
+    return pdf.subarray(0, 4).toString() === "%PDF" ? pdf : null;
+  } catch {
+    return null;
+  } finally {
+    fs.rmSync(workDir, { recursive: true, force: true });
+  }
+}
+
 async function contractHtmlToPdfBuffer(html) {
   let chromium;
   try {
     ({ chromium } = require("playwright"));
   } catch {
-    return contractSimplePdfBuffer(html);
+    return (await contractChromePdfBuffer(html)) || contractSimplePdfBuffer(html);
   }
   const launchAttempts = [{}, { channel: "msedge" }, { channel: "chrome" }];
   let browser;
@@ -1953,7 +2446,7 @@ async function contractHtmlToPdfBuffer(html) {
       lastError = error;
     }
   }
-  if (!browser) return contractSimplePdfBuffer(html);
+  if (!browser) return (await contractChromePdfBuffer(html)) || contractSimplePdfBuffer(html);
   try {
     const page = await browser.newPage({ viewport: { width: 1240, height: 1754 } });
     await page.setContent(String(html || ""), { waitUntil: "networkidle" });
@@ -1965,7 +2458,7 @@ async function contractHtmlToPdfBuffer(html) {
       margin: { top: "0mm", right: "0mm", bottom: "0mm", left: "0mm" }
     }));
   } catch {
-    return contractSimplePdfBuffer(html);
+    return (await contractChromePdfBuffer(html)) || contractSimplePdfBuffer(html);
   } finally {
     await browser.close().catch(() => {});
   }
@@ -1978,11 +2471,14 @@ function listVendorContractFiles(projectId) {
     const filename = entry.name;
     const stats = fs.statSync(path.join(dir, filename));
     const separator = filename.indexOf("__");
+    const meta = contractFileMetaFor(projectId, filename, true);
     return {
       storedName: filename,
       kind: separator > 0 ? filename.slice(0, separator) : "contract",
       name: separator > 0 ? filename.slice(separator + 2) : filename,
       size: stats.size,
+      signedApproved: meta.signedApproved,
+      signedApprovedAt: meta.signedApprovedAt,
       updatedAt: stats.mtime.toISOString()
     };
   }).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
@@ -2469,7 +2965,7 @@ function normalizeMaterialRow(row = {}, index = 0) {
     ? { id: row[0], date: row[1], item: row[2], category: row[3], supplier: row[4], quantity: row[5], unit: row[6], locationType: row[7], location: row[8], project: row[9], status: row[10], note: row[11] }
     : row;
   return {
-    id: String(source.id || `VT${String(index + 1).padStart(3, "0")}`).trim(),
+    id: String(source.id || dateSequenceCode("VT", index)).trim(),
     date: String(source.date || "").trim(),
     item: String(source.item || "").trim(),
     category: String(source.category || "").trim(),
@@ -2506,7 +3002,7 @@ function repairConfigDocumentRows(rows) {
   if (!Array.isArray(rows)) return [];
   return rows.map((row, index) => {
     const next = Array.isArray(row) ? [...row] : [];
-    next[0] = String(next[0] || `GT${String(index + 1).padStart(3, "0")}`);
+    next[0] = String(next[0] || dateSequenceCode("GT", index));
     next[1] = String(next[1] || "Giấy tờ chưa đặt tên");
     next[2] = String(next[2] || "File");
     next[3] = String(next[3] || "Giấy tờ");
@@ -3157,6 +3653,8 @@ function api(req, res, pathname) {
   if (pathname === "/api/v1/attendance/config" && req.method === "GET") {
     const account = requireAccount(req, res);
     if (!account) return;
+    purgeExpiredAttendanceRecords();
+    attendanceSiteOptions().forEach(refreshAttendanceRecordsForSite);
     const employees = attendanceEmployeeOptions();
     const employee = employees.find((item) => item.id === account.staffCode);
     return json(res, 200, { sites: attendanceSiteOptions(), employees: employee ? [employee] : [] });
@@ -3164,6 +3662,8 @@ function api(req, res, pathname) {
   if (pathname === "/api/v1/attendance/records" && req.method === "GET") {
     const account = requireAccount(req, res);
     if (!account) return;
+    purgeExpiredAttendanceRecords();
+    attendanceSiteOptions().forEach(refreshAttendanceRecordsForSite);
     const accountEmployeeId = String(account.staffCode || account.employeeId || "").trim();
     const data = hasPermission(account, "hrm.view") ? attendanceRecords : attendanceRecords.filter((record) => record.employeeId === accountEmployeeId);
     return json(res, 200, { data, total: data.length });
@@ -3174,7 +3674,7 @@ function api(req, res, pathname) {
     readJson(req, (error, input) => {
       if (error) return json(res, 400, { error: error.message });
       const employee = attendanceEmployeeOptions().find((item) => item.id === input.employeeId);
-      const site = attendanceSiteOptions().find((item) => item.id === input.siteId);
+      let site = attendanceSiteOptions().find((item) => item.id === input.siteId);
       const latitude = Number(input.latitude);
       const longitude = Number(input.longitude);
       const accuracy = Number(input.accuracy);
@@ -3187,9 +3687,9 @@ function api(req, res, pathname) {
       if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return json(res, 400, { error: "Thiếu tọa độ GPS" });
       if (!Number.isFinite(accuracy) || accuracy > 150) return json(res, 400, { error: "GPS chưa đủ chính xác. Hãy bật định vị chính xác và thử lại." });
       if (!input.hasFacePhoto) return json(res, 400, { error: "Hãy chụp ảnh xác thực tại vị trí." });
-      const hasGeofence = attendanceSiteHasGeofence(site);
-      const distance = hasGeofence ? distanceMeters({ latitude, longitude }, site) : null;
-      const insideGeofence = hasGeofence ? distance <= site.radiusMeters : false;
+      purgeExpiredAttendanceRecords();
+      site = attendanceEnsureSiteGeofence(site, latitude, longitude, accuracy);
+      refreshAttendanceRecordsForSite(site);
       const record = {
         id: `cc-${Date.now()}`,
         employeeId: employee.id,
@@ -3200,16 +3700,14 @@ function api(req, res, pathname) {
         latitude,
         longitude,
         accuracy: Math.round(accuracy),
-        distanceMeters: distance,
-        geofenceRadiusMeters: hasGeofence ? site.radiusMeters : null,
-        insideGeofence,
-        gpsStatus: insideGeofence ? "Đạt" : "Không đạt",
-        gpsNote: insideGeofence ? "GPS chuẩn vị trí trong phạm vi cho phép" : hasGeofence ? "GPS ngoài phạm vi cho phép" : "Điểm chấm công chưa có phạm vi GPS",
-        status: insideGeofence ? "Hợp lệ" : "Cần duyệt",
+        status: "Cần duyệt",
+        hasFacePhoto: true,
+        faceStatus: "Đạt",
         faceEvidence: "Đã chụp ảnh",
         capturedAt: new Date().toISOString(),
         device: String(input.device || req.headers["user-agent"] || "Điện thoại")
       };
+      attendanceApplyGpsResult(record, site);
       attendanceRecords.unshift(record);
       persistAttendanceRecords(attendanceRecords);
       return json(res, 201, record);
@@ -3219,6 +3717,7 @@ function api(req, res, pathname) {
   const attendanceApproveMatch = pathname.match(/^\/api\/v1\/attendance\/records\/([^/]+)\/approve$/);
   if (attendanceApproveMatch && req.method === "POST") {
     if (!requireAccount(req, res, "hrm.approve")) return;
+    purgeExpiredAttendanceRecords();
     const record = attendanceRecords.find((item) => item.id === attendanceApproveMatch[1]);
     if (!record) return json(res, 404, { error: "Không tìm thấy bản ghi chấm công" });
     record.status = "Hợp lệ";
@@ -3237,7 +3736,7 @@ function api(req, res, pathname) {
         const id = `p${Date.now()}`;
         const project = {
           id,
-          code: String(input.code || `DA-${projects.length + 1}`).trim(),
+          code: String(input.code || `DA-${codeDateToken()}-${String(projects.length + 1).padStart(3, "0")}`).trim(),
           name: String(input.name).trim(),
           type: String(input.type || "").trim(),
           buildingType: String(input.buildingType || "").trim(),
@@ -3378,6 +3877,14 @@ function api(req, res, pathname) {
   if (vendorContractFileMatch) {
     const projectId = vendorContractFileMatch[1];
     if (req.method === "GET") return json(res, 200, { data: listVendorContractFiles(projectId) });
+    if (req.method === "PATCH") {
+      return readJson(req, (error, input) => {
+        if (error) return json(res, 400, { error: error.message });
+        const copied = contractDuplicateStoredFile(projectId, input.storedName, vendorContractProjectDir, listVendorContractFiles);
+        if (!copied) return json(res, 404, { error: "File not found" });
+        return json(res, 201, copied);
+      });
+    }
     if (req.method === "POST") {
       const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
       const requestedKind = url.searchParams.get("kind");
@@ -3395,10 +3902,21 @@ function api(req, res, pathname) {
     if (req.method === "DELETE") {
       const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
       const storedName = safeFileName(url.searchParams.get("storedName"));
-      const target = path.join(vendorContractProjectDir(projectId), storedName);
-      if (storedName && fs.existsSync(target)) fs.unlinkSync(target);
-      return json(res, 200, { ok: true });
+      const archived = archiveContractFileToDrive(projectId, storedName, true);
+      if (!archived) return json(res, 404, { error: "File not found" });
+      return json(res, 200, { ok: true, archived });
     }
+  }
+
+  const vendorContractSignedMatch = pathname.match(/^\/api\/v1\/projects\/([^/]+)\/vendor-contract-files\/signed-approved$/);
+  if (vendorContractSignedMatch && req.method === "PATCH") {
+    const projectId = vendorContractSignedMatch[1];
+    return readJson(req, (error, input) => {
+      if (error) return json(res, 400, { error: error.message });
+      const item = setContractFileSignedApproved(projectId, input.storedName, input.signedApproved !== false, true);
+      if (!item) return json(res, 404, { error: "File not found" });
+      return json(res, 200, item);
+    });
   }
 
   const vendorContractDownloadMatch = pathname.match(/^\/api\/v1\/projects\/([^/]+)\/vendor-contract-files\/download$/);
@@ -3419,6 +3937,14 @@ function api(req, res, pathname) {
   if (contractFileMatch) {
     const projectId = contractFileMatch[1];
     if (req.method === "GET") return json(res, 200, { data: listContractFiles(projectId) });
+    if (req.method === "PATCH") {
+      return readJson(req, (error, input) => {
+        if (error) return json(res, 400, { error: error.message });
+        const copied = contractDuplicateStoredFile(projectId, input.storedName, contractProjectDir, listContractFiles);
+        if (!copied) return json(res, 404, { error: "File not found" });
+        return json(res, 201, copied);
+      });
+    }
     if (req.method === "POST") {
       const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
       const requestedKind = url.searchParams.get("kind");
@@ -3436,10 +3962,21 @@ function api(req, res, pathname) {
     if (req.method === "DELETE") {
       const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
       const storedName = safeFileName(url.searchParams.get("storedName"));
-      const target = path.join(contractProjectDir(projectId), storedName);
-      if (storedName && fs.existsSync(target)) fs.unlinkSync(target);
-      return json(res, 200, { ok: true });
+      const archived = archiveContractFileToDrive(projectId, storedName);
+      if (!archived) return json(res, 404, { error: "File not found" });
+      return json(res, 200, { ok: true, archived });
     }
+  }
+
+  const contractSignedMatch = pathname.match(/^\/api\/v1\/projects\/([^/]+)\/contract-files\/signed-approved$/);
+  if (contractSignedMatch && req.method === "PATCH") {
+    const projectId = contractSignedMatch[1];
+    return readJson(req, (error, input) => {
+      if (error) return json(res, 400, { error: error.message });
+      const item = setContractFileSignedApproved(projectId, input.storedName, input.signedApproved !== false);
+      if (!item) return json(res, 404, { error: "File not found" });
+      return json(res, 200, item);
+    });
   }
 
   const contractDraftMatch = pathname.match(/^\/api\/v1\/projects\/([^/]+)\/contract-drafts\/([^/]+)$/);
@@ -3456,6 +3993,103 @@ function api(req, res, pathname) {
     }
     if (req.method === "DELETE") {
       deleteContractDraft(projectId, type);
+      return json(res, 200, { ok: true });
+    }
+  }
+
+  if (pathname === "/api/v1/contract-draft-templates") {
+    if (req.method === "GET") {
+      if (!requireAccount(req, res, "projects.view")) return;
+      return json(res, 200, { data: readContractDraftTemplates() });
+    }
+    if (req.method === "POST") {
+      const account = requireAccount(req, res, "projects.edit");
+      if (!account) return;
+      return readJson(req, (error, body) => {
+        if (error) return json(res, 400, { error: error.message });
+        const projectId = safeFileName(body.projectId);
+        const type = contractDraftType(body.type);
+        if (!projectId) return json(res, 400, { error: "Project is required" });
+        if (!type) return json(res, 400, { error: "Invalid draft type" });
+        const template = writeContractDraftTemplate(projectId, type, account, body.data);
+        if (!template) return json(res, 404, { error: "Draft not found" });
+        return json(res, 201, { data: template });
+      });
+    }
+  }
+
+  const globalContractDraftTemplateImportMatch = pathname.match(/^\/api\/v1\/contract-draft-templates\/([^/]+)\/import$/);
+  if (globalContractDraftTemplateImportMatch && req.method === "POST") {
+    if (!requireAccount(req, res, "projects.edit")) return;
+    return readJson(req, (error, body) => {
+      if (error) return json(res, 400, { error: error.message });
+      const projectId = safeFileName(body.projectId);
+      if (!projectId) return json(res, 400, { error: "Project is required" });
+      const draft = importContractDraftTemplate(projectId, globalContractDraftTemplateImportMatch[1]);
+      if (!draft) return json(res, 404, { error: "Template not found" });
+      return json(res, 201, { data: draft });
+    });
+  }
+
+  const contractDraftTemplateMatch = pathname.match(/^\/api\/v1\/projects\/([^/]+)\/contract-draft-templates$/);
+  if (contractDraftTemplateMatch) {
+    const projectId = contractDraftTemplateMatch[1];
+    if (req.method === "GET") {
+      if (!requireAccount(req, res, "projects.view")) return;
+      return json(res, 200, { data: readContractDraftTemplates() });
+    }
+    if (req.method === "POST") {
+      const account = requireAccount(req, res, "projects.edit");
+      if (!account) return;
+      return readJson(req, (error, body) => {
+        if (error) return json(res, 400, { error: error.message });
+        const type = contractDraftType(body.type);
+        if (!type) return json(res, 400, { error: "Invalid draft type" });
+        const template = writeContractDraftTemplate(projectId, type, account, body.data);
+        if (!template) return json(res, 404, { error: "Draft not found" });
+        return json(res, 201, { data: template });
+      });
+    }
+  }
+
+  const contractDraftTemplateImportMatch = pathname.match(/^\/api\/v1\/projects\/([^/]+)\/contract-draft-templates\/([^/]+)\/import$/);
+  if (contractDraftTemplateImportMatch) {
+    const projectId = contractDraftTemplateImportMatch[1];
+    const templateId = contractDraftTemplateImportMatch[2];
+    if (req.method === "POST") {
+      if (!requireAccount(req, res, "projects.edit")) return;
+      const draft = importContractDraftTemplate(projectId, templateId);
+      if (!draft) return json(res, 404, { error: "Template not found or expired" });
+      return json(res, 201, { data: draft });
+    }
+  }
+
+  const contractDraftTemplateDeleteMatch = pathname.match(/^\/api\/v1\/contract-draft-templates\/([^/]+)$/);
+  if (contractDraftTemplateDeleteMatch && req.method === "DELETE") {
+    if (!requireAccount(req, res, "projects.edit")) return;
+    const templateId = safeFileName(contractDraftTemplateDeleteMatch[1]);
+    writeContractDraftTemplates(readContractDraftTemplates().filter((item) => item.id !== templateId));
+    return json(res, 200, { ok: true });
+  }
+
+  const contractDraftCloneMatch = pathname.match(/^\/api\/v1\/projects\/([^/]+)\/contract-draft-clones\/([^/]+)$/);
+  if (contractDraftCloneMatch) {
+    const projectId = contractDraftCloneMatch[1];
+    const type = contractDraftType(decodeURIComponent(contractDraftCloneMatch[2]));
+    if (!type) return json(res, 400, { error: "Invalid draft type" });
+    if (req.method === "GET") return json(res, 200, { data: listContractDraftClones(projectId, type) });
+    if (req.method === "PUT") {
+      return readJson(req, (error, body) => {
+        if (error) return json(res, 400, { error: error.message });
+        const cloneId = safeFileName(body.cloneId || body.id || `clone-${Date.now()}`);
+        return json(res, 200, { data: writeContractDraftClone(projectId, type, cloneId, body.data || body) });
+      });
+    }
+    if (req.method === "DELETE") {
+      const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
+      const cloneId = safeFileName(url.searchParams.get("cloneId"));
+      if (!cloneId || !readContractDraftClone(projectId, type, cloneId)) return json(res, 404, { error: "Draft clone not found" });
+      deleteContractDraftClone(projectId, type, cloneId);
       return json(res, 200, { ok: true });
     }
   }
@@ -3668,10 +4302,16 @@ function api(req, res, pathname) {
       const target = path.join(dossierProjectDir(dossierType, projectId), storedName);
       if (storedName && fs.existsSync(target)) fs.unlinkSync(target);
       const meta = loadDossierMeta(dossierType);
+      let changedMeta = false;
       if (meta[projectId]?.sent?.[storedName]) {
         delete meta[projectId].sent[storedName];
-        persistDossierMeta(dossierType, meta);
+        changedMeta = true;
       }
+      if (meta[projectId]?.signedApproved?.[storedName]) {
+        delete meta[projectId].signedApproved[storedName];
+        changedMeta = true;
+      }
+      if (changedMeta) persistDossierMeta(dossierType, meta);
       return json(res, 200, { ok: true });
     }
   }
@@ -3738,6 +4378,18 @@ function api(req, res, pathname) {
     });
   }
 
+  const dossierSignedApprovedMatch = pathname.match(/^\/api\/v1\/projects\/([^/]+)\/dossiers\/([^/]+)\/signed-approved$/);
+  if (dossierSignedApprovedMatch && req.method === "PATCH") {
+    return readJson(req, (error, input) => {
+      if (error) return json(res, 400, { error: error.message });
+      const projectId = dossierSignedApprovedMatch[1];
+      const dossierType = dossierSignedApprovedMatch[2];
+      const item = setDossierSignedApproved(dossierType, projectId, input.storedName, input.signedApproved !== false);
+      if (!item) return json(res, 404, { error: "File not found" });
+      return json(res, 200, item);
+    });
+  }
+
   const dossierDownloadMatch = pathname.match(/^\/api\/v1\/projects\/([^/]+)\/dossiers\/([^/]+)\/download$/);
   if (dossierDownloadMatch && req.method === "GET") {
     const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
@@ -3748,9 +4400,10 @@ function api(req, res, pathname) {
     if (!storedName || !fs.existsSync(target)) return json(res, 404, { error: "File not found" });
     const parts = storedName.split("__");
     const displayName = parts.length > 2 ? parts.slice(2).join("__") : storedName;
+    const inline = url.searchParams.get("download") !== "1";
     res.writeHead(200, {
       "content-type": mime[path.extname(displayName)] || "application/octet-stream",
-      "content-disposition": `attachment; filename*=UTF-8''${encodeURIComponent(displayName)}`,
+      "content-disposition": `${inline ? "inline" : "attachment"}; filename*=UTF-8''${encodeURIComponent(displayName)}`,
       "cache-control": "no-store"
     });
     return fs.createReadStream(target).pipe(res);
@@ -3779,10 +4432,17 @@ function api(req, res, pathname) {
       const storedName = safeFileName(url.searchParams.get("storedName"));
       const target = path.join(technicalProjectDir(projectId), storedName);
       if (storedName && fs.existsSync(target)) fs.unlinkSync(target);
-      if (technicalMeta[projectId]?.sent?.[storedName]) {
-        delete technicalMeta[projectId].sent[storedName];
-        persistTechnicalMeta(technicalMeta);
+      const meta = loadDossierMeta("technical");
+      let changedMeta = false;
+      if (meta[projectId]?.sent?.[storedName]) {
+        delete meta[projectId].sent[storedName];
+        changedMeta = true;
       }
+      if (meta[projectId]?.signedApproved?.[storedName]) {
+        delete meta[projectId].signedApproved[storedName];
+        changedMeta = true;
+      }
+      if (changedMeta) persistDossierMeta("technical", meta);
       return json(res, 200, { ok: true });
     }
   }
@@ -3833,15 +4493,16 @@ function api(req, res, pathname) {
       const target = path.join(dir, storedName);
       if (!storedName || !fs.existsSync(target)) return json(res, 404, { error: "File not found" });
 
-      if (!technicalMeta[projectId]) technicalMeta[projectId] = {};
-      if (!technicalMeta[projectId].sent) technicalMeta[projectId].sent = {};
+      const meta = loadDossierMeta("technical");
+      if (!meta[projectId]) meta[projectId] = {};
+      if (!meta[projectId].sent) meta[projectId].sent = {};
 
-      technicalMeta[projectId].sent[storedName] = {
+      meta[projectId].sent[storedName] = {
         contractor: contractorName,
         sentAt: new Date().toISOString()
       };
 
-      persistTechnicalMeta(technicalMeta);
+      persistDossierMeta("technical", meta);
       return json(res, 200, { data: listTechnicalFiles(projectId) });
     });
   }
@@ -3854,9 +4515,10 @@ function api(req, res, pathname) {
     if (!storedName || !fs.existsSync(target)) return json(res, 404, { error: "File not found" });
     const parts = storedName.split("__");
     const displayName = parts.length > 2 ? parts.slice(2).join("__") : storedName;
+    const inline = url.searchParams.get("download") !== "1";
     res.writeHead(200, {
       "content-type": mime[path.extname(displayName)] || "application/octet-stream",
-      "content-disposition": `attachment; filename*=UTF-8''${encodeURIComponent(displayName)}`,
+      "content-disposition": `${inline ? "inline" : "attachment"}; filename*=UTF-8''${encodeURIComponent(displayName)}`,
       "cache-control": "no-store"
     });
     return fs.createReadStream(target).pipe(res);
@@ -3905,7 +4567,7 @@ function staticFile(req, res, pathname) {
       .pipe(res);
   }
   if (requested === "/constructions/detail/index.html") {
-    const html = fs.readFileSync(filename, "utf8").replace(/\/construction\.js(?:\?v=\d+)?/g, "/construction.js?v=232");
+    const html = fs.readFileSync(filename, "utf8").replace(/\/construction\.js(?:\?v=\d+)?/g, "/construction.js?v=257");
     res.writeHead(200, { "content-type": mime[".html"], "cache-control": "no-cache" });
     return res.end(html);
   }
@@ -3922,6 +4584,7 @@ function createServer() {
 }
 
 if (require.main === module) {
+  setInterval(() => readContractDraftTemplates(), Math.min(contractDraftTemplateRetentionMs, 5 * 60 * 1000)).unref();
   createServer().listen(port, () => console.log(`Ledome-MGMT running at http://localhost:${port}`));
 }
 

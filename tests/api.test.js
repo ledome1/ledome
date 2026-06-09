@@ -415,6 +415,202 @@ test("contract files keep variation uploads in the phát sinh bucket", async () 
   }
 });
 
+test("contract files can be duplicated without overwriting the source", async () => {
+  const upload = await authed(`${origin}/api/v1/projects/p1/contract-files?kind=quote&name=bao-gia-copy-test.txt`, {
+    method: "POST",
+    body: Buffer.from("quote copy source")
+  });
+  assert.equal(upload.status, 201);
+  const source = await upload.json();
+
+  const duplicated = await authed(`${origin}/api/v1/projects/p1/contract-files`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ storedName: source.storedName })
+  });
+  assert.equal(duplicated.status, 201);
+  const copy = await duplicated.json();
+  assert.equal(copy.kind, "quote");
+  assert.notEqual(copy.storedName, source.storedName);
+  assert.match(copy.name, /copy/i);
+
+  const opened = await authed(`${origin}/api/v1/projects/p1/contract-files/download?storedName=${encodeURIComponent(copy.storedName)}`);
+  assert.equal(opened.status, 200);
+  assert.equal(await opened.text(), "quote copy source");
+});
+
+test("contract files can be marked as signed approved and unmarked", async () => {
+  const upload = await authed(`${origin}/api/v1/projects/p1/contract-files?kind=contract&name=signed-approved-test.txt`, {
+    method: "POST",
+    body: Buffer.from("signed contract")
+  });
+  assert.equal(upload.status, 201);
+  const source = await upload.json();
+
+  const marked = await authed(`${origin}/api/v1/projects/p1/contract-files/signed-approved`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ storedName: source.storedName, signedApproved: true })
+  }).then((res) => res.json());
+  assert.equal(marked.signedApproved, true);
+  assert.ok(marked.signedApprovedAt);
+
+  const files = await authed(`${origin}/api/v1/projects/p1/contract-files`).then((res) => res.json());
+  assert.equal(files.data.find((file) => file.storedName === source.storedName).signedApproved, true);
+
+  const unmarked = await authed(`${origin}/api/v1/projects/p1/contract-files/signed-approved`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ storedName: source.storedName, signedApproved: false })
+  }).then((res) => res.json());
+  assert.equal(unmarked.signedApproved, false);
+
+  const firstUpload = await authed(`${origin}/api/v1/projects/p1/contract-files?kind=contract&name=signed-approved-first.txt`, {
+    method: "POST",
+    body: Buffer.from("first signed contract")
+  }).then((res) => res.json());
+  const secondUpload = await authed(`${origin}/api/v1/projects/p1/contract-files?kind=contract&name=signed-approved-second.txt`, {
+    method: "POST",
+    body: Buffer.from("second signed contract")
+  }).then((res) => res.json());
+  await authed(`${origin}/api/v1/projects/p1/contract-files/signed-approved`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ storedName: firstUpload.storedName, signedApproved: true })
+  });
+  await authed(`${origin}/api/v1/projects/p1/contract-files/signed-approved`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ storedName: secondUpload.storedName, signedApproved: true })
+  });
+  const afterSecondApproval = await authed(`${origin}/api/v1/projects/p1/contract-files`).then((res) => res.json());
+  assert.equal(afterSecondApproval.data.find((file) => file.storedName === firstUpload.storedName).signedApproved, true);
+  assert.equal(afterSecondApproval.data.find((file) => file.storedName === secondUpload.storedName).signedApproved, true);
+});
+
+test("vendor contract files can be marked as signed approved and unmarked", async () => {
+  const upload = await authed(`${origin}/api/v1/projects/p1/vendor-contract-files?kind=contract&name=vendor-signed-approved-test.txt`, {
+    method: "POST",
+    body: Buffer.from("signed vendor contract")
+  });
+  assert.equal(upload.status, 201);
+  const source = await upload.json();
+
+  const marked = await authed(`${origin}/api/v1/projects/p1/vendor-contract-files/signed-approved`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ storedName: source.storedName, signedApproved: true })
+  }).then((res) => res.json());
+  assert.equal(marked.signedApproved, true);
+  assert.ok(marked.signedApprovedAt);
+
+  const files = await authed(`${origin}/api/v1/projects/p1/vendor-contract-files`).then((res) => res.json());
+  assert.equal(files.data.find((file) => file.storedName === source.storedName).signedApproved, true);
+
+  const unmarked = await authed(`${origin}/api/v1/projects/p1/vendor-contract-files/signed-approved`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ storedName: source.storedName, signedApproved: false })
+  }).then((res) => res.json());
+  assert.equal(unmarked.signedApproved, false);
+
+  const firstUpload = await authed(`${origin}/api/v1/projects/p1/vendor-contract-files?kind=contract&name=vendor-signed-approved-first.txt`, {
+    method: "POST",
+    body: Buffer.from("first signed vendor contract")
+  }).then((res) => res.json());
+  const secondUpload = await authed(`${origin}/api/v1/projects/p1/vendor-contract-files?kind=contract&name=vendor-signed-approved-second.txt`, {
+    method: "POST",
+    body: Buffer.from("second signed vendor contract")
+  }).then((res) => res.json());
+  await authed(`${origin}/api/v1/projects/p1/vendor-contract-files/signed-approved`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ storedName: firstUpload.storedName, signedApproved: true })
+  });
+  await authed(`${origin}/api/v1/projects/p1/vendor-contract-files/signed-approved`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ storedName: secondUpload.storedName, signedApproved: true })
+  });
+  const afterSecondApproval = await authed(`${origin}/api/v1/projects/p1/vendor-contract-files`).then((res) => res.json());
+  assert.equal(afterSecondApproval.data.find((file) => file.storedName === firstUpload.storedName).signedApproved, true);
+  assert.equal(afterSecondApproval.data.find((file) => file.storedName === secondUpload.storedName).signedApproved, true);
+});
+
+test("deleted contract files are moved to HỢP ĐỒNG NHÁP drive for seven days", async () => {
+  const upload = await authed(`${origin}/api/v1/projects/p1/contract-files?kind=contract&name=deleted-contract-draft.pdf`, {
+    method: "POST",
+    body: Buffer.from("deleted contract draft")
+  });
+  assert.equal(upload.status, 201);
+  const source = await upload.json();
+
+  const removed = await authed(`${origin}/api/v1/projects/p1/contract-files?storedName=${encodeURIComponent(source.storedName)}`, { method: "DELETE" });
+  assert.equal(removed.status, 200);
+  const body = await removed.json();
+  assert.equal(body.archived[3], "HỢP ĐỒNG NHÁP");
+  assert.match(body.archived[1], /^HỢP ĐỒNG NHÁP\//);
+  assert.ok(body.archived[10]);
+  const expiresAt = Date.parse(body.archived[12]);
+  assert.ok(expiresAt > Date.now() + 6 * 86400000);
+  assert.ok(expiresAt <= Date.now() + 8 * 86400000);
+
+  const files = await authed(`${origin}/api/v1/projects/p1/contract-files`).then((res) => res.json());
+  assert.ok(!files.data.some((file) => file.storedName === source.storedName));
+
+  const drive = await authed(`${origin}/api/v1/drive`).then((res) => res.json());
+  const archived = drive.data.find((row) => row[10] === body.archived[10]);
+  assert.equal(archived[3], "HỢP ĐỒNG NHÁP");
+  assert.match(archived[1], /deleted-contract-draft\.pdf$/);
+
+  const downloaded = await authed(`${origin}/api/v1/drive-files/download?storedName=${encodeURIComponent(body.archived[10])}`);
+  assert.equal(downloaded.status, 200);
+  assert.equal(await downloaded.text(), "deleted contract draft");
+
+  const vendorUpload = await authed(`${origin}/api/v1/projects/p1/vendor-contract-files?kind=contract&name=deleted-vendor-contract-draft.pdf`, {
+    method: "POST",
+    body: Buffer.from("deleted vendor contract draft")
+  });
+  assert.equal(vendorUpload.status, 201);
+  const vendorSource = await vendorUpload.json();
+  const vendorRemoved = await authed(`${origin}/api/v1/projects/p1/vendor-contract-files?storedName=${encodeURIComponent(vendorSource.storedName)}`, { method: "DELETE" });
+  assert.equal(vendorRemoved.status, 200);
+  const vendorBody = await vendorRemoved.json();
+  assert.equal(vendorBody.archived[3], "HỢP ĐỒNG NHÁP");
+  assert.match(vendorBody.archived[4], /\/NCC$/);
+});
+
+test("project dossier files can be marked as signed approved", async () => {
+  const upload = await authed(`${origin}/api/v1/projects/p1/dossiers/technical?kind=main&name=approved-design-drawing.pdf`, {
+    method: "POST",
+    body: Buffer.from("approved design drawing")
+  });
+  assert.equal(upload.status, 201);
+  const source = await upload.json();
+
+  const marked = await authed(`${origin}/api/v1/projects/p1/dossiers/technical/signed-approved`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ storedName: source.storedName, signedApproved: true })
+  });
+  assert.equal(marked.status, 200);
+  const markedBody = await marked.json();
+  assert.equal(markedBody.signedApproved, true);
+  assert.ok(markedBody.signedApprovedAt);
+
+  const list = await authed(`${origin}/api/v1/projects/p1/dossiers/technical`).then((res) => res.json());
+  assert.equal(list.data.find((file) => file.storedName === source.storedName).signedApproved, true);
+
+  const preview = await authed(`${origin}/api/v1/projects/p1/dossiers/technical/download?storedName=${encodeURIComponent(source.storedName)}`);
+  assert.equal(preview.status, 200);
+  assert.match(preview.headers.get("content-type"), /application\/pdf/);
+  assert.match(preview.headers.get("content-disposition"), /^inline/);
+
+  const download = await authed(`${origin}/api/v1/projects/p1/dossiers/technical/download?storedName=${encodeURIComponent(source.storedName)}&download=1`);
+  assert.equal(download.status, 200);
+  assert.match(download.headers.get("content-disposition"), /^attachment/);
+});
+
 test("contract quote drafts and PDF exports are stored for later editing", async () => {
   const draft = {
     estimateNo: "BG-TEST",
@@ -427,7 +623,7 @@ test("contract quote drafts and PDF exports are stored for later editing", async
     body: JSON.stringify({ data: draft })
   }).then((res) => res.json());
   assert.equal(savedDraft.data.type, "quote");
-  assert.equal(savedDraft.data.data.estimateNo, "BG-TEST");
+  assert.match(savedDraft.data.data.estimateNo, /^\d{4}\/BG\/MNT$/);
 
   const loadedDraft = await authed(`${origin}/api/v1/projects/p1/contract-drafts/quote`).then((res) => res.json());
   assert.equal(loadedDraft.data.data.rows[0].task, "Do dac");
@@ -451,6 +647,70 @@ test("contract quote drafts and PDF exports are stored for later editing", async
   assert.match(opened.headers.get("content-disposition"), /^inline/);
   const pdf = Buffer.from(await opened.arrayBuffer());
   assert.equal(pdf.subarray(0, 4).toString(), "%PDF");
+});
+
+test("contract draft clones persist separately from the original draft", async () => {
+  const clone = await authed(`${origin}/api/v1/projects/p1/contract-draft-clones/quote`, {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      cloneId: "copy-001",
+      data: { estimateNo: "BG-COPY", rows: [{ name: "Copy row", qty: 1, price: 2000 }] }
+    })
+  }).then((res) => res.json());
+  assert.equal(clone.data.cloneId, "copy-001");
+  assert.match(clone.data.data.estimateNo, /^\d{4}\/BG\/MNT$/);
+
+  const list = await authed(`${origin}/api/v1/projects/p1/contract-draft-clones/quote`).then((res) => res.json());
+  assert.ok(list.data.some((item) => item.cloneId === "copy-001" && /^\d{4}\/BG\/MNT$/.test(item.data.estimateNo)));
+
+  const removed = await authed(`${origin}/api/v1/projects/p1/contract-draft-clones/quote?cloneId=copy-001`, { method: "DELETE" });
+  assert.equal(removed.status, 200);
+});
+
+test("contract draft templates can be reused across projects", async () => {
+  const draft = {
+    estimateNo: "BG-MAU-TAM",
+    projectName: "Project source",
+    location: "Source location",
+    rows: [{ groupId: "rough", name: "Che phu", task: "Lot san", unit: "goi", qty: 2, price: 1500 }],
+    total: 3000
+  };
+  await authed(`${origin}/api/v1/projects/p1/contract-drafts/quote`, {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ data: draft })
+  });
+
+  const savedTemplate = await authed(`${origin}/api/v1/contract-draft-templates`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ projectId: "p1", type: "quote", data: draft })
+  });
+  assert.equal(savedTemplate.status, 201);
+  const template = await savedTemplate.json();
+  assert.equal(template.data.type, "quote");
+  assert.equal(template.data.sourceProjectId, "p1");
+  assert.equal(template.data.persistent, true);
+
+  const drive = await authed(`${origin}/api/v1/drive`).then((res) => res.json());
+  assert.ok(!drive.data.some((row) => row[11] === "contract-template" || row[0] === `DRV-TPL-${template.data.id}`));
+
+  const imported = await authed(`${origin}/api/v1/contract-draft-templates/${template.data.id}/import`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ projectId: "p2" })
+  });
+  assert.equal(imported.status, 201);
+  const importedBody = await imported.json();
+  assert.equal(importedBody.data.projectId, "p2");
+  assert.match(importedBody.data.data.estimateNo, /^\d{4}\/BG\/MAK70$/);
+  assert.notEqual(importedBody.data.data.estimateNo, "BG-MAU-TAM");
+  assert.equal(importedBody.data.data.projectName, "THI CÔNG NHÀ ANH KHÁNH 70M2 - LẠC LONG QUÂN");
+  assert.equal(importedBody.data.data.rows[0].task, "Lot san");
+
+  const afterImport = await authed(`${origin}/api/v1/contract-draft-templates`).then((res) => res.json());
+  assert.ok(afterImport.data.some((item) => item.id === template.data.id));
 });
 
 test("drive files support inline view and quick Office preview", async () => {
@@ -582,6 +842,19 @@ test("attendance GPS check-in validates site distance and supports approval", as
   assert.equal(valid.insideGeofence, true);
   assert.equal(valid.gpsStatus, "Đạt");
   assert.equal(valid.gpsNote, "GPS chuẩn vị trí trong phạm vi cho phép");
+  assert.equal(valid.faceStatus, "Đạt");
+  assert.equal(valid.faceNote, "Ảnh xác thực đạt");
+  assert.equal(valid.approvedAt, undefined);
+
+  const starlake = await authed(`${origin}/api/v1/attendance/check`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ employeeId: "NS001", siteId: ledome.id, latitude: 21.052696700805544, longitude: 105.78997996655893, accuracy: 15, hasFacePhoto: true })
+  }).then((res) => res.json());
+  assert.equal(starlake.status, "Cần duyệt");
+  assert.equal(starlake.insideGeofence, false);
+  assert.equal(starlake.gpsStatus, "Không đạt");
+  assert.ok(starlake.distanceMeters > ledome.radiusMeters);
 
   const forbiddenOtherEmployee = await authed(`${origin}/api/v1/attendance/check`, {
     method: "POST",
@@ -599,10 +872,23 @@ test("attendance GPS check-in validates site distance and supports approval", as
   assert.equal(outside.insideGeofence, false);
   assert.equal(outside.gpsStatus, "Không đạt");
   assert.equal(outside.gpsNote, "GPS ngoài phạm vi cho phép");
+  assert.equal(outside.faceStatus, "Đạt");
 
   const approved = await authed(`${origin}/api/v1/attendance/records/${outside.id}/approve`, { method: "POST" }).then((res) => res.json());
   assert.equal(approved.status, "Hợp lệ");
   assert.equal(approved.gpsStatus, "Không đạt");
+  assert.ok(approved.approvedAt);
+
+  const recordDate = Date.parse(valid.capturedAt);
+  const setTime = test.mock.method(Date, "now", () => recordDate + 61 * 24 * 60 * 60 * 1000);
+  try {
+    await login();
+    const expiredList = await authed(`${origin}/api/v1/attendance/records`).then((res) => res.json());
+    assert.equal(expiredList.data.some((record) => record.id === valid.id), false);
+    assert.equal(expiredList.data.some((record) => record.id === approved.id), false);
+  } finally {
+    setTime.mock.restore();
+  }
 });
 
 test("project APIs expose demo and runtime projects", async () => {
@@ -643,6 +929,31 @@ test("new project starts without sample classification or progress data", async 
   assert.equal(project.status, "");
   assert.equal(project.health, "");
   assert.equal(project.description, "");
+
+  const config = await authed(`${origin}/api/v1/attendance/config`).then((res) => res.json());
+  const site = config.sites.find((item) => item.projectId === project.id);
+  assert.ok(site);
+  assert.equal(site.latitude, undefined);
+  assert.equal(site.longitude, undefined);
+
+  const latitude = 21.052701;
+  const longitude = 105.789981;
+  const checkIn = await authed(`${origin}/api/v1/attendance/check`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ employeeId: "NS001", siteId: site.id, latitude, longitude, accuracy: 20, hasFacePhoto: true })
+  }).then((res) => res.json());
+  assert.equal(checkIn.status, "Cần duyệt");
+  assert.equal(checkIn.distanceMeters, null);
+  assert.equal(checkIn.geofenceRadiusMeters, null);
+  assert.equal(checkIn.insideGeofence, false);
+  assert.equal(checkIn.gpsStatus, "Không đạt");
+  assert.equal(checkIn.gpsNote, "Điểm chấm công chưa có phạm vi GPS");
+
+  const nextConfig = await authed(`${origin}/api/v1/attendance/config`).then((res) => res.json());
+  const savedSite = nextConfig.sites.find((item) => item.projectId === project.id);
+  assert.equal(savedSite.latitude, undefined);
+  assert.equal(savedSite.longitude, undefined);
 
   const deleted = await authed(`${origin}/api/v1/projects/${project.id}`, { method: "DELETE" });
   assert.equal(deleted.status, 200);
@@ -811,6 +1122,8 @@ test("landing page and project detail clients expose expected workflows", async 
   assert.match(appScript, /dashboardQuickAccessPanel/);
   assert.match(appScript, /dashboard-quick-access-columns/);
   assert.match(appScript, /dashboardVoucherFormModal/);
+  assert.match(appScript, /handleGlobalVoucherClose/);
+  assert.match(appScript, /document\.body\.addEventListener\("click", handleGlobalVoucherClose, true\)/);
   assert.match(appScript, /data-dashboard-voucher-form/);
   assert.match(appScript, /id: "attendance"/);
   assert.match(appScript, /Phiếu nhiệm vụ/);
@@ -836,10 +1149,39 @@ test("landing page and project detail clients expose expected workflows", async 
   assert.match(appScript, /data-action="create-project"/);
   assert.match(appScript, /Khởi tạo từ dự án mẫu/);
   assert.match(appScript, /Mẫu Kiến trúc Nội thất/);
+  assert.match(appScript, /attendanceEvidenceDetail/);
+  assert.match(appScript, /Danh sách chấm công/);
+  assert.match(appScript, /2 tháng/);
+  assert.match(appScript, /attendanceRecordListTable/);
+  assert.match(appScript, /evidence-map-frame/);
+  assert.match(appScript, /attendanceDeviceLabel/);
+  assert.match(appScript, /gpsInfo,\s*record/);
+  assert.match(appScript, /attendanceApprovedRecordsByStaffDay/);
+  assert.match(appScript, /record\.status !== "Hợp lệ"/);
+  assert.match(appScript, /attendanceMonthlyRows\(runtime\.data\)/);
+  assert.match(appScript, /Check-in/);
+  assert.match(appScript, /Check-out/);
+  assert.match(appScript, /Tổng công/);
+  assert.match(appScript, /ATTENDANCE_PUBLIC_HOLIDAYS_BY_YEAR/);
+  assert.match(appScript, /Gợi ý ngày lễ Việt Nam/);
+  assert.match(appScript, /attendanceEditHoliday/);
+
+  const dashboardHtml = await fetch(`${origin}/`).then((res) => res.text());
+  assert.match(dashboardHtml, /styles\.css\?v=67/);
+  assert.match(dashboardHtml, /app\.js\?v=91/);
 
   const html = await fetch(`${origin}/constructions/detail/p1/`).then((res) => res.text());
   assert.match(html, /project-app/);
-  assert.match(html, /construction\.js\?v=232/);
+  assert.match(html, /construction-overrides\.css\?v=223/);
+  assert.match(html, /construction\.js\?v=257/);
+
+  const attendanceHtml = await fetch(`${origin}/attendance/`).then((res) => res.text());
+  assert.match(attendanceHtml, /mobile\.js\?v=12/);
+
+  const attendanceScript = await fetch(`${origin}/attendance/mobile.js`).then((res) => res.text());
+  assert.match(attendanceScript, /startAutoCamera/);
+  assert.match(attendanceScript, /pendingSubmitType/);
+  assert.match(attendanceScript, /openCameraCapture\("submit"\)/);
 
   const script = await fetch(`${origin}/construction.js`).then((res) => res.text());
   assert.match(script, /data-project-info-delete/);
@@ -866,9 +1208,24 @@ test("landing page and project detail clients expose expected workflows", async 
   assert.match(script, /diaryResourceDetail/);
   assert.doesNotMatch(script, /data-contract-group|data-contract-variation-group|data-vendor-contract-group|contractQuoteSidebar/);
   assert.match(script, /contractMaterialSectionOptions\(\)/);
-  assert.match(script, /contractDesignTypeOptions\(\)/);
-  assert.match(script, /contractConstructionTypeOptions\(\)/);
+  assert.doesNotMatch(script, /contractDropZone\("design-contract","Hợp đồng thiết kế","PDF, Word hoặc Excel",contractDesignTypeOptions\(\)\)/);
+  assert.doesNotMatch(script, /function contractVariationFiles\(\)\{const types=contractConstructionTypeOptions\(\)/);
   assert.match(script, /contractSubcontractTypeOptions\(\)/);
+  assert.match(script, /contractApprovedDossierBox/);
+  assert.match(script, /data-approved-dossier-types="\$\{apiTypes\}"/);
+  assert.match(script, /data-project-doc-status/);
+  assert.match(script, /projectDocStoreInstallDropGuard/);
+  assert.match(script, /projectDocStoreDropFiles/);
+  assert.match(script, /stopPropagation\(\)/);
+  assert.match(script, /response\.ok/);
+  assert.match(script, /function fileDownloadUrl\(url\)/);
+  assert.match(script, /fileDownloadUrl\(url\)/);
+  assert.match(script, /data-dossier-signed-action="approve">Ký duyệt/);
+  assert.match(script, /dataset\.dossierSignedAction==="approve"/);
+  assert.match(script, /Hồ sơ bản vẽ hợp đồng thiết kế/);
+  assert.match(script, /Hồ sơ bản vẽ hợp đồng thi công/);
+  assert.doesNotMatch(script, /contractDropZone\("drawing"/);
+  assert.match(script, /setDossierSignedApproved/);
   assert.match(script, /async function contractVendorView\(\)\{\s*await loadProjectCatalog\(\)/);
   assert.match(script, /data-contract-export-word/);
   assert.match(script, /data-contract-export-pdf/);
@@ -885,6 +1242,18 @@ test("landing page and project detail clients expose expected workflows", async 
   assert.match(script, /data-contract-vat-summary/);
   assert.match(script, /data-contract-field="bankAccount"/);
   assert.match(script, /contractBankHtml/);
+  assert.match(script, /contractDesignContractNumber\(files=contractFilesCache\)\{const token=contractCodeDateToken\(\);return `\$\{token\}\/HĐTK\/\$\{contractProjectCode\(\)\}`/);
+  assert.match(script, /contractConstructionContractNumber\(files=contractFilesCache\)\{const token=contractCodeDateToken\(\);return `\$\{token\}\/HĐTC\/\$\{contractProjectCode\(\)\}`/);
+  assert.doesNotMatch(script, /return `\$\{token\}\/HĐT[KC]\/LEDOME_/);
+  assert.doesNotMatch(script, /contractDesignContractNumber\(files=contractFilesCache\)\{const year=new Date\(\)\.getFullYear\(\)/);
+  assert.doesNotMatch(script, /contractConstructionContractNumber\(files=contractFilesCache\)\{const year=new Date\(\)\.getFullYear\(\)/);
+  assert.doesNotMatch(script, /contractDesignContractNumber[\s\S]{0,220}String\(next\)\.padStart/);
+  assert.doesNotMatch(script, /contractConstructionContractNumber[\s\S]{0,220}String\(next\)\.padStart/);
+  assert.match(script, /contractLooksLikeOldYearToken/);
+  assert.match(script, /\^202\\d\$/);
+  assert.match(script, /contractCodeDateTokenForValue\(file\?\.updatedAt \|\| file\?\.createdAt \|\| file\?\.date\)/);
+  assert.match(script, /contractNormalizeLinkedContractNo/);
+  assert.match(script, /contractNormalizeEstimateNo/);
   assert.match(script, /contractCreateButton\("quote"/);
   assert.match(script, /contractVariationFiles/);
   assert.match(script, /contractVariationQuoteFiles/);
@@ -901,7 +1270,7 @@ test("landing page and project detail clients expose expected workflows", async 
   assert.match(script, /variation-quote/);
   assert.match(script, /BAO_GIA_PHAT_SINH/);
   assert.match(script, /rfi-variation-page variation-tone/);
-  assert.match(script, /contractEstimateTitle\(type="estimate"\)/);
+  assert.match(script, /contractEstimateTitle\(type="quote"\)/);
   assert.match(script, /contractEstimateGroupDefinitions/);
   assert.match(script, /Báo giá Hạng mục thi công/);
   assert.match(script, /Báo Giá Hạng mục Thiết bị vật tư/);
@@ -937,6 +1306,9 @@ test("landing page and project detail clients expose expected workflows", async 
   assert.match(script, /data-estimate-duplicate/);
   assert.match(script, /data-estimate-drag/);
   assert.match(script, /data-estimate-add-task/);
+  assert.match(script, /contractLoadDraftTemplates/);
+  assert.match(script, /data-contract-draft-template/);
+  assert.match(script, /data-contract-draft-template-import/);
   assert.match(script, /contractEstimateNormalizeTaskRows/);
   assert.match(script, /data-estimate-resize/);
   assert.match(script, /ledome\.contractEstimateColumnWidths/);
@@ -945,8 +1317,8 @@ test("landing page and project detail clients expose expected workflows", async 
   assert.match(script, /data-estimate-next/);
   assert.match(script, /data-estimate-group-summary/);
   assert.match(script, /STT","Nhóm","Hạng mục","Nhiệm vụ","Mô tả","Vị trí","Hình ảnh"/);
-  assert.match(script, /contractEstimateUnitOptions=\["gói","m2","md","cái","bộ"\]/);
-  assert.match(script, /type==="estimate"\|\|type==="quote"\|\|type==="variation-quote"/);
+  assert.match(script, /contractEstimateUnitOptions=\["gói","m2","md","cái","bộ","vị trí"\]/);
+  assert.match(script, /formType==="quote"\|\|formType==="variation-quote"/);
   assert.match(script, /type==="variation-quote"\?"BAO_GIA_PHAT_SINH":"BAO_GIA"/);
   assert.match(script, /type==="variation-quote"\?"variation-quote":"quote"/);
   assert.match(script, /BAO_GIA/);

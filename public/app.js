@@ -100,6 +100,7 @@ let sidebarHidden = false;
 let dashboardVoucherCache = [];
 let dashboardVoucherApprovedCache = null;
 let dashboardProjectRows = [];
+let dashboardTeamChatRefreshTimer = null;
 const dashboardTaskDraftCounters = {};
 
 function isMobileSidebar() {
@@ -691,6 +692,9 @@ function dashboardCodeDateToken(date = new Date()) {
 function dashboardAutoCode(prefix = "PH", date = new Date(), suffix = String(Date.now()).slice(-4)) {
   return `${prefix}-${dashboardCodeDateToken(date)}-${suffix}`;
 }
+function dashboardSequenceCode(prefix = "PH", index = 0, date = new Date()) {
+  return `${prefix}-${dashboardCodeDateToken(date)}-${String(index + 1).padStart(3, "0")}`;
+}
 function dashboardVoucherFormCode(def) {
   if (def?.id === "task" || def?.type === "Phiếu nhiệm vụ") return dashboardTaskVoucherCodeInfo(new Date()).code;
   return dashboardAutoCode(def.codePrefix || "PH");
@@ -983,6 +987,13 @@ function openDashboardVoucherForm(id, fallbackType = "") {
 function closeDashboardVoucherForm() {
   $("#dashboard-voucher-form-modal")?.classList.remove("open");
 }
+function handleGlobalVoucherClose(event) {
+  if (!event.target.closest('[data-action="close-voucher-form"]') && event.target.id !== "dashboard-voucher-form-modal") return false;
+  event.preventDefault();
+  event.stopPropagation();
+  closeDashboardVoucherForm();
+  return true;
+}
 function submitDashboardVoucherForm(form) {
   const modal = form.closest("#dashboard-voucher-form-modal");
   const submitHandler = modal?.dataset.currentVoucherSubmit || "";
@@ -990,7 +1001,7 @@ function submitDashboardVoucherForm(form) {
   if (submitHandler === "overtime") {
     const hours = overtimeHours(data.start, data.end);
     if (hours <= 0) return alert("Giờ kết thúc phải sau giờ bắt đầu.");
-    const code = `OT-${String(HRM_OVERTIME.length + 1).padStart(3, "0")}`;
+    const code = dashboardSequenceCode("OT", HRM_OVERTIME.length, dashboardVoucherDateFromInput(data.date));
     HRM_OVERTIME.unshift([code, data.staff, overtimeDisplayDate(data.date), data.project, data.start, data.end, hours, data.reason, "Cần duyệt", Math.round(hours * OVERTIME_RATE_PER_HOUR), data.voucherType || overtimeVoucherTypeOptions()[0] || ""]);
     saveHrmOvertime();
     closeDashboardVoucherForm();
@@ -998,7 +1009,7 @@ function submitDashboardVoucherForm(form) {
   }
   if (submitHandler === "leave") {
     const days = leaveDayCount(data.fromDate, data.toDate);
-    const code = `NP-${String(HRM_LEAVE.length + 1).padStart(3, "0")}`;
+    const code = dashboardSequenceCode("NP", HRM_LEAVE.length, dashboardVoucherDateFromInput(data.fromDate));
     const note = [data.reason, data.handover ? `Bàn giao: ${data.handover}` : ""].filter(Boolean).join(" · ");
     HRM_LEAVE.unshift([code, data.staff, projectDateDisplayValue(data.fromDate), projectDateDisplayValue(data.toDate), days, data.leaveType, note, "Cần duyệt", data.approver]);
     saveHrmLeave();
@@ -1140,7 +1151,7 @@ function dashboardSetVoucherCollapsed(type = "", collapsed = false) {
   localStorage.setItem(DASHBOARD_VOUCHER_COLLAPSE_STORAGE, JSON.stringify(map));
 }
 function dashboardVoucherCode(prefix, index) {
-  return `${prefix}-${String(index + 1).padStart(4, "0")}`;
+  return dashboardSequenceCode(prefix, index);
 }
 function dashboardFinanceVoucherStatus(row = []) {
   const raw = String(row[9] || row[10] || "").trim();
@@ -1724,6 +1735,15 @@ async function dashboardRefreshTeamChat() {
   if (count) count.textContent = `${rows.length} tin nhắn`;
   dashboardScrollTeamChat();
 }
+
+function startDashboardTeamChatRealtime() {
+  if (dashboardTeamChatRefreshTimer) clearInterval(dashboardTeamChatRefreshTimer);
+  dashboardTeamChatRefreshTimer = setInterval(() => {
+    if (!document.querySelector("[data-team-chat-panel]")) return;
+    dashboardRefreshTeamChat().catch(() => {});
+  }, 800);
+}
+
 async function uploadDashboardTeamChatFiles(files = []) {
   const fileList = Array.from(files || []).filter((file) => file && file.name);
   if (!fileList.length) return;
@@ -1845,7 +1865,7 @@ function projectModal() {
   const optionTags = (items, selected = "") => items.map((item) => `<option value="${escapeHtml(item)}" ${item === selected ? "selected" : ""}>${escapeHtml(item || "Chưa chọn")}</option>`).join("");
   const people = ["", "DINH Công Hoàng", "Bùi Xuân Dũng", "Nguyễn Hoàng Hải", "Bùi Vũ Kiên", "Hồ Quang Chiến", "X", "Y", "Z", "Nguyễn Hà Vân", "Khác"];
   return `<div class="modal-backdrop" id="project-modal"><section class="project-modal project-create-modal"><header><h2>Khởi tạo dự án</h2><button data-action="close-modal">×</button></header><div class="creation-options"><button data-action="new-project">＋<b>Khởi tạo dự án mới</b><small>Tạo dự án thực tế hoặc dự án mẫu</small></button><button>▤<b>Khởi tạo từ Excel</b><small>Nhập dữ liệu theo file mẫu</small></button><button data-action="show-templates">▦<b>Khởi tạo từ dự án mẫu</b><small>Chọn một mẫu dự án đã thiết lập sẵn</small></button></div><section class="template-picker" id="template-picker"><h3>Chọn dự án mẫu</h3><p>Nội dung chi tiết của từng mẫu sẽ được bổ sung sau.</p><div>${templates.map((name) => `<button data-template="${name}"><b>${name}</b><small>Nội dung mẫu đang cập nhật</small></button>`).join("")}</div></section><form id="project-form" class="project-create-form"><h3>Thông tin dự án <small id="selected-template"></small></h3>
-    <fieldset class="identity"><legend>Nhận diện dự án</legend><label class="wide">Tên dự án<input name="name" id="nameProject" required placeholder="Nhập tên dự án"></label><label>Mã dự án<input name="code" value="DA-${String(Date.now()).slice(-4)}"></label><label>Chủ đầu tư<input name="owner" placeholder="Nhập chủ đầu tư"></label><label class="wide">Địa điểm<input name="location" placeholder="Nhập địa điểm dự án"></label></fieldset>
+    <fieldset class="identity"><legend>Nhận diện dự án</legend><label class="wide">Tên dự án<input name="name" id="nameProject" required placeholder="Nhập tên dự án"></label><label>Mã dự án<input name="code" value="${dashboardAutoCode("DA")}"></label><label>Chủ đầu tư<input name="owner" placeholder="Nhập chủ đầu tư"></label><label class="wide">Địa điểm<input name="location" placeholder="Nhập địa điểm dự án"></label></fieldset>
     <fieldset class="classification"><legend>Phân loại</legend><label>Phạm vi<select name="type" id="scopeProject">${optionTags(["", "Nội thất", "Kiến trúc", "Nội thất kiến trúc", "Khác"])}</select></label><label>Loại hình<select name="buildingType">${optionTags(["", "Căn hộ", "Nhà phố", "Biệt thự", "Homestay", "Nhà hàng", "Quán cafe", "Bar", "Văn phòng", "Khác"])}</select></label><label>Nhóm dự án<select name="group">${optionTags(["", "Thiết kế", "Thi công", "Thiết kế Thi công"])}</select></label><label>Trạng thái<select name="status" id="statusProject">${optionTags(["", "Kế hoạch", "Đang thực hiện", "Tạm dừng", "Hoàn thành", "Đóng"])}</select></label><label>Tình trạng<select name="health">${optionTags(["", "Bình thường", "Theo dõi", "Rủi ro", "Chậm tiến độ"])}</select></label></fieldset>
     <fieldset class="people"><legend>Nhân sự phụ trách</legend><label>Giám đốc dự án<select name="manager">${optionTags(people, "")}</select></label><label>Chỉ huy trưởng<select name="commander">${optionTags(people, "")}</select></label><label>Giám sát dự án<select name="qs">${optionTags(people, "")}</select></label><label>Kế toán dự án<select name="accountant">${optionTags(people, "")}</select></label></fieldset>
     <fieldset class="timeline"><legend>Thời gian</legend><label>Ngày bắt đầu<input name="startDate" type="date"></label><label>Ngày kết thúc<input name="endDate" type="date"></label><label>Thời gian<input name="duration" placeholder="VD: 161 ngày"></label></fieldset>
@@ -1854,6 +1874,7 @@ function projectModal() {
 
 function bindLanding() {
   $("#app").onclick = (event) => {
+    if (handleGlobalVoucherClose(event)) return;
     const chatAttachment = event.target.closest("[data-team-chat-open]");
     if (chatAttachment) {
       event.preventDefault();
@@ -1937,6 +1958,9 @@ function bindLanding() {
       await api("/team-chat", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text }) });
       teamChatForm.reset();
       await dashboardRefreshTeamChat();
+      setTimeout(() => dashboardRefreshTeamChat().catch(() => {}), 350);
+      setTimeout(() => dashboardRefreshTeamChat().catch(() => {}), 1200);
+      setTimeout(() => dashboardRefreshTeamChat().catch(() => {}), 2400);
     } catch (error) {
       alert(error.message || "Không gửi được tin nhắn.");
     } finally {
@@ -1946,6 +1970,7 @@ function bindLanding() {
     }
   };
   const teamChatPanel = document.querySelector("[data-team-chat-panel]");
+  if (teamChatPanel) startDashboardTeamChatRealtime();
   const teamChatFile = $("#team-chat-file");
   document.querySelector("[data-team-chat-pick]")?.addEventListener("click", () => teamChatFile?.click());
   teamChatFile?.addEventListener("change", async () => {
@@ -2120,7 +2145,7 @@ function bindCustomers() {
   $("#crm-create-form").onsubmit = (event) => {
     event.preventDefault();
     const name = new FormData(event.currentTarget).get("name");
-    CRM_CUSTOMERS.unshift([`KH${String(CRM_CUSTOMERS.length + 101).padStart(4,"0")}`,name,["Chủ đầu tư"],"Trần Mạnh Hùng",0,0,0,0]);
+    CRM_CUSTOMERS.unshift([appAutoSequenceCode("KH", CRM_CUSTOMERS.length),name,["Chủ đầu tư"],"Trần Mạnh Hùng",0,0,0,0]);
     customers();
   };
 }
@@ -2156,6 +2181,21 @@ const CRM_DIRECTORY = {
 };
 
 const crmStatusClass = (status) => status === "Đang hợp tác" ? "active" : status === "Tiềm năng" ? "lead" : "paused";
+function appAutoSequenceCode(prefix = "LD", index = 0, date = new Date()) {
+  return `${prefix}-${dashboardCodeDateToken(date)}-${String(index + 1).padStart(3, "0")}`;
+}
+function appRegexEscape(value = "") {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+function appNextDateSequenceCode(prefix = "LD", rows = [], codeOf = (row) => Array.isArray(row) ? row?.[0] : row?.id) {
+  const token = dashboardCodeDateToken();
+  const pattern = new RegExp(`^${appRegexEscape(prefix)}-${token}-(\\d+)$`);
+  const max = (Array.isArray(rows) ? rows : []).reduce((best, row) => {
+    const match = String(codeOf(row) || "").match(pattern);
+    return Math.max(best, match ? Number(match[1]) || 0 : 0);
+  }, 0);
+  return `${prefix}-${token}-${String(max + 1).padStart(3, "0")}`;
+}
 function crmProjectInfo(project) {
   if (project && typeof project === "object") return { name: String(project.name || project.code || "").trim(), code: String(project.code || "").trim() };
   return { name: String(project || "").trim(), code: "" };
@@ -2170,8 +2210,7 @@ function partnerNameKey(value) {
 }
 function partnerNextCode(type, rows = CRM_DIRECTORY[type]?.rows || []) {
   const prefix = CRM_DIRECTORY[type]?.code || "DT";
-  const max = rows.reduce((best, row) => Math.max(best, Number(String(row?.[0] || "").replace(/\D/g, "")) || 0), 0);
-  return `${prefix}${String(max + 1).padStart(3, "0")}`;
+  return appNextDateSequenceCode(prefix, rows);
 }
 function partnerBlankRow(type, name, rows = CRM_DIRECTORY[type]?.rows || []) {
   return [partnerNextCode(type, rows), name, "", "", "Đang hợp tác", "", 0, 0, [], ""];
@@ -3295,7 +3334,7 @@ function bindCrmDirectory(type, financeData = {}, profileByCode = new Map()) {
       alert("Chọn ít nhất một hạng mục thi công cho nhà thầu.");
       return;
     }
-    const nextCode = data.currentCode || `${config.code}${String(config.rows.length + 1).padStart(3, "0")}`;
+    const nextCode = data.currentCode || partnerNextCode(type, config.rows);
     const index = config.rows.findIndex((item) => item[0] === data.currentCode);
     const previous = index >= 0 ? config.rows[index] : [];
     const group = isSupplier ? categories.join(", ") : isContractor ? contractorCategoryValues.join(", ") : data.group;
@@ -3656,7 +3695,7 @@ function bindDrive() {
         const stored = await uploadDriveFile(file, displayName);
         const updatedAt = stored.updatedAt || new Date().toISOString();
         const expiresAt = stored.expiresAt || new Date(Date.now() + 7 * 86400000).toISOString();
-        files.unshift([`DRV${String(files.length + 1).padStart(3, "0")}`, displayName, driveTypeFromName(displayName), "Chia sẻ", driveFolderTopic(displayName), state.account?.staffName || "LE DOME", updatedAt.slice(0, 10), Math.max(1, Math.ceil(file.size / 1024)), "Toàn công ty", "File gửi nhanh, tự xóa sau 7 ngày", stored.storedName, updatedAt, expiresAt]);
+        files.unshift([appNextDateSequenceCode("DRV", files), displayName, driveTypeFromName(displayName), "Chia sẻ", driveFolderTopic(displayName), state.account?.staffName || "LE DOME", updatedAt.slice(0, 10), Math.max(1, Math.ceil(file.size / 1024)), "Toàn công ty", "File gửi nhanh, tự xóa sau 7 ngày", stored.storedName, updatedAt, expiresAt]);
       }
       await saveDriveFiles(files);
       state.driveUploadMessage = `Đã tải lên ${picked.length} file${skipped ? `, bỏ qua ${skipped} file chưa hỗ trợ.` : "."}`;
@@ -3714,7 +3753,7 @@ function bindDrive() {
     event.preventDefault();
     const data = Object.fromEntries(new FormData(event.currentTarget));
     const files = await loadDriveFiles();
-    files.unshift([`DRV${String(files.length + 1).padStart(3, "0")}`, data.name, data.type, "Chia sẻ", data.topic, state.account?.staffName || "LE DOME", new Date().toISOString().slice(0, 10), 0, data.scope, data.note]);
+    files.unshift([appNextDateSequenceCode("DRV", files), data.name, data.type, "Chia sẻ", data.topic, state.account?.staffName || "LE DOME", new Date().toISOString().slice(0, 10), 0, data.scope, data.note]);
     await saveDriveFiles(files);
     renderDrive();
   };
@@ -3824,7 +3863,7 @@ async function addConfigDocumentFiles(items) {
       const displayName = driveRelativeName(file) || file.name;
       const stored = await uploadConfigDocumentFile(file, displayName);
       const updatedAt = stored.updatedAt || new Date().toISOString();
-      rows.unshift([`GT${String(rows.length + 1).padStart(3, "0")}`, displayName, driveTypeFromName(displayName), "Giấy tờ", driveFolderTopic(displayName), state.account?.staffName || "LE DOME", updatedAt.slice(0, 10), Math.max(1, Math.ceil(file.size / 1024)), "Toàn công ty", "File lưu trữ trong Cấu hình", stored.storedName, updatedAt]);
+      rows.unshift([appNextDateSequenceCode("GT", rows), displayName, driveTypeFromName(displayName), "Giấy tờ", driveFolderTopic(displayName), state.account?.staffName || "LE DOME", updatedAt.slice(0, 10), Math.max(1, Math.ceil(file.size / 1024)), "Toàn công ty", "File lưu trữ trong Cấu hình", stored.storedName, updatedAt]);
     }
     await saveConfigDocuments(rows);
     state.configDocsUploadMessage = `Đã tải lên ${picked.length} file${skipped ? `, bỏ qua ${skipped} file chưa hỗ trợ.` : "."}`;
@@ -3926,7 +3965,7 @@ function bindConfigDocuments() {
       if (!name) name = pickedFile.name;
     }
     const row = [
-      previous?.[0] || `GT${String(rows.length + 1).padStart(3, "0")}`,
+      previous?.[0] || appNextDateSequenceCode("GT", rows),
       name,
       data.type || driveTypeFromName(name),
       data.group || "Giấy tờ",
@@ -3970,8 +4009,7 @@ async function saveMaterialsRows(rows = MATERIAL_ROWS) {
 }
 
 function materialNextId(rows = MATERIAL_ROWS) {
-  const max = rows.reduce((best, row) => Math.max(best, Number(String(row.id || "").replace(/\D/g, "")) || 0), 0);
-  return `VT${String(max + 1).padStart(3, "0")}`;
+  return appNextDateSequenceCode("VT", rows, (row) => row?.id);
 }
 
 function materialQuantity(value) {
@@ -4373,7 +4411,7 @@ function standardList(title, items) {
 
 function standardDossierCode(category) {
   const index = constructionCategoryOptions().findIndex((item) => item === category);
-  return `LD-TC-${String(Math.max(0, index) + 1).padStart(2, "0")}`;
+  return appAutoSequenceCode("LD-TC", Math.max(0, index));
 }
 
 function standardVisualKind(category) {
@@ -5978,6 +6016,26 @@ const ATTENDANCE_RULES = {
   standardDays: 24,
   annualLeave: 12
 };
+const ATTENDANCE_MONTH_STORAGE = "ledome.attendanceMonth.v1";
+const ATTENDANCE_HOLIDAY_STORAGE = "ledome.attendanceHolidays.v1";
+const ATTENDANCE_PUBLIC_HOLIDAYS_BY_YEAR = {
+  2026: [
+    ["2026-01-01","Tết Dương lịch"],
+    ["2026-01-02","Nghỉ bù Tết Dương lịch"],
+    ["2026-02-16","Tết Nguyên đán"],
+    ["2026-02-17","Tết Nguyên đán"],
+    ["2026-02-18","Tết Nguyên đán"],
+    ["2026-02-19","Tết Nguyên đán"],
+    ["2026-02-20","Tết Nguyên đán"],
+    ["2026-04-27","Giỗ Tổ Hùng Vương"],
+    ["2026-04-30","Ngày Giải phóng miền Nam"],
+    ["2026-05-01","Ngày Quốc tế Lao động"],
+    ["2026-08-31","Nghỉ Quốc khánh"],
+    ["2026-09-01","Quốc khánh"],
+    ["2026-09-02","Quốc khánh"],
+    ["2026-11-24","Ngày Văn hóa Việt Nam"]
+  ]
+};
 const ATTENDANCE_MONTH_SAMPLES = [
   { present: 24, leave: 0, lateMinor: 0, lateMajor: 0, earlyMinor: 0, earlyMajor: 0, otHours: 4, otForms: 2, note: "Đủ công, có 2 phiếu OT" },
   { present: 23, leave: 1, lateMinor: 1, lateMajor: 0, earlyMinor: 0, earlyMajor: 0, otHours: 2, otForms: 1, note: "Có 1 ngày phép hưởng lương" },
@@ -5994,35 +6052,163 @@ function attendanceWork(value) {
   const rounded = Math.round(Number(value || 0) * 100) / 100;
   return String(rounded);
 }
-function attendanceMonthlyRows() {
+function attendanceNormalizeMonth(value = ATTENDANCE_RULES.month) {
+  const raw = String(value || "").trim();
+  let match = raw.match(/^(\d{4})-(\d{1,2})$/);
+  if (match) return `${match[1]}-${match[2].padStart(2, "0")}`;
+  match = raw.match(/(\d{1,2})\s*\/\s*(\d{4})/);
+  if (match) return `${match[2]}-${match[1].padStart(2, "0")}`;
+  const fallback = attendanceMonthInfo(ATTENDANCE_RULES.month);
+  return `${fallback.year}-${String(fallback.month).padStart(2, "0")}`;
+}
+function attendanceSelectedMonth() {
+  const fallback = attendanceNormalizeMonth(ATTENDANCE_RULES.month);
+  if (!state.attendanceMonth) {
+    state.attendanceMonth = localStorage.getItem(ATTENDANCE_MONTH_STORAGE) || fallback;
+  }
+  state.attendanceMonth = attendanceNormalizeMonth(state.attendanceMonth || fallback);
+  return state.attendanceMonth;
+}
+function setAttendanceSelectedMonth(value) {
+  state.attendanceMonth = attendanceNormalizeMonth(value);
+  localStorage.setItem(ATTENDANCE_MONTH_STORAGE, state.attendanceMonth);
+}
+function attendanceLocalDate(value) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+function attendanceDateKey(year, month, day) {
+  return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+}
+function attendanceRecordDateKey(value) {
+  const date = attendanceLocalDate(value);
+  return date ? attendanceDateKey(date.getFullYear(), date.getMonth() + 1, date.getDate()) : "";
+}
+function attendanceTimeLabel(value) {
+  const date = attendanceLocalDate(value);
+  return date ? date.toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" }) : "";
+}
+function attendanceMinutes(value) {
+  const match = String(value || "").match(/^(\d{1,2}):(\d{2})$/);
+  return match ? (Number(match[1]) * 60) + Number(match[2]) : NaN;
+}
+function attendanceHolidayStore() {
+  try {
+    return JSON.parse(localStorage.getItem(ATTENDANCE_HOLIDAY_STORAGE) || "{}") || {};
+  } catch {
+    return {};
+  }
+}
+function saveAttendanceHolidayStore(data) {
+  localStorage.setItem(ATTENDANCE_HOLIDAY_STORAGE, JSON.stringify(data || {}));
+}
+function attendanceSuggestedHolidayName(dateKey) {
+  const year = Number(String(dateKey || "").slice(0, 4));
+  return (ATTENDANCE_PUBLIC_HOLIDAYS_BY_YEAR[year] || []).find(([date]) => date === dateKey)?.[1] || "";
+}
+function attendanceHolidaySuggestions(info = attendanceMonthInfo(attendanceSelectedMonth())) {
+  const monthPrefix = `${info.year}-${String(info.month).padStart(2, "0")}-`;
+  return (ATTENDANCE_PUBLIC_HOLIDAYS_BY_YEAR[info.year] || []).filter(([date]) => date.startsWith(monthPrefix));
+}
+function attendanceHolidayName(dateKey, store = attendanceHolidayStore()) {
+  if (Object.prototype.hasOwnProperty.call(store, dateKey)) return store[dateKey] === false ? "" : String(store[dateKey] || "Ngày lễ hưởng lương");
+  return "";
+}
+function attendanceEditHoliday(dateKey) {
+  const store = attendanceHolidayStore();
+  const currentName = attendanceHolidayName(dateKey, store);
+  if (currentName) store[dateKey] = false;
+  else store[dateKey] = attendanceSuggestedHolidayName(dateKey) || "Ngày lễ hưởng lương";
+  saveAttendanceHolidayStore(store);
+  return true;
+}
+function attendanceSuggestedHolidaysActive(info = attendanceMonthInfo(attendanceSelectedMonth()), store = attendanceHolidayStore()) {
+  const suggested = attendanceHolidaySuggestions(info);
+  return suggested.length > 0 && suggested.every(([date]) => Boolean(attendanceHolidayName(date, store)));
+}
+function attendanceToggleSuggestedHolidays(info = attendanceMonthInfo(attendanceSelectedMonth())) {
+  const store = attendanceHolidayStore();
+  const suggested = attendanceHolidaySuggestions(info);
+  const active = attendanceSuggestedHolidaysActive(info, store);
+  suggested.forEach(([date, name]) => {
+    store[date] = active ? false : name;
+  });
+  saveAttendanceHolidayStore(store);
+  return { count: suggested.length, active: !active };
+}
+function attendanceApprovedRecordsByStaffDay(records = [], info = attendanceMonthInfo()) {
+  const map = new Map();
+  (Array.isArray(records) ? records : []).forEach((record) => {
+    if (record.status !== "Hợp lệ") return;
+    const date = attendanceLocalDate(record.capturedAt);
+    if (!date || date.getFullYear() !== info.year || date.getMonth() + 1 !== info.month) return;
+    const key = `${record.employeeId}|${date.getDate()}`;
+    const entry = map.get(key) || { checkIn: "", checkOut: "", site: "", records: [] };
+    const time = attendanceTimeLabel(record.capturedAt);
+    if (record.type === "check-out") entry.checkOut = !entry.checkOut || attendanceMinutes(time) > attendanceMinutes(entry.checkOut) ? time : entry.checkOut;
+    else entry.checkIn = !entry.checkIn || attendanceMinutes(time) < attendanceMinutes(entry.checkIn) ? time : entry.checkIn;
+    entry.site = entry.site || record.siteName || "";
+    entry.records.push(record);
+    map.set(key, entry);
+  });
+  return map;
+}
+function attendanceActualCredit(entry, holidayName = "") {
+  if (holidayName) return "L";
+  if (entry.checkIn && entry.checkOut) {
+    let credit = 1;
+    const startDiff = attendanceMinutes(entry.checkIn) - attendanceMinutes(ATTENDANCE_RULES.workStart);
+    const endDiff = attendanceMinutes(ATTENDANCE_RULES.workEnd) - attendanceMinutes(entry.checkOut);
+    [startDiff, endDiff].forEach((diff) => {
+      if (diff > 30) credit -= 0.5;
+      else if (diff > 15) credit -= 0.3;
+    });
+    return attendanceWork(Math.max(0, credit));
+  }
+  return entry.checkIn || entry.checkOut ? "0.5" : "0";
+}
+function attendanceCreditNumber(record) {
+  if (record.credit === "P" || record.credit === "L") return 1;
+  const value = Number(record.credit || 0);
+  return Number.isFinite(value) ? value : 0;
+}
+function attendanceMonthlyTotals(records, fallback = {}) {
+  const present = records.reduce((sum, record) => sum + (!["rest","holiday","leave"].includes(record.kind) ? attendanceCreditNumber(record) : 0), 0);
+  const leave = records.reduce((sum, record) => sum + (record.credit === "P" || record.credit === "L" ? 1 : 0), 0);
+  const credited = records.reduce((sum, record) => sum + attendanceCreditNumber(record), 0);
+  const fullDays = records.filter((record) => !["rest"].includes(record.kind)).length;
+  const deduction = Math.max(0, fullDays - credited);
+  const otCountedHours = fallback.otForms > 0 ? fallback.otHours : 0;
+  const otWork = otCountedHours / 8;
+  const payable = credited + otWork;
+  const status = payable < ATTENDANCE_RULES.standardDays - 0.5 ? "Thiếu công" : deduction > 0 || (fallback.otHours > 0 && fallback.otForms === 0) ? "Cần kiểm tra" : "Đủ công";
+  return { present, leave, deduction, otCountedHours, otWork, payable, status };
+}
+function attendanceMonthlyRows(phoneRecords = []) {
+  const info = attendanceMonthInfo(attendanceSelectedMonth());
+  const approvedMap = attendanceApprovedRecordsByStaffDay(phoneRecords, info);
+  const holidayStore = attendanceHolidayStore();
   return staffPeople().map((person, index) => {
     const sample = ATTENDANCE_MONTH_SAMPLES[index % ATTENDANCE_MONTH_SAMPLES.length];
     const minorErrors = sample.lateMinor + sample.earlyMinor;
     const majorErrors = sample.lateMajor + sample.earlyMajor;
-    const deduction = (minorErrors * 0.3) + (majorErrors * 0.5);
-    const otCountedHours = sample.otForms > 0 ? sample.otHours : 0;
-    const otWork = otCountedHours / 8;
-    const payable = sample.present + sample.leave + otWork - deduction;
-    const status = payable < 23.5 ? "Thiếu công" : deduction > 0 || (sample.otHours > 0 && sample.otForms === 0) ? "Cần kiểm tra" : "Đủ công";
-    return {
+    const baseRow = {
       ...sample,
       staffCode: person.staffCode,
       staffName: person.staffName,
       role: person.titles[0] || person.roles[0] || "",
       department: person.departments.join(", "),
       minorErrors,
-      majorErrors,
-      deduction,
-      otCountedHours,
-      otWork,
-      payable,
-      status
+      majorErrors
     };
+    const records = attendanceMonthRecords(baseRow, index, info, approvedMap, holidayStore);
+    return { ...baseRow, ...attendanceMonthlyTotals(records, sample), records };
   });
 }
 function attendancePolicyMarkup() {
+  const info = attendanceMonthInfo(attendanceSelectedMonth());
   return `<section class="attendance-policy-panel">
-    <header><div><h3>Quy định chấm công</h3><p>Nội dung này được ghi trực tiếp trong bảng chấm công để nhân sự Le Dome đối chiếu khi tổng hợp lương.</p></div><b>${ATTENDANCE_RULES.month}</b></header>
+    <header><div><h3>Quy định chấm công</h3><p>Nội dung này được ghi trực tiếp trong bảng chấm công để nhân sự Le Dome đối chiếu khi tổng hợp lương.</p></div><b>${escapeHtml(info.label)}</b></header>
     <div class="attendance-rule-grid">
       <article><small>Ca làm việc</small><b>${ATTENDANCE_RULES.workStart} - ${ATTENDANCE_RULES.workEnd}</b><span>Nghỉ trưa ${ATTENDANCE_RULES.lunch}.</span></article>
       <article><small>Lịch làm việc</small><b>Thứ 2 - Thứ 6</b><span>Cộng 2 thứ 7 đầu tiên trong tháng.</span></article>
@@ -6034,7 +6220,19 @@ function attendancePolicyMarkup() {
   </section>`;
 }
 function attendanceMonthInfo(value = ATTENDANCE_RULES.month) {
-  const match = String(value || "").match(/(\d{1,2})\s*\/\s*(\d{4})/);
+  const raw = String(value || "").trim();
+  let match = raw.match(/^(\d{4})-(\d{1,2})$/);
+  if (match) {
+    const month = Number(match[2]);
+    const year = Number(match[1]);
+    return {
+      month,
+      year,
+      days: new Date(year, month, 0).getDate(),
+      label: `${String(month).padStart(2,"0")}/${year}`
+    };
+  }
+  match = raw.match(/(\d{1,2})\s*\/\s*(\d{4})/);
   const fallback = new Date();
   const month = match ? Number(match[1]) : fallback.getMonth() + 1;
   const year = match ? Number(match[2]) : fallback.getFullYear();
@@ -6052,13 +6250,23 @@ function attendanceIsWorkingDay(year, month, day) {
   const weekday = new Date(year, month - 1, day).getDay();
   return (weekday >= 1 && weekday <= 5) || (weekday === 6 && day <= 14);
 }
-function attendanceMonthRecords(row, staffIndex, info) {
+function attendanceMonthRecords(row, staffIndex, info, approvedMap = new Map(), holidayStore = attendanceHolidayStore()) {
   let workIndex = 0;
   return Array.from({ length: info.days }, (_, dayIndex) => {
     const day = dayIndex + 1;
     const isWorkingDay = attendanceIsWorkingDay(info.year, info.month, day);
     const weekday = attendanceWeekdayLabel(info.year, info.month, day);
-    if (!isWorkingDay) return { day, weekday, checkIn: "", checkOut: "", ot: "", credit: "", note: "Ngày nghỉ", kind: "rest" };
+    const dateKey = attendanceDateKey(info.year, info.month, day);
+    const holidayName = attendanceHolidayName(dateKey, holidayStore);
+    const approved = approvedMap.get(`${row.staffCode}|${day}`);
+    if (holidayName) {
+      return { day, weekday, dateKey, checkIn: approved?.checkIn || "", checkOut: approved?.checkOut || "", ot: "", credit: "L", note: holidayName, site: approved?.site || "Ngày lễ quốc gia", kind: "holiday" };
+    }
+    if (approved) {
+      const credit = attendanceActualCredit(approved);
+      return { day, weekday, dateKey, checkIn: approved.checkIn || "--", checkOut: approved.checkOut || "--", ot: "", credit, note: "Phiếu chấm công đã duyệt", site: approved.site, kind: Number(credit) >= 1 ? "ok" : "review" };
+    }
+    if (!isWorkingDay) return { day, weekday, dateKey, checkIn: "", checkOut: "", ot: "", credit: "", note: "Ngày nghỉ", kind: "rest" };
     const currentWorkIndex = workIndex++;
     const lateMinorEnd = row.lateMinor;
     const lateMajorEnd = lateMinorEnd + row.lateMajor;
@@ -6080,6 +6288,7 @@ function attendanceMonthRecords(row, staffIndex, info) {
     return {
       day,
       weekday,
+      dateKey,
       checkIn,
       checkOut,
       ot,
@@ -6093,34 +6302,64 @@ function attendanceMonthRecords(row, staffIndex, info) {
 function attendanceMonthCell(record, field) {
   const value = record[field] || "";
   const tooltip = record.site ? `${record.site} - ${record.note}` : record.note;
-  return `<td class="attendance-month-cell ${record.kind}" title="${escapeHtml(tooltip)}">${escapeHtml(value)}</td>`;
+  const kindClass = record.kind === "review" && field !== "credit" ? "attention" : record.kind;
+  return `<td class="attendance-month-cell ${kindClass}" title="${escapeHtml(tooltip)}">${escapeHtml(value)}</td>`;
 }
 function attendanceMonthStaffRows(row, staffIndex, info) {
-  const records = attendanceMonthRecords(row, staffIndex, info);
+  const records = row.records || attendanceMonthRecords(row, staffIndex, info);
   const baseWork = row.present + row.leave - row.deduction;
-  const identityCells = `<td class="attendance-month-person" rowspan="4"><b>${escapeHtml(row.staffName)}</b><small>${escapeHtml(row.staffCode)}</small></td><td class="attendance-month-role" rowspan="4">${escapeHtml(row.role)}</td><td class="attendance-month-code" rowspan="4">${escapeHtml(row.staffCode)}</td>`;
+  const identityCells = `<td class="attendance-month-person" rowspan="4"><b>${escapeHtml(row.staffName)}</b><small>${escapeHtml(row.role)}</small></td>`;
   const totalCells = `<td class="attendance-month-total" rowspan="4">${attendanceWork(baseWork)}</td><td class="attendance-month-total" rowspan="4">${attendanceWork(row.otWork)}</td><td class="attendance-month-total strong" rowspan="4">${attendanceWork(row.payable)}</td>`;
   const line = (label, field, includeRowspanCells = false) => `<tr class="attendance-month-staff ${staffIndex % 2 ? "alt" : ""}">${includeRowspanCells ? identityCells : ""}<td class="attendance-month-line">${label}</td>${records.map((record) => attendanceMonthCell(record, field)).join("")}${includeRowspanCells ? totalCells : ""}</tr>`;
-  return `${line("S", "checkIn", true)}${line("C", "checkOut")}${line("OT (giờ)", "ot")}${line("TC", "credit")}`;
+  return `${line("Sáng", "checkIn", true)}${line("Chiều", "checkOut")}${line("OT", "ot")}${line("Công", "credit")}`;
+}
+function attendanceHolidayHeaderCell(day, info, holidayStore = attendanceHolidayStore()) {
+  const dateKey = attendanceDateKey(info.year, info.month, day);
+  const holidayName = attendanceHolidayName(dateKey, holidayStore);
+  const working = attendanceIsWorkingDay(info.year, info.month, day);
+  const suggested = attendanceSuggestedHolidayName(dateKey);
+  const title = holidayName ? `Bỏ ngày lễ: ${holidayName}` : suggested ? `Chọn ngày lễ: ${suggested}` : "Chọn ngày lễ hưởng lương";
+  return `<th class="${holidayName ? "holiday" : working ? "" : "rest"}"><button type="button" data-hrm="toggle-attendance-holiday" data-date="${escapeHtml(dateKey)}" title="${escapeHtml(title)}">${day}</button></th>`;
+}
+function attendanceMonthTabs(info = attendanceMonthInfo(attendanceSelectedMonth())) {
+  const months = Array.from({ length: 12 }, (_, index) => {
+    const month = index + 1;
+    const value = `${info.year}-${String(month).padStart(2, "0")}`;
+    return { month, value, active: value === `${info.year}-${String(info.month).padStart(2, "0")}` };
+  });
+  return `<div class="attendance-month-tabs" role="tablist" aria-label="Chọn tháng chấm công">${months.map((item) => `<button type="button" role="tab" aria-selected="${item.active}" class="${item.active ? "active" : ""}" data-hrm="select-attendance-month" data-month="${item.value}">T${item.month}</button>`).join("")}</div>`;
 }
 function attendanceDailyTimeTable(rows) {
-  const info = attendanceMonthInfo();
+  const info = attendanceMonthInfo(attendanceSelectedMonth());
+  const holidayStore = attendanceHolidayStore();
+  const suggestedActive = attendanceSuggestedHolidaysActive(info, holidayStore);
   const days = Array.from({ length: info.days }, (_, index) => index + 1);
-  const dayHeaders = days.map((day) => `<th class="${attendanceIsWorkingDay(info.year, info.month, day) ? "" : "rest"}">${day}</th>`).join("");
-  const weekdayHeaders = days.map((day) => `<th class="${attendanceIsWorkingDay(info.year, info.month, day) ? "" : "rest"}">${attendanceWeekdayLabel(info.year, info.month, day)}</th>`).join("");
+  const layout = { person: 118, line: 64, day: 42, total: 92 };
+  const fixedWidth = layout.person + layout.line + (3 * layout.total);
+  const tableWidth = fixedWidth + (days.length * layout.day);
+  const dayColWidth = `max(${layout.day}px, calc((100% - ${fixedWidth}px) / ${days.length}))`;
+  const dayHeaders = days.map((day) => attendanceHolidayHeaderCell(day, info, holidayStore)).join("");
+  const weekdayHeaders = days.map((day) => {
+    const dateKey = attendanceDateKey(info.year, info.month, day);
+    const holidayName = attendanceHolidayName(dateKey, holidayStore);
+    return `<th class="${holidayName ? "holiday" : attendanceIsWorkingDay(info.year, info.month, day) ? "" : "rest"}">${holidayName ? "Lễ" : attendanceWeekdayLabel(info.year, info.month, day)}</th>`;
+  }).join("");
+  const colgroup = `<colgroup><col style="width:${layout.person}px"><col style="width:${layout.line}px">${days.map(() => `<col style="width:${dayColWidth}">`).join("")}<col style="width:${layout.total}px"><col style="width:${layout.total}px"><col style="width:${layout.total}px"></colgroup>`;
   return `<section class="attendance-daily-card attendance-month-card">
-    <header><div><h3>Bảng chấm công tháng ${escapeHtml(info.label)}</h3><p>Chi tiết giờ vào, giờ ra, OT và công tính theo từng ngày trong tháng.</p></div><span>${rows.length} nhân sự</span></header>
-    <div class="hrm-table-wrap attendance-month-wrap"><table class="hrm-table attendance-month-table"><thead><tr><th class="attendance-month-meta" colspan="4">Thời gian: 01/${escapeHtml(info.label)}</th><th class="attendance-month-title" colspan="${info.days}">Bảng chấm công tháng ${escapeHtml(info.label)}</th><th class="attendance-month-meta" colspan="3">${ATTENDANCE_RULES.standardDays} công chuẩn</th></tr><tr><th>Họ tên</th><th>Chức danh</th><th>Mã NV</th><th></th>${dayHeaders}<th>Công</th><th>Lễ/Thêm</th><th>Tổng công</th></tr><tr><th colspan="4"></th>${weekdayHeaders}<th colspan="3"></th></tr></thead><tbody>${rows.map((row, index) => attendanceMonthStaffRows(row, index, info)).join("")}</tbody></table></div>
+    <header><div><h3>Bảng chấm công tháng ${escapeHtml(info.label)}</h3><p>Phiếu chấm công đã duyệt tự điền Check-in/Check-out; ngày lễ hưởng lương tính 1 công. Bấm vào số ngày để chọn/bỏ ngày lễ.</p></div><div class="attendance-month-actions"><button type="button" class="${suggestedActive ? "active" : ""}" data-hrm="suggest-attendance-holidays">${suggestedActive ? "Tắt gợi ý ngày lễ" : "Gợi ý ngày lễ Việt Nam"}</button></div></header>
+    ${attendanceMonthTabs(info)}
+    <div class="hrm-table-wrap attendance-month-wrap"><table class="hrm-table attendance-month-table" style="width:max(100%, ${tableWidth}px);min-width:${tableWidth}px">${colgroup}<thead><tr><th class="attendance-month-meta" colspan="2">Thời gian: 01/${escapeHtml(info.label)}</th><th class="attendance-month-title" colspan="${info.days}">Bảng chấm công tháng ${escapeHtml(info.label)}</th><th class="attendance-month-meta" colspan="3">${ATTENDANCE_RULES.standardDays} công chuẩn</th></tr><tr><th>Nhân sự</th><th></th>${dayHeaders}<th>Công</th><th>Lễ/Thêm</th><th>Tổng công</th></tr><tr><th colspan="2"></th>${weekdayHeaders}<th colspan="3"></th></tr></thead><tbody>${rows.map((row, index) => attendanceMonthStaffRows(row, index, info)).join("")}</tbody></table></div>
   </section>`;
 }
 function attendanceSummaryTable(rows) {
+  const info = attendanceMonthInfo(attendanceSelectedMonth());
   const totalPresent = rows.reduce((sum, row) => sum + row.present, 0);
   const totalLeave = rows.reduce((sum, row) => sum + row.leave, 0);
   const totalDeduction = rows.reduce((sum, row) => sum + row.deduction, 0);
   const totalOtWork = rows.reduce((sum, row) => sum + row.otWork, 0);
   const totalPayable = rows.reduce((sum, row) => sum + row.payable, 0);
   return `<section class="attendance-summary-card">
-    <header><div><h3>Bảng tổng hợp công tháng ${ATTENDANCE_RULES.month}</h3><p>Danh sách lấy từ mục Nhân sự Le Dome, gộp người kiêm nhiệm để chấm công theo từng nhân sự thật.</p></div><button>Xuất bảng công</button></header>
+    <header><div><h3>Bảng tổng hợp công tháng ${escapeHtml(info.label)}</h3><p>Danh sách lấy từ mục Nhân sự Le Dome, gộp người kiêm nhiệm để chấm công theo từng nhân sự thật.</p></div><button>Xuất bảng công</button></header>
     <div class="hrm-table-wrap"><table class="hrm-table attendance-summary-table"><thead><tr><th>Nhân sự</th><th>Phòng ban / vai trò</th><th>Công chuẩn</th><th>Có mặt</th><th>Phép</th><th>Trừ công</th><th>OT hợp lệ</th><th>Công tính</th><th>Trạng thái</th><th>Ghi chú</th></tr></thead><tbody>
       ${rows.map((row) => `<tr>
         <td class="attendance-person"><b>${escapeHtml(row.staffName)}</b><small>${escapeHtml(row.staffCode)}</small></td>
@@ -6137,12 +6376,13 @@ function attendanceSummaryTable(rows) {
     </tbody><tfoot><tr><td colspan="3">Tổng cộng</td><td>${attendanceWork(totalPresent)}</td><td>${attendanceWork(totalLeave)}</td><td class="attendance-negative">-${attendanceWork(totalDeduction)}</td><td>${attendanceWork(totalOtWork)} công</td><td>${attendanceWork(totalPayable)}</td><td colspan="2"></td></tr></tfoot></table></div>
   </section>`;
 }
-function attendanceEvidenceTable(rows) {
+function attendanceRecordListTable(rows) {
   return `<section class="attendance-evidence-card">
-    <header><div><h3>Chứng cứ chấm công điện thoại</h3><p>Dữ liệu check-in/check-out vẫn dùng để duyệt GPS, ảnh xác thực và đối chiếu khi chốt bảng công.</p></div><span>${rows.length} bản ghi</span></header>
-    <div class="hrm-table-wrap"><table class="hrm-table attendance-table"><thead><tr><th>Nhân sự</th><th>Check-in</th><th>Check-out</th><th>Điểm chấm công</th><th>Ảnh xác thực</th><th>GPS</th><th>Trạng thái</th><th></th></tr></thead><tbody>${rows.map((row) => `<tr><td><b>${escapeHtml(row[1])}</b><small>${escapeHtml(row[0])}</small></td><td>${escapeHtml(row[2])}</td><td>${escapeHtml(row[3])}</td><td>${escapeHtml(row[4])}</td><td><b class="face-score">◉ ${escapeHtml(row[5])}</b></td><td>${attendanceGpsBadge(row)}</td><td>${hrmStatus(row[7])}</td><td><button class="hrm-view" data-hrm="evidence" data-code="${escapeHtml(row[0])}" data-record="${escapeHtml(row[8] || "")}">Xem</button></td></tr>`).join("")}</tbody></table></div>
+    <header><div><h3>Danh sách chấm công</h3><p>Bảng này lưu trữ tất cả phiếu chấm công đã duyệt Hợp lệ. Dữ liệu được lưu trong vòng 2 tháng rồi tự động xóa.</p></div><span>${rows.length} bản ghi hợp lệ</span></header>
+    <div class="hrm-table-wrap"><table class="hrm-table attendance-table"><thead><tr><th>Nhân sự</th><th>Check-in</th><th>Check-out</th><th>Điểm chấm công</th><th>Ảnh xác thực</th><th>GPS</th><th>Trạng thái</th><th></th></tr></thead><tbody>${rows.length ? rows.map((row) => `<tr><td><b>${escapeHtml(row[1])}</b><small>${escapeHtml(row[0])}</small></td><td>${escapeHtml(row[2])}</td><td>${escapeHtml(row[3])}</td><td>${escapeHtml(row[4])}</td><td><b class="face-score">◉ ${escapeHtml(row[5])}</b></td><td>${attendanceGpsBadge(row)}</td><td>${hrmStatus(row[7])}</td><td><button class="hrm-view" data-hrm="evidence" data-code="${escapeHtml(row[0])}" data-record="${escapeHtml(row[8] || "")}">Xem</button></td></tr>`).join("") : `<tr><td colspan="8" class="attendance-empty">Chưa có phiếu chấm công hợp lệ.</td></tr>`}</tbody></table></div>
   </section>`;
 }
+const attendanceEvidenceTable = attendanceRecordListTable;
 function attendanceGpsInfoFromRecord(record) {
   const rawDistance = record.distanceMeters;
   const distance = Number(rawDistance);
@@ -6175,16 +6415,75 @@ function attendanceGpsBadge(row) {
   const gps = attendanceGpsInfoFromRow(row);
   return `<div class="attendance-gps ${gps.tone}"><b>${escapeHtml(gps.status)}</b><small>${escapeHtml(gps.note)}</small><em>${escapeHtml(gps.detail)}</em></div>`;
 }
+function attendanceFaceInfoFromRecord(record = {}) {
+  const passed = record.faceStatus === "Đạt" || Boolean(record.hasFacePhoto || record.faceEvidence || record.facePhotoAt);
+  const note = record.faceNote || (passed ? "Ảnh xác thực đạt" : "Chưa có ảnh xác thực đạt");
+  const text = record.faceEvidence || (passed ? "Đã chụp ảnh" : "Không đạt");
+  return { status: passed ? "Đạt" : "Không đạt", tone: passed ? "ok" : "bad", note, text };
+}
+function attendanceFaceBadge(row) {
+  const face = attendanceFaceInfoFromRecord(row[12] || {});
+  return `<div class="attendance-gps ${face.tone}"><b>${escapeHtml(face.status)}</b><small>${escapeHtml(face.text)}</small><em>${escapeHtml(face.note)}</em></div>`;
+}
+function attendanceDeviceLabel(device = "") {
+  const raw = String(device || "").trim();
+  if (!raw) return "Không có thông tin thiết bị";
+  const platform = /iphone|ipad|ios/i.test(raw) ? "iPhone / iPad" : /android/i.test(raw) ? "Android" : /windows/i.test(raw) ? "Windows" : /mac os|macintosh/i.test(raw) ? "macOS" : "Thiết bị";
+  const browser = /edg\//i.test(raw) ? "Edge" : /chrome\//i.test(raw) ? "Chrome" : /safari\//i.test(raw) ? "Safari" : "";
+  return [platform, browser].filter(Boolean).join(" - ");
+}
+function attendanceCoordinate(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number.toFixed(6) : "";
+}
+function attendanceEvidenceRow(label, value, className = "") {
+  return `<p class="${className}"><span>${escapeHtml(label)}</span><b>${escapeHtml(value || "--")}</b></p>`;
+}
+function attendanceEvidenceDetail(row) {
+  const record = row[12] || {};
+  const gps = attendanceGpsInfoFromRow(row);
+  const typeLabel = row[9] === "check-out" ? "Check-out" : row[9] === "check-in" ? "Check-in" : row[3] && row[3] !== "--" ? "Check-out" : "Check-in";
+  const latitude = attendanceCoordinate(record.latitude);
+  const longitude = attendanceCoordinate(record.longitude);
+  const hasMap = latitude && longitude;
+  const mapQuery = hasMap ? `${latitude},${longitude}` : "";
+  const mapUrl = hasMap ? `https://maps.google.com/maps?q=${encodeURIComponent(mapQuery)}&z=18&output=embed` : "";
+  const mapLink = hasMap ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(mapQuery)}` : "";
+  const statusClass = gps.tone === "ok" ? "ok" : "bad";
+  return `<header><b>Chi tiết xác thực</b><button data-hrm="close-evidence">×</button></header>
+    <section class="evidence-summary ${statusClass}">
+      <b>${escapeHtml(typeLabel)} · ${escapeHtml(row[4] || "Điểm chấm công")}</b>
+      <span>${escapeHtml(row[10] || "")}</span>
+      <i>${escapeHtml(row[7] || "")}</i>
+    </section>
+    <section class="evidence-media">
+      <div class="face-preview"><i>◎</i><span>${escapeHtml(`${attendanceFaceInfoFromRecord(record).status} - ${row[5] || "Đã chụp ảnh"}`)}</span></div>
+      ${hasMap ? `<div class="evidence-map-frame"><iframe title="Vị trí GPS bản ghi chấm công" loading="lazy" referrerpolicy="no-referrer-when-downgrade" src="${escapeHtml(mapUrl)}"></iframe></div><a class="evidence-map-link" href="${escapeHtml(mapLink)}" target="_blank" rel="noopener">Mở vị trí GPS trên Google Maps</a>` : `<div class="gps-preview"><b>⌖</b><span>Không có tọa độ GPS để mở bản đồ</span></div>`}
+    </section>
+    <section class="evidence-fields">
+      ${attendanceEvidenceRow("Nhân sự", `${row[1] || ""} (${row[0] || ""})`)}
+      ${attendanceEvidenceRow("Loại phiếu", typeLabel)}
+      ${attendanceEvidenceRow("Điểm chấm công", row[4])}
+      ${attendanceEvidenceRow("Thời gian", row[10] || (typeLabel === "Check-out" ? row[3] : row[2]))}
+      ${attendanceEvidenceRow("GPS", `${gps.status} - ${gps.note}`, statusClass)}
+      ${attendanceEvidenceRow("Khoảng cách", gps.detail)}
+      ${attendanceEvidenceRow("Tọa độ", hasMap ? `${latitude}, ${longitude}` : "")}
+      ${attendanceEvidenceRow("Độ chính xác", Number.isFinite(Number(record.accuracy)) ? `±${Math.round(Number(record.accuracy))} m` : "")}
+      ${attendanceEvidenceRow("Thiết bị", attendanceDeviceLabel(record.device))}
+    </section>
+    <footer><button class="btn secondary" data-hrm="close-evidence">Đóng</button>${row[7] === "Cần duyệt" ? `<button class="btn" data-hrm="approve-attendance" data-record="${escapeHtml(row[8] || "")}" data-code="${escapeHtml(row[0] || "")}">Duyệt bản ghi</button>` : ""}</footer>`;
+}
 function attendanceApprovalTable(rows) {
   const sorted = [...rows].sort((a, b) => (a[7] === "Cần duyệt" ? -1 : 0) - (b[7] === "Cần duyệt" ? -1 : 0));
   const pending = sorted.filter((row) => row[7] === "Cần duyệt").length;
-  const body = sorted.length ? sorted.map((row) => {
+  const reviewRows = sorted.filter((row) => row[7] === "Cần duyệt");
+  const body = reviewRows.length ? reviewRows.map((row) => {
     const canApprove = row[7] === "Cần duyệt";
     const typeLabel = row[9] === "check-out" ? "Check-out" : "Check-in";
-    return `<tr><td class="attendance-person"><b>${escapeHtml(row[1])}</b><small>${escapeHtml(row[0])}</small></td><td><strong>${escapeHtml(typeLabel)}</strong><small>${escapeHtml(row[10] || "")}</small></td><td>${escapeHtml(row[4])}</td><td><b class="face-score">◉ ${escapeHtml(row[5])}</b></td><td>${attendanceGpsBadge(row)}</td><td>${hrmStatus(row[7])}</td><td class="attendance-approval-actions"><button class="hrm-view" data-hrm="evidence" data-code="${escapeHtml(row[0])}" data-record="${escapeHtml(row[8] || "")}">Xem</button>${canApprove ? `<button class="hrm-view approve" data-hrm="approve-attendance" data-code="${escapeHtml(row[0])}" data-record="${escapeHtml(row[8] || "")}">Xét duyệt</button>` : ""}</td></tr>`;
-  }).join("") : `<tr><td colspan="7" class="attendance-empty">Chưa có phiếu chấm công từ điện thoại.</td></tr>`;
+    return `<tr><td class="attendance-person"><b>${escapeHtml(row[1])}</b><small>${escapeHtml(row[0])}</small></td><td><strong>${escapeHtml(typeLabel)}</strong><small>${escapeHtml(row[10] || "")}</small></td><td>${escapeHtml(row[4])}</td><td>${attendanceFaceBadge(row)}</td><td>${attendanceGpsBadge(row)}</td><td>${hrmStatus(row[7])}</td><td class="attendance-approval-actions"><button class="hrm-view" data-hrm="evidence" data-code="${escapeHtml(row[0])}" data-record="${escapeHtml(row[8] || "")}">Xem</button>${canApprove ? `<button class="hrm-view approve" data-hrm="approve-attendance" data-code="${escapeHtml(row[0])}" data-record="${escapeHtml(row[8] || "")}">Xét duyệt</button>` : ""}</td></tr>`;
+  }).join("") : `<tr><td colspan="7" class="attendance-empty">Chưa có phiếu chấm công cần duyệt.</td></tr>`;
   return `<section class="attendance-approval-card">
-    <header><div><h3>Xét duyệt chấm công</h3><p>Phiếu chấm công nhân viên gửi từ điện thoại sẽ hiện tại đây để kiểm tra GPS, ảnh xác thực và xét duyệt.</p></div><span>${pending} cần duyệt / ${rows.length} phiếu</span></header>
+    <header><div><h3>Xét duyệt chấm công</h3><p>Chỉ hiển thị các phiếu chấm công nhân viên gửi từ điện thoại đang cần kiểm tra GPS, ảnh xác thực và xét duyệt.</p></div><span>${pending} cần duyệt</span></header>
     <div class="hrm-table-wrap"><table class="hrm-table attendance-approval-table"><thead><tr><th>Nhân sự</th><th>Loại phiếu</th><th>Điểm chấm công</th><th>Ảnh xác thực</th><th>GPS</th><th>Trạng thái</th><th></th></tr></thead><tbody>${body}</tbody></table></div>
   </section>`;
 }
@@ -6241,6 +6540,14 @@ function orgAssignmentList(staff) {
   const key = personKey(staff?.[1]);
   return ORG_STAFF.filter((row) => personKey(row[1]) === key).map((row) => `<p><span>${escapeHtml(row[3])}</span><b>${escapeHtml(row[2])}</b><small>Account: ${escapeHtml(row[0])}</small></p>`).join("");
 }
+function orgNextPositionCode() {
+  const token = dashboardCodeDateToken();
+  const max = ORG_STAFF.reduce((best, row) => {
+    const match = String(row?.[0] || "").match(new RegExp(`^NS-${token}-(\\d+)$`));
+    return Math.max(best, match ? Number(match[1]) || 0 : 0);
+  }, 0);
+  return `NS-${token}-${String(max + 1).padStart(3, "0")}`;
+}
 
 async function hrmStaff() {
   await loadOrgStaff();
@@ -6250,7 +6557,7 @@ async function hrmStaff() {
   $("#app").innerHTML = `<section class="hrm-page org-management-page">${hrmHeader("♟ Nhân sự","Tách nhân sự thật khỏi vị trí đảm nhiệm. Kéo nhân sự Ledome vào từng vị trí để gán account và phân quyền riêng.",'<button class="btn" data-hrm="add-staff">＋ Thêm vị trí</button>')}
   <div class="org-layout"><div class="org-main-panel">${orgPeoplePool()}<section class="org-tree"><div class="org-toolbar"><b>Sơ đồ cây cấu trúc bộ máy</b><span>${people.length} nhân sự thật · ${ORG_STAFF.length} vị trí/account</span><button data-hrm="add-staff">＋</button></div>${orgTreeBranches()}</section></div>
   <aside class="org-profile"><header><span>Vị trí đảm nhiệm</span><button data-hrm="edit-staff" data-code="${selected[0]}" title="Chỉnh sửa">✎</button></header><img src="${escapeHtml(orgPersonByKey(personKey(selected[1]))?.photo || selected[8])}" alt="${escapeHtml(selected[1])}"><h2>${escapeHtml(selected[2])}</h2><strong>${escapeHtml(selected[3])}</strong>${hrmStatus(selected[6])}<div class="org-profile-info"><p><span>Mã vị trí / account</span><b>${escapeHtml(selected[0])}</b></p><p><span>Nhân sự đang gán</span><b>${escapeHtml(selected[1])}</b></p><p><span>Điện thoại</span><b>${escapeHtml(selected[4])}</b></p><p><span>Email</span><b>${escapeHtml(selected[5])}</b></p><p><span>Phụ trách</span><b>${escapeHtml(selected[7])}</b></p></div><section class="org-person-assignments"><h3>Các vị trí của ${escapeHtml(selected[1])}</h3>${orgAssignmentList(selected)}</section><button class="org-detail" data-hrm="staff-private" data-code="${selected[0]}">Hồ sơ nhân sự <small>Chỉ Ban lãnh đạo</small></button><button class="org-edit" data-hrm="edit-staff" data-code="${selected[0]}">✎ Gán / chỉnh vị trí</button><button class="org-delete" data-hrm="delete-staff" data-code="${selected[0]}">× Xóa vị trí</button></aside></div>
-  <div class="directory-modal" id="hrm-staff-modal"><form id="hrm-staff-form"><header><h3 id="hrm-staff-modal-title">Thêm vị trí đảm nhiệm</h3><button type="button" data-hrm="close">×</button></header><input type="hidden" name="currentCode"><label>Mã vị trí / account<input name="code" value="NS${String(ORG_STAFF.length + 1).padStart(3,"0")}"></label><label>Nhân sự Ledome<select name="personKey" data-org-person-select>${orgPeopleOptions()}</select></label><label>Họ và tên<input name="name" required placeholder="Nhân sự đảm nhiệm"></label><label>Vị trí đảm nhiệm<select name="role">${["Giám đốc","Phó giám đốc","Trưởng phòng thiết kế","Kiến trúc sư","Trưởng phòng thi công","Giám sát thi công","Kỹ sư","Hành chính","Kế toán","Nhân sự","Marketing & Sale"].map((role) => `<option>${role}</option>`).join("")}</select></label><label>Phòng ban<select name="department">${["Ban lãnh đạo","Phòng thiết kế","Phòng thi công","Khối văn phòng","Khối kinh doanh"].map((department) => `<option>${department}</option>`).join("")}</select></label><label>Số điện thoại<input name="phone" placeholder="Nhập số điện thoại"></label><label>Email<input name="email" type="email" placeholder="email@ledome.vn"></label><label>Trạng thái<select name="status"><option>Đang làm việc</option><option>Tạm nghỉ</option></select></label><label>Phụ trách<input name="scope" placeholder="Nhiệm vụ hoặc dự án"></label><label class="directory-form-wide">URL ảnh hồ sơ<input name="photo" placeholder="https://..."></label><footer><button type="button" class="btn secondary" data-hrm="close">Đóng</button><button class="btn">Lưu vị trí</button></footer></form></div></section>`;
+  <div class="directory-modal" id="hrm-staff-modal"><form id="hrm-staff-form"><header><h3 id="hrm-staff-modal-title">Thêm vị trí đảm nhiệm</h3><button type="button" data-hrm="close">×</button></header><input type="hidden" name="currentCode"><label>Mã vị trí / account<input name="code" value="${orgNextPositionCode()}"></label><label>Nhân sự Ledome<select name="personKey" data-org-person-select>${orgPeopleOptions()}</select></label><label>Họ và tên<input name="name" required placeholder="Nhân sự đảm nhiệm"></label><label>Vị trí đảm nhiệm<select name="role">${["Giám đốc","Phó giám đốc","Trưởng phòng thiết kế","Kiến trúc sư","Trưởng phòng thi công","Giám sát thi công","Kỹ sư","Hành chính","Kế toán","Nhân sự","Marketing & Sale"].map((role) => `<option>${role}</option>`).join("")}</select></label><label>Phòng ban<select name="department">${["Ban lãnh đạo","Phòng thiết kế","Phòng thi công","Khối văn phòng","Khối kinh doanh"].map((department) => `<option>${department}</option>`).join("")}</select></label><label>Số điện thoại<input name="phone" placeholder="Nhập số điện thoại"></label><label>Email<input name="email" type="email" placeholder="email@ledome.vn"></label><label>Trạng thái<select name="status"><option>Đang làm việc</option><option>Tạm nghỉ</option></select></label><label>Phụ trách<input name="scope" placeholder="Nhiệm vụ hoặc dự án"></label><label class="directory-form-wide">URL ảnh hồ sơ<input name="photo" placeholder="https://..."></label><footer><button type="button" class="btn secondary" data-hrm="close">Đóng</button><button class="btn">Lưu vị trí</button></footer></form></div></section>`;
   bindHrm("staff");
 }
 
@@ -6302,24 +6609,28 @@ async function hrmAttendance() {
       record.id,
       record.type,
       new Date(record.capturedAt).toLocaleString("vi-VN"),
-      gpsInfo
+      gpsInfo,
+      record
     ];
   });
   const attendanceRows = phoneRows.concat(HRM_ATTENDANCE);
-  const monthlyRows = attendanceMonthlyRows();
+  const approvedPhoneRows = phoneRows.filter((row) => row[7] === "Hợp lệ");
+  const attendanceMonth = attendanceSelectedMonth();
+  const attendanceInfo = attendanceMonthInfo(attendanceMonth);
+  const monthlyRows = attendanceMonthlyRows(runtime.data);
   const totalPayable = monthlyRows.reduce((sum, row) => sum + row.payable, 0);
   const totalDeduction = monthlyRows.reduce((sum, row) => sum + row.deduction, 0);
   const totalOtHours = monthlyRows.reduce((sum, row) => sum + row.otCountedHours, 0);
   const pendingRows = monthlyRows.filter((row) => row.status !== "Đủ công").length;
   setTitle("hrm-attendance", "");
-  $("#app").innerHTML = `<section class="hrm-page attendance-page">${hrmHeader("▣ Bảng chấm công","Tổng hợp kết quả chấm công tháng của nhân sự Le Dome",'<button class="btn attendance-mobile-link" type="button" data-hrm="open-attendance-form">▣ Mở trang chấm công điện thoại</button>')}${hrmStats([["Kỳ công",ATTENDANCE_RULES.month,`${ATTENDANCE_RULES.standardDays} công chuẩn / tháng`],["Nhân sự Le Dome",monthlyRows.length,"Lấy từ danh sách Nhân sự"],["Tổng công tính",attendanceWork(totalPayable),"Sau phép, OT và khấu trừ"],["Cần kiểm tra",pendingRows,`Khấu trừ ${attendanceWork(totalDeduction)} công · OT ${attendanceWork(totalOtHours)} giờ`]])}
-  <div class="hrm-tools attendance-tools"><input placeholder="⌕ Tìm nhân sự, phòng ban hoặc ghi chú"><input type="month" value="2026-06"><select><option>Tất cả trạng thái</option><option>Đủ công</option><option>Cần kiểm tra</option><option>Thiếu công</option></select><button>↻ Tính lại</button><button>▣ Xuất Excel</button></div>
+  $("#app").innerHTML = `<section class="hrm-page attendance-page">${hrmHeader("▣ Bảng chấm công","Tổng hợp kết quả chấm công tháng của nhân sự Le Dome",'<button class="btn attendance-mobile-link" type="button" data-hrm="open-attendance-form">▣ Mở trang chấm công điện thoại</button>')}${hrmStats([["Kỳ công",attendanceInfo.label,`${ATTENDANCE_RULES.standardDays} công chuẩn / tháng`],["Nhân sự Le Dome",monthlyRows.length,"Lấy từ danh sách Nhân sự"],["Tổng công tính",attendanceWork(totalPayable),"Sau phép, OT và khấu trừ"],["Cần kiểm tra",pendingRows,`Khấu trừ ${attendanceWork(totalDeduction)} công · OT ${attendanceWork(totalOtHours)} giờ`]])}
+  <div class="hrm-tools attendance-tools"><input placeholder="⌕ Tìm nhân sự, phòng ban hoặc ghi chú"><input type="month" data-attendance-month-input value="${escapeHtml(attendanceMonth)}"><select><option>Tất cả trạng thái</option><option>Đủ công</option><option>Cần kiểm tra</option><option>Thiếu công</option></select><button>↻ Tính lại</button><button>▣ Xuất Excel</button></div>
   ${attendanceApprovalTable(phoneRows)}
   ${attendanceDailyTimeTable(monthlyRows)}
   ${attendanceSummaryTable(monthlyRows)}
-  ${attendanceEvidenceTable(attendanceRows)}
+  ${attendanceRecordListTable(approvedPhoneRows)}
   ${attendancePolicyMarkup()}
-  <aside class="hrm-evidence" id="hrm-evidence"><header><b>Chi tiết xác thực</b><button data-hrm="close-evidence">×</button></header><div class="face-preview"><i>◎</i><span>Face ID</span></div><div class="gps-preview"><b>⌖</b><span>Vị trí GPS từ điện thoại</span></div><p><span>Nhân sự</span><b id="evidence-name"></b></p><p><span>Thiết bị</span><b>Điện thoại cá nhân</b></p><p><span>Độ khớp Face ID</span><b id="evidence-face"></b></p><p><span>Kết quả GPS</span><b id="evidence-gps"></b></p><footer><button class="btn secondary" data-hrm="close-evidence">Đóng</button><button class="btn" data-hrm="approve-attendance">Duyệt bản ghi</button></footer></aside></section>`;
+  <aside class="hrm-evidence" id="hrm-evidence"></aside></section>`;
   bindHrm("attendance", attendanceRows);
 }
 
@@ -6531,11 +6842,27 @@ function bindPayrollEditors() {
 function bindHrm(type, attendanceRows = HRM_ATTENDANCE) {
   if (type === "staff") bindOrgDragDrop();
   $("#app").onclick = async (event) => {
+    if (handleGlobalVoucherClose(event)) return;
     const action = event.target.closest("[data-hrm]")?.dataset.hrm;
     if (action === "open-attendance-form") return openAttendanceForm(event);
+    if (action === "select-attendance-month") {
+      const month = event.target.closest("[data-month]")?.dataset.month;
+      if (month) setAttendanceSelectedMonth(month);
+      return hrmAttendance();
+    }
+    if (action === "suggest-attendance-holidays") {
+      const result = attendanceToggleSuggestedHolidays(attendanceMonthInfo(attendanceSelectedMonth()));
+      if (!result.count) alert("Tháng này chưa có ngày lễ gợi ý. Có thể bấm trực tiếp vào số ngày trên bảng để chọn ngày lễ.");
+      return hrmAttendance();
+    }
+    if (action === "toggle-attendance-holiday") {
+      const dateKey = event.target.closest("[data-date]")?.dataset.date;
+      if (dateKey && !attendanceEditHoliday(dateKey)) return;
+      return hrmAttendance();
+    }
     if (action === "add-staff") {
       $("#hrm-staff-form").reset();
-      $("#hrm-staff-form").elements.code.value = `NS${String(ORG_STAFF.length + 1).padStart(3,"0")}`;
+      $("#hrm-staff-form").elements.code.value = orgNextPositionCode();
       $("#hrm-staff-modal-title").textContent = "Thêm vị trí đảm nhiệm";
       orgFillPersonFields($("#hrm-staff-form"), staffPeople()[0]);
       return $("#hrm-staff-modal").classList.add("open");
@@ -6581,12 +6908,11 @@ function bindHrm(type, attendanceRows = HRM_ATTENDANCE) {
       const trigger = event.target.closest("[data-code]");
       const row = attendanceRows.find((item) => item[0] === trigger.dataset.code && (item[8] || "") === trigger.dataset.record);
       if (!row) return;
-      $("#evidence-name").textContent = row[1];
-      $("#evidence-face").textContent = row[5];
-      $("#evidence-gps").textContent = attendanceGpsText(row);
-      $("#hrm-evidence").dataset.code = row[0];
-      $("#hrm-evidence").dataset.record = row[8] || "";
-      return $("#hrm-evidence").classList.add("open");
+      const panel = $("#hrm-evidence");
+      panel.innerHTML = attendanceEvidenceDetail(row);
+      panel.dataset.code = row[0];
+      panel.dataset.record = row[8] || "";
+      return panel.classList.add("open");
     }
     if (action === "approve-attendance") {
       const trigger = event.target.closest("[data-record]");
@@ -6667,12 +6993,19 @@ function bindHrm(type, attendanceRows = HRM_ATTENDANCE) {
     selectedOrgStaff = row[0];
     hrmStaff();
   };
+  if (type === "attendance") {
+    const monthInput = document.querySelector("[data-attendance-month-input]");
+    if (monthInput) monthInput.onchange = () => {
+      setAttendanceSelectedMonth(monthInput.value);
+      hrmAttendance();
+    };
+  }
   if (type === "overtime" && $("#hrm-overtime-form")) $("#hrm-overtime-form").onsubmit = (event) => {
     event.preventDefault();
     const data = Object.fromEntries(new FormData(event.currentTarget));
     const hours = overtimeHours(data.start, data.end);
     if (hours <= 0) return alert("Giờ kết thúc phải sau giờ bắt đầu.");
-    const code = `OT-${String(HRM_OVERTIME.length + 1).padStart(3, "0")}`;
+    const code = dashboardSequenceCode("OT", HRM_OVERTIME.length, dashboardVoucherDateFromInput(data.date));
     HRM_OVERTIME.unshift([code, data.staff, overtimeDisplayDate(data.date), data.project, data.start, data.end, hours, data.reason, "Cần duyệt", Math.round(hours * OVERTIME_RATE_PER_HOUR), data.voucherType || overtimeVoucherTypeOptions()[0] || ""]);
     saveHrmOvertime();
     hrmOvertime();
@@ -6681,7 +7014,7 @@ function bindHrm(type, attendanceRows = HRM_ATTENDANCE) {
     event.preventDefault();
     const data = Object.fromEntries(new FormData(event.currentTarget));
     const days = leaveDayCount(data.fromDate, data.toDate);
-    const code = `NP-${String(HRM_LEAVE.length + 1).padStart(3, "0")}`;
+    const code = dashboardSequenceCode("NP", HRM_LEAVE.length, dashboardVoucherDateFromInput(data.fromDate));
     const note = [data.reason, data.handover ? `Bàn giao: ${data.handover}` : ""].filter(Boolean).join(" · ");
     HRM_LEAVE.unshift([code, data.staff, projectDateDisplayValue(data.fromDate), projectDateDisplayValue(data.toDate), days, data.leaveType, note, "Cần duyệt", data.approver]);
     saveHrmLeave();
@@ -7546,6 +7879,7 @@ function catalogCanEditType(type) {
 
 function bindCatalog() {
   $("#app").onclick = async (event) => {
+    if (handleGlobalVoucherClose(event)) return;
     const voucherForm = event.target.closest("[data-catalog-voucher-form]")?.dataset.catalogVoucherForm;
     if (voucherForm) {
       event.preventDefault();
@@ -7558,8 +7892,6 @@ function bindCatalog() {
       event.stopPropagation();
       return openDashboardVoucherForm("", customVoucherForm);
     }
-    if (event.target.id === "dashboard-voucher-form-modal") return closeDashboardVoucherForm();
-    if (event.target.closest('[data-action="close-voucher-form"]')) return closeDashboardVoucherForm();
     const editButton = event.target.closest("[data-catalog-edit]");
     if (editButton) {
       refreshCatalogFromDom();
@@ -7831,7 +8163,7 @@ async function hrmOverview() {
   const people = staffPeople();
   const attendanceRows = phoneRows.map((record) => {
     const gpsInfo = attendanceGpsInfoFromRecord(record);
-    return [record.employeeId, record.employeeName, record.type === "check-in" ? new Date(record.capturedAt).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" }) : "--", record.type === "check-out" ? new Date(record.capturedAt).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" }) : "--", record.siteName, record.faceEvidence || "Đã chụp ảnh", gpsInfo.text, record.status, record.id, record.type, new Date(record.capturedAt).toLocaleString("vi-VN"), gpsInfo];
+    return [record.employeeId, record.employeeName, record.type === "check-in" ? new Date(record.capturedAt).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" }) : "--", record.type === "check-out" ? new Date(record.capturedAt).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" }) : "--", record.siteName, record.faceEvidence || "Đã chụp ảnh", gpsInfo.text, record.status, record.id, record.type, new Date(record.capturedAt).toLocaleString("vi-VN"), gpsInfo, record];
   }).concat(HRM_ATTENDANCE);
   const payrollTotal = HRM_PAYROLL.reduce((sum, row) => sum + payrollNetSalary(row), 0);
   const departmentGroups = [...new Set(ORG_STAFF.map((staff) => staff[3]))].map((department) => [department, ORG_STAFF.filter((staff) => staff[3] === department).length]);
@@ -7955,6 +8287,7 @@ async function init() {
   addEventListener("resize", syncSidebarToggle);
   addEventListener("message", handleAttendanceSubmitted);
   addEventListener("storage", handleAttendanceSubmittedStorage);
+  document.body.addEventListener("click", handleGlobalVoucherClose, true);
   document.body.onclick = async (event) => {
     const notificationWrap = event.target.closest(".notification-wrap");
     if (event.target.closest("[data-attendance-open]")) return openAttendanceForm(event);

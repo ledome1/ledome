@@ -78,6 +78,7 @@
   .project-overview .schedule-focus{overflow:auto}
   .project-overview .schedule-focus table{min-width:760px;table-layout:auto}
 }
+
 .catalog-construction-groups.editing article{border-style:dashed}
 .catalog-construction-groups article.catalog-category-group-drag-over{border-color:#18a999!important;background:#e8f8f5!important;box-shadow:inset 3px 0 0 #18a999,0 0 0 3px #dff6f3}
 .catalog-construction-groups .catalog-group-chip[draggable=true]{cursor:grab}
@@ -316,7 +317,8 @@ body.estimate-column-resizing{cursor:col-resize;user-select:none}
 .contract-create-modal[data-contract-create-modal="estimate"] .contract-estimate-table{min-width:1398px}
 .contract-estimate-table .estimate-task-cell textarea{min-height:30px}
 .estimate-item-cell{display:table-cell!important;gap:0;vertical-align:middle!important}
-.estimate-row-actions button[data-estimate-drag-handle]{cursor:grab}
+.estimate-row-actions button[data-estimate-drag-handle]{cursor:grab;user-select:none}
+.contract-estimate-table textarea,.contract-estimate-table input{user-select:text}
 .contract-estimate-group-summary button.estimate-drop-target,
 .contract-estimate-group.estimate-drop-target{border-color:#16a095!important;background:#e5f8f5!important;box-shadow:inset 0 0 0 2px #16a095}
 @media(max-width:1000px){
@@ -1139,6 +1141,10 @@ body.estimate-column-resizing{cursor:col-resize;user-select:none}
   transition: all 0.2s ease;
 }
 
+.technical-card.signed-approved{border-color:#18a877;background:#f2fffb;box-shadow:inset 4px 0 0 #18a877}
+.technical-sent-badge.dossier-approved{background:#dff7ed;color:#08724f}
+.dossier-approve-button{white-space:nowrap}
+
 .technical-card:hover {
   transform: translateY(-2px);
   box-shadow: 0 6px 16px rgba(49, 83, 92, 0.08);
@@ -1750,7 +1756,13 @@ nav button.sidebar-subgroup.collapsed i {
 .existing-file-icon.office{background:#eef3ff;color:#2860b7;border:1px solid #bcd0ff}.existing-file-icon.note{background:#fff8dc;color:#9a6a00;border:1px solid #f0d98a}
 .existing-file-icon.draft{background:#e7f7f5;color:#0c8279;border:1px solid #95d2cc}
 .contract-file-list article.contract-draft-card{border-color:#bfe3df;background:#f8fffe}
-.contract-file-list article.contract-draft-card .contract-draft-edit{padding:5px 9px;border:1px solid #168f87;background:#fff;color:#168f87;font-size:10px;font-weight:700}
+.contract-file-list article.contract-draft-card .contract-draft-edit,
+.contract-file-list article.contract-draft-card .contract-draft-duplicate,
+.contract-file-list article.contract-draft-card .contract-draft-template,
+.contract-file-list article.contract-draft-card .contract-draft-import{padding:5px 9px;border:1px solid #168f87;background:#fff;color:#168f87;font-size:10px;font-weight:700}
+.contract-file-list article.contract-draft-card .contract-draft-template{border-color:#d6b25d;color:#7c5a11}
+.contract-file-list article.contract-template-card{border-color:#ead49a;background:#fffdf4}
+.existing-file-icon.draft.template{background:#fff5cd;color:#8a640f;border-color:#e2c66e}
 .contract-file-list article.contract-draft-card .contract-draft-delete{padding:2px 5px;border:0;background:transparent;color:#d64b4b;font-size:15px}
 .file-text-preview{width:min(1100px,90vw);height:82vh;margin:0;padding:16px;overflow:auto;border:0;background:#fff;color:#24363b;white-space:pre-wrap;text-align:left;box-shadow:0 8px 30px #0008}
 .office-preview{display:grid;gap:8px;place-items:center}.office-preview iframe{width:min(1180px,92vw);height:78vh;border:0;background:#fff;box-shadow:0 8px 30px #0008}.office-preview small{color:#fff;background:#0007;padding:6px 10px}
@@ -1820,8 +1832,35 @@ button:not(:disabled):hover,.existing-card.clickable:hover,.contract-file-card.c
 /* ================================================================
    CONTRACT FILE CARD (restored)
    ================================================================ */
-.contract-file-list article.contract-file-card{display:grid;grid-template-columns:58px minmax(220px,1fr) 90px 34px;align-items:center;gap:8px;padding:8px;border-bottom:1px solid #e4ebec;background:#fff}
+.contract-file-list{grid-template-columns:1fr}
+.contract-file-list article.contract-file-card{display:grid;grid-template-columns:58px minmax(220px,1fr) 94px 94px 108px 36px;align-items:center;gap:8px;padding:8px;border-bottom:1px solid #e4ebec;background:#fff}
+.contract-file-list article.contract-draft-card{grid-template-columns:58px minmax(220px,1fr) 90px 90px 90px 34px}
+.contract-file-list article.contract-draft-card .contract-draft-delete{grid-column:-1}
+.contract-file-list article.contract-file-card.signed-approved{background:#f2fffb;box-shadow:inset 4px 0 0 #18a877}
+.contract-file-list article.contract-file-card>a[download],.contract-file-list article.contract-file-card .contract-file-duplicate,.contract-file-list article.contract-file-card .contract-file-approve,.contract-file-list article.contract-file-card .contract-file-unapprove{display:inline-grid;place-items:center;box-sizing:border-box;width:100%;min-width:0;min-height:32px;padding:0 10px;border:1px solid #168f87;background:#fff;color:#168f87;font-size:10px;font-weight:700;line-height:1.15;text-align:center;text-decoration:none;white-space:nowrap}
+.contract-file-list article.contract-file-card .contract-file-approve{border-color:#0d8d62;color:#0d8d62}
+.contract-file-list article.contract-file-card .contract-file-unapprove{border-color:#d08a2e;background:#fffaf0;color:#9a5d05}
+.contract-file-list article.contract-file-card>[data-contract-delete],.contract-file-list article.contract-file-card>[data-vendor-contract-delete]{display:grid;place-items:center;width:36px;height:32px;padding:0;border:1px solid #f0c5c5;background:#fff;color:#d64b4b;font-size:14px;font-weight:800;line-height:1}
+.contract-signed-badge{display:inline-flex;align-items:center;width:max-content;margin-top:3px;padding:3px 6px;border-radius:3px;background:#dff7ed;color:#08724f;font-size:9px;font-style:normal;font-weight:800}
+.contract-file-list article.contract-file-card .contract-file-spacer{display:block}
+.contract-signed-dossier-pair{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px;padding:10px;align-items:stretch}
+.contract-signed-dossier-pane{display:flex;min-width:0;flex-direction:column;border:1px dashed #9fc8c5;background:#fbfefe}
+.contract-signed-dossier-pane>.contract-drop-grid{padding:0}
+.contract-signed-dossier-pane>.contract-drop-grid .contract-drop{min-height:82px;border:0;border-bottom:1px dashed #9fc8c5}
+.contract-signed-dossier-pane>.contract-file-list{flex:1;padding:0}
+.contract-signed-dossier-pane>.contract-file-list article.contract-file-card{grid-template-columns:48px minmax(140px,1fr) 82px 86px 96px 36px}
+.contract-approved-dossier-box{margin:0 10px 10px;border:1px solid #dceceb;background:#f9fdfd}
+.contract-signed-dossier-pane>.contract-approved-dossier-box{display:flex;flex:1;flex-direction:column;margin:0;border:0;background:#f9fdfd}
+.contract-approved-dossier-box>header{display:flex;align-items:center;justify-content:space-between;padding:10px;border-bottom:1px solid #dceceb;background:#f4fbfa}
+.contract-approved-dossier-box>header div{display:grid;gap:3px}
+.contract-approved-dossier-box>header b{color:#117f77}
+.contract-approved-dossier-box>header span{color:#71838a;font-size:10px}
+.contract-approved-dossier-list{flex:1}
+.contract-file-list article.contract-approved-dossier-card{grid-template-columns:58px minmax(220px,1fr) 90px}
+.contract-signed-dossier-pane .contract-file-list article.contract-approved-dossier-card{grid-template-columns:48px minmax(140px,1fr) 84px}
+.contract-file-list article.contract-approved-dossier-card a{justify-self:end}
 .contract-file-card.clickable{cursor:pointer}.contract-file-card.clickable:hover{background:#f3fbfa}
+@media(max-width:900px){.contract-signed-dossier-pair{grid-template-columns:1fr}}
 
 .project-overview .project-chat.dragging{outline:2px dashed #18a999;outline-offset:-5px;background:#effbfa}
 .project-chat-drop-hint{display:block;padding:0 10px 8px;color:#71838a;font-size:10px}
@@ -3706,5 +3745,259 @@ body.sidebar-hidden>main>header {
     left: min(276px, calc(82vw - 46px), calc(100vw - 46px));
     top: max(14px, env(safe-area-inset-top));
     background: #202f34;
+  }
+}
+
+.contract-estimate-table {
+  min-width: 1762px;
+}
+.contract-create-modal[data-contract-create-modal="quote"] .contract-estimate-table,
+.contract-create-modal[data-contract-create-modal="variation-quote"] .contract-estimate-table,
+.contract-create-modal[data-contract-create-modal="estimate"] .contract-estimate-table {
+  min-width: 1762px;
+}
+.contract-estimate-table th:nth-child(7) {
+  width: 204px;
+  text-align: center;
+}
+.contract-estimate-table th:nth-child(8) {
+  width: 62px;
+}
+.contract-estimate-table th:nth-child(9) {
+  width: 82px;
+}
+.contract-estimate-table th:nth-child(10) {
+  width: 84px;
+}
+.contract-estimate-table th:nth-child(11) {
+  width: 96px;
+}
+.contract-estimate-table th:nth-child(12) {
+  width: 160px;
+}
+.contract-estimate-table td {
+  text-align: left;
+}
+.contract-estimate-table td[data-estimate-stt] {
+  text-align: center;
+}
+.contract-estimate-table td:nth-child(9),
+.contract-estimate-table td:nth-child(10),
+.contract-estimate-table td:nth-child(11) {
+  text-align: right;
+}
+.estimate-size-head {
+  display: grid;
+  gap: 5px;
+  justify-items: center;
+  text-align: center;
+}
+.estimate-size-head b {
+  display: block;
+  width: 100%;
+  font-size: 10px;
+  text-align: center;
+}
+.estimate-size-head small {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px;
+  width: 100%;
+  color: #71838a;
+  font-size: 8px;
+  font-weight: 700;
+  text-align: center;
+}
+.estimate-size-head em {
+  font-style: normal;
+}
+.estimate-dimension-cell {
+  min-width: 0;
+}
+.estimate-dimension-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px;
+  align-items: center;
+}
+.cash-modal .contract-estimate-table .estimate-dimension-grid input {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  min-height: 30px;
+  border: 1px solid #d4e0e2;
+  padding: 5px 4px;
+  background: #fff;
+  text-align: center;
+}
+.contract-estimate-table .estimate-qty-calculated {
+  background: #eefbf9;
+  color: #0f766f;
+  font-weight: 800;
+}
+
+.contract-file-list article.contract-draft-card {
+  grid-template-columns: 58px minmax(220px, 1fr) 94px 94px 108px 36px !important;
+  gap: 8px;
+}
+.contract-signed-dossier-pane>.contract-file-list article.contract-draft-card {
+  grid-template-columns: 48px minmax(140px, 1fr) 82px 86px 96px 36px !important;
+}
+.contract-file-list article.contract-draft-card .contract-draft-edit,
+.contract-file-list article.contract-draft-card .contract-draft-duplicate,
+.contract-file-list article.contract-draft-card .contract-draft-template,
+.contract-file-list article.contract-draft-card .contract-draft-import {
+  display: inline-grid;
+  place-items: center;
+  width: 100%;
+  min-width: 0;
+  min-height: 32px;
+  padding: 0 10px !important;
+  border: 1px solid #168f87 !important;
+  background: #fff !important;
+  color: #168f87 !important;
+  font-size: 10px !important;
+  font-weight: 800 !important;
+  line-height: 1.15;
+  text-align: center;
+  white-space: normal;
+}
+.contract-file-list article.contract-draft-card .contract-draft-template {
+  border-color: #d6b25d !important;
+  color: #7c5a11 !important;
+}
+.contract-file-list article.contract-draft-card .contract-draft-delete {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 32px;
+  padding: 0 !important;
+  border: 1px solid #f0c5c5 !important;
+  background: #fff !important;
+  color: #d64b4b !important;
+  font-size: 14px !important;
+  font-weight: 800 !important;
+  line-height: 1;
+}
+.contract-file-list article.contract-draft-card .contract-file-spacer {
+  display: block;
+  width: 100%;
+  min-height: 32px;
+}
+
+.project-doc-group-view .project-doc-group-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 10px;
+  padding: 10px;
+}
+.project-doc-group-view .project-doc-group-grid button {
+  display: grid;
+  gap: 6px;
+  min-height: 96px;
+  padding: 14px;
+  border: 1px solid #dce5e6;
+  background: #fff;
+  color: #31454c;
+  text-align: left;
+}
+.project-doc-group-view .project-doc-group-grid button:hover {
+  border-color: #168f87;
+  background: #f3fbfa;
+}
+.project-doc-group-view .project-doc-group-grid b {
+  color: #117f77;
+  font-size: 14px;
+}
+.project-doc-group-view .project-doc-group-grid span {
+  color: #71838a;
+  font-size: 11px;
+  line-height: 1.45;
+}
+.project-doc-group-view .project-doc-group-grid i {
+  align-self: end;
+  color: #168f87;
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 800;
+}
+
+.project-doc-store-view>header>div:last-child {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.project-doc-store-drop {
+  min-height: 220px;
+}
+.project-doc-store-drop.dragging {
+  border-color: #087f78;
+  background: #e4f7f4;
+  box-shadow: inset 0 0 0 2px rgba(22, 143, 135, 0.16);
+}
+.project-doc-store-drop.uploading {
+  opacity: 0.86;
+}
+.project-doc-store-drop em {
+  color: #168f87;
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 800;
+}
+.project-doc-store-drop em.ok {
+  color: #0b7555;
+}
+.project-doc-store-drop em.error {
+  color: #b42332;
+}
+.project-doc-store-gallery {
+  grid-template-columns: repeat(auto-fill, minmax(245px, 1fr));
+}
+.project-doc-store-gallery .technical-card {
+  grid-template-rows: 170px auto auto;
+}
+.project-doc-store-gallery .technical-card.signed-approved .existing-meta b {
+  color: #0b7555;
+}
+.project-doc-store-gallery .technical-card footer {
+  align-items: center;
+}
+.project-doc-store-gallery .technical-card footer a,
+.project-doc-store-gallery .technical-card footer button {
+  min-height: 30px;
+}
+.project-doc-store-view .existing-tools button {
+  white-space: nowrap;
+}
+.project-doc-store-view .existing-tools input {
+  font: inherit;
+}
+.project-doc-store-view .dossier-approved {
+  display: inline-flex;
+  width: max-content;
+  margin-top: 3px;
+}
+@media(max-width:760px) {
+  .project-doc-store-view>header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .project-doc-store-view>header>div:last-child {
+    width: 100%;
+  }
+  .project-doc-store-view>header button {
+    flex: 1;
+  }
+  .project-doc-store-view .existing-tools {
+    align-items: stretch;
+    flex-wrap: wrap;
+  }
+  .project-doc-store-view .existing-tools input {
+    width: 100%;
+  }
+  .project-doc-store-view .existing-tools span {
+    width: 100%;
+    margin-left: 0;
   }
 }

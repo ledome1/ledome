@@ -1,5 +1,5 @@
 const $ = (selector) => document.querySelector(selector);
-const state = { position: null, photo: null, config: null, account: null, locating: false, watchId: null, records: [], submitting: false, mapPoint: null, hasLocated: false };
+const state = { position: null, photo: null, config: null, account: null, locating: false, watchId: null, records: [], submitting: false, mapPoint: null, hasLocated: false, cameraPrompted: false, cameraOpening: false, pendingSubmitType: "" };
 
 const api = (path, options = {}) => fetch(`/api/v1${path}`, { credentials: "same-origin", ...options }).then(async (response) => {
   const body = await response.json();
@@ -224,6 +224,32 @@ function startAutoLocation() {
   state.watchId = navigator.geolocation.watchPosition(setGpsPosition, setGpsError, gpsOptions);
 }
 
+function openCameraCapture(reason = "auto") {
+  const input = $("#photo");
+  if (!input) return false;
+  if (!hasSecureBrowserFeatures()) {
+    notice(secureFeatureMessage, "error");
+    return true;
+  }
+  if (state.cameraOpening) return true;
+  state.cameraOpening = true;
+  input.value = "";
+  if (reason !== "silent") notice("Đang mở camera để chụp ảnh xác thực.", "");
+  input.click();
+  setTimeout(() => {
+    state.cameraOpening = false;
+  }, 1200);
+  return true;
+}
+
+function startAutoCamera() {
+  if (state.cameraPrompted || state.photo) return;
+  state.cameraPrompted = true;
+  setTimeout(() => {
+    if (!state.photo) openCameraCapture("auto");
+  }, 600);
+}
+
 function setSubmitting(value) {
   state.submitting = value;
   document.querySelectorAll("[data-type]").forEach((button) => {
@@ -237,16 +263,24 @@ function returnHomeAfterSubmit(record) {
   try {
     localStorage.setItem("ledome.attendance.submitted", JSON.stringify({ id: record.id, at: Date.now() }));
   } catch {}
+  const fallbackHome = () => {
+    if (!document.closed) location.replace("/#projects");
+  };
   setTimeout(() => {
-    location.replace("/#projects");
-  }, 700);
+    window.close();
+    setTimeout(fallbackHome, 350);
+  }, 250);
 }
 
 async function submit(type) {
   if (state.submitting) return;
   if (!hasSecureBrowserFeatures()) return notice(secureFeatureMessage, "error");
+  if (!state.photo) {
+    state.pendingSubmitType = type;
+    if (openCameraCapture("submit")) return;
+    return notice("Hãy chụp ảnh xác thực tại vị trí.", "error");
+  }
   if (!state.position) return notice("Hệ thống đang tự động lấy vị trí GPS. Hãy cho phép quyền vị trí trên trình duyệt.", "error");
-  if (!state.photo) return notice("Hãy chụp ảnh xác thực tại vị trí.", "error");
   try {
     setSubmitting(true);
     notice("Đang gửi phiếu chấm công...", "");
@@ -273,7 +307,7 @@ async function submit(type) {
     applyPreferredSite($("#employee").value, employeeRecords);
     renderHistory(employeeRecords);
     if (!records.data.some((item) => item.id === record.id)) throw new Error("Phiếu đã gửi nhưng chưa xuất hiện trong Danh sách phiếu chấm công.");
-    notice(`${type === "check-in" ? "Check-in" : "Check-out"} thành công. ${gpsText} · ${record.status}. Đang quay về trang chủ...`, gps.status === "Đạt" ? "ok" : "error");
+    notice(`${type === "check-in" ? "Check-in" : "Check-out"} thành công. ${gpsText} · ${record.status}. Đang đóng cửa sổ...`, gps.status === "Đạt" ? "ok" : "error");
     returnHomeAfterSubmit(record);
   } catch (error) {
     notice(error.message, "error");
@@ -299,15 +333,29 @@ async function init() {
   $("#photo").onchange = (event) => {
     const [file] = event.target.files;
     if (!file) return;
+    state.cameraOpening = false;
     state.photo = file;
     $("#photo-label").textContent = `✓ Đã chụp ảnh: ${file.name}`;
     $("#photo-label").classList.add("ready");
     $("#photo-preview").src = URL.createObjectURL(file);
     $("#photo-preview").classList.add("open");
+    const pendingSubmitType = state.pendingSubmitType;
+    state.pendingSubmitType = "";
+    if (pendingSubmitType && state.position && !state.submitting) {
+      notice("Đã chụp ảnh. Đang gửi phiếu chấm công...", "");
+      setTimeout(() => submit(pendingSubmitType), 150);
+      return;
+    }
+    if (pendingSubmitType && !state.position) {
+      notice("Đã chụp ảnh. Hệ thống đang lấy GPS, bấm lại Check-in/Check-out khi GPS sẵn sàng.", "ok");
+      return;
+    }
+    notice("Đã chụp ảnh xác thực. Chọn Check-in hoặc Check-out.", "ok");
   };
   document.querySelectorAll("[data-type]").forEach((button) => button.onclick = () => submit(button.dataset.type));
   renderHistory(employeeRecords);
   startAutoLocation();
+  startAutoCamera();
 }
 
 init().catch((error) => notice(error.message, "error"));

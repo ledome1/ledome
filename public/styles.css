@@ -113,26 +113,26 @@ nav h4.personal-nav-group button:before{color:#20d0bd}
 .attendance-daily-card h3{margin:0 0 4px;color:#18313b;font-size:16px}
 .attendance-daily-card p{margin:0;color:#60777d;font-size:11px;line-height:1.45}
 .attendance-daily-card>header span{padding:4px 7px;background:#edf4f5;color:#60777d;font-size:10px;font-weight:700;white-space:nowrap}
+.attendance-month-tabs{display:grid;grid-template-columns:repeat(12,minmax(38px,1fr));gap:4px;padding:8px 10px;border-bottom:1px solid #edf1f2;background:#fbfdfd}
+.attendance-month-tabs button{height:28px;border:1px solid #d4e4e6;background:#fff;color:#60777d;font-size:10px;font-weight:800;cursor:pointer}
+.attendance-month-tabs button.active{border-color:#18a999;background:#18a999;color:#fff}
 .attendance-month-wrap{overflow:auto}
-.attendance-month-table{min-width:1860px;border-collapse:collapse;table-layout:fixed;font-size:10px}
-.attendance-month-table th,.attendance-month-table td{height:24px;padding:4px 5px;border-right:1px solid #dce6e8;border-bottom:1px solid #dce6e8;text-align:center;vertical-align:middle}
+.attendance-month-table{border-collapse:collapse;table-layout:fixed;font-size:10px}
+.attendance-month-table th,.attendance-month-table td{height:24px;padding:4px 3px;border-right:1px solid #dce6e8;border-bottom:1px solid #dce6e8;text-align:center;vertical-align:middle}
 .attendance-month-table th{background:#f7fbfb;color:#31464c;font-weight:800}
 .attendance-month-table thead tr:nth-child(2) th,.attendance-month-table thead tr:nth-child(3) th{height:22px;padding:3px 4px}
-.attendance-month-table th:nth-child(1),.attendance-month-person{width:150px}
-.attendance-month-table th:nth-child(2),.attendance-month-role{width:120px}
-.attendance-month-table th:nth-child(3),.attendance-month-code{width:62px}
-.attendance-month-table th:nth-child(4),.attendance-month-line{width:62px}
 .attendance-month-title{background:#f3fbfa!important;color:#0f776f!important;font-size:12px;text-transform:uppercase}
 .attendance-month-meta{background:#fbfdfd!important;color:#168e87!important;text-align:left!important}
-.attendance-month-person,.attendance-month-role,.attendance-month-code{background:#fff;text-align:left!important}
+.attendance-month-person{background:#fff;text-align:left!important}
 .attendance-month-person b{display:block;color:#18313b;font-size:11px;line-height:1.25}
 .attendance-month-person small{display:block;margin-top:2px;color:#71838a;font-size:9px}
-.attendance-month-line{background:#eef7f6;color:#0f776f;font-weight:900;white-space:nowrap}
-.attendance-month-staff.alt .attendance-month-person,.attendance-month-staff.alt .attendance-month-role,.attendance-month-staff.alt .attendance-month-code,.attendance-month-staff.alt .attendance-month-line,.attendance-month-staff.alt .attendance-month-cell{background:#fbfdfd}
+.attendance-month-line{background:#eef7f6;color:#0f776f;font-size:9px;font-weight:900;white-space:nowrap}
+.attendance-month-staff.alt .attendance-month-person,.attendance-month-staff.alt .attendance-month-line,.attendance-month-staff.alt .attendance-month-cell{background:#fbfdfd}
 .attendance-month-table th.rest,.attendance-month-cell.rest{background:#f1f4f5;color:#9aa8ad}
-.attendance-month-cell{font-variant-numeric:tabular-nums;color:#18313b}
+.attendance-month-cell{font-variant-numeric:tabular-nums;color:#18313b;white-space:nowrap}
 .attendance-month-cell.ok{background:#fff}
-.attendance-month-cell.review{background:#fff8e8;color:#ae6b00;font-weight:800}
+.attendance-month-cell.review{background:#fff;color:#ae6b00;font-weight:800}
+.attendance-month-cell.attention{background:#fff;color:#ae6b00;font-weight:800}
 .attendance-month-cell.leave{background:#eef6ff;color:#2b6cb0;font-weight:800}
 .attendance-month-cell.absent{background:#fde7e9;color:#bb424c;font-weight:800}
 .attendance-month-total{background:#f3fbfa;color:#0f776f;font-weight:800;font-variant-numeric:tabular-nums}
@@ -168,6 +168,13 @@ nav h4.personal-nav-group button:before{color:#20d0bd}
 .attendance-approval-actions{display:flex;gap:5px;white-space:nowrap}
 .attendance-approval-actions .approve{border-color:#18a999;background:#e5f7f5;color:#087c73;font-weight:800}
 .attendance-empty{padding:18px!important;color:#71838a;text-align:center!important}
+.attendance-month-actions{display:flex;align-items:center;gap:8px}.attendance-month-actions button{height:28px;padding:0 10px;border:1px solid #168e87;background:#fff;color:#168e87;font-size:10px;font-weight:800}.attendance-month-actions button.active{background:#168e87;color:#fff}.attendance-month-table th.holiday,.attendance-month-cell.holiday{background:#fff7e6!important;color:#9a6200}.attendance-month-table th.holiday button{color:#9a6200;font-weight:800}.attendance-month-table th button{display:grid;place-items:center;width:100%;height:100%;min-width:24px;padding:0;border:0;background:transparent;color:inherit;font:inherit;cursor:pointer}
+.evidence-summary{display:grid;gap:4px;margin-top:10px;padding:10px 11px;border-left:3px solid #18a999;background:#f3fbfa}
+.evidence-summary.bad{border-left-color:#bb424c;background:#fff7f7}
+.evidence-summary b{color:#18313b;font-size:12px}
+.evidence-summary span,.evidence-summary i{color:#60777d;font-size:10px;font-style:normal}
+.evidence-summary.ok i{color:#14795a}.evidence-summary.bad i{color:#bb424c}
+.evidence-media{margin-top:10px}.evidence-map-frame{height:165px;background:#eaf1f4}.evidence-map-frame iframe{width:100%;height:100%;border:0}.evidence-map-link{display:block;margin-top:7px;color:#168e87;font-size:10px;font-weight:700;text-align:right}.evidence-fields{margin-top:8px}.evidence-fields p.bad b{color:#bb424c}.evidence-fields p.ok b{color:#14795a}.evidence-fields b{max-width:170px;text-align:right;overflow-wrap:anywhere}
 @media(max-width:650px){.attendance-approval-card>header{align-items:flex-start;flex-direction:column}}
 .project-create-modal{width:min(960px,calc(100vw - 42px))}.project-create-form{grid-template-columns:1fr 1fr!important;gap:10px 12px!important}.project-create-form h3{grid-column:1/-1;margin:0;padding:6px 0 0;font-size:15px}.project-create-form fieldset{display:grid;grid-template-columns:1fr 1fr;gap:8px 10px;min-width:0;margin:0;padding:12px;border:1px solid #dce6e8;background:#fbfdfd}.project-create-form fieldset.identity,.project-create-form fieldset.people{grid-column:1}.project-create-form fieldset.classification,.project-create-form fieldset.timeline{grid-column:2}.project-create-form legend{padding:0 6px;color:#168e87;font-size:10px;font-weight:800;text-transform:uppercase}.project-create-form label{min-width:0;padding:0!important}.project-create-form label.wide{grid-column:1/-1!important}.project-create-form input,.project-create-form select{min-height:34px!important;background:#fff}.project-create-form footer{grid-column:1/-1}#project-form.project-create-form label:nth-of-type(3){grid-column:auto}#project-form.project-create-form label.wide:nth-of-type(3){grid-column:1/-1!important}@media(max-width:760px){.project-create-modal{width:calc(100vw - 18px)}.project-create-form,.project-create-form fieldset{grid-template-columns:1fr!important}.project-create-form fieldset.identity,.project-create-form fieldset.people,.project-create-form fieldset.classification,.project-create-form fieldset.timeline{grid-column:1}.creation-options{grid-template-columns:1fr!important}}
 .overtime-table{min-width:1280px}.overtime-reason{min-width:220px;max-width:360px;white-space:normal;line-height:1.4}.overtime-actions{display:flex;gap:5px;white-space:nowrap}.overtime-actions .approve{border-color:#18a999;background:#e5f7f5;color:#087c73}.overtime-actions .reject{border-color:#f1c8cc;background:#fff5f6;color:#bb424c}.overtime-modal textarea{min-height:64px;padding:6px;border:1px solid #cfdadc;color:#31464c;font:inherit;resize:vertical}.overtime-form-note{display:grid;gap:4px;padding:10px;border:1px solid #cbe5e2;background:#f5fbfa;color:#60777d;font-size:11px}.overtime-form-note b{color:#168e87}.overtime-form-note span{line-height:1.45}
@@ -228,3 +235,73 @@ body.sidebar-hidden>main>header{padding-left:58px}
 .catalog-construction-groups .catalog-group-chip[draggable=true]{cursor:grab}
 .catalog-construction-groups .catalog-group-chip[draggable=true]:active{cursor:grabbing}
 .catalog-category-group-dragging{opacity:.55}
+
+/* Hermes local chat workspace */
+.dashboard-team-chat-panel{
+  display:grid;
+  grid-template-rows:auto minmax(420px,1fr) auto auto;
+  min-height:calc(100vh - 116px);
+  border-left:5px solid #18a999;
+}
+.dashboard-team-chat-panel>header{
+  min-height:58px;
+  padding:14px 16px;
+}
+.dashboard-team-chat-panel>header h3{
+  font-size:18px;
+}
+.dashboard-team-chat-panel>header p{
+  font-size:12px;
+}
+.dashboard-team-chat-body{
+  height:auto;
+  min-height:calc(100vh - 240px);
+  padding:18px;
+  gap:12px;
+}
+.dashboard-team-chat-message{
+  max-width:min(1180px,88%);
+  padding:12px 14px;
+}
+.dashboard-team-chat-message.own{
+  max-width:min(980px,72%);
+}
+.dashboard-team-chat-message header{
+  margin-bottom:7px;
+}
+.dashboard-team-chat-message b{
+  font-size:12px;
+}
+.dashboard-team-chat-message time{
+  font-size:11px;
+}
+.dashboard-team-chat-message p{
+  font-size:14px;
+  line-height:1.55;
+}
+.dashboard-team-chat-form{
+  grid-template-columns:42px minmax(0,1fr) 82px!important;
+  gap:10px;
+  padding:12px;
+}
+.dashboard-team-chat-form input{
+  height:42px;
+  font-size:14px;
+}
+.dashboard-team-chat-form button{
+  height:42px;
+  font-size:13px;
+}
+.dashboard-team-chat-attach{
+  width:42px;
+}
+.dashboard-team-chat-hint{
+  padding:0 12px 12px;
+  font-size:11px;
+}
+@media(max-width:780px){
+  .dashboard-team-chat-panel{min-height:calc(100vh - 92px);grid-template-rows:auto minmax(360px,1fr) auto auto}
+  .dashboard-team-chat-body{min-height:calc(100vh - 230px);padding:12px}
+  .dashboard-team-chat-message,.dashboard-team-chat-message.own{max-width:96%}
+  .dashboard-team-chat-form{grid-template-columns:38px minmax(0,1fr) 64px!important}
+}
