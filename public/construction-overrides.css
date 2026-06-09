@@ -162,7 +162,7 @@
 .contract-estimate-table td:nth-child(8),.contract-estimate-table td:nth-child(9),.contract-estimate-table td:nth-child(10){text-align:right}
 .contract-estimate-table textarea,.contract-estimate-table input,.contract-estimate-table select{box-sizing:border-box;width:100%;min-height:30px;padding:5px 6px;border:1px solid #d4e0e2;background:#fff;color:#263d43;font:inherit}
 .contract-estimate-table textarea{height:auto;min-height:30px;resize:none;overflow:hidden;white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.35}
-.estimate-item-cell b{display:block;min-height:32px;padding:8px;border:1px solid #d4e0e2;background:#f7fbfb;color:#263d43;white-space:normal;line-height:1.25}
+.estimate-item-cell b{display:block;min-height:0;padding:0;border:0;background:transparent;color:#263d43;white-space:normal;line-height:1.25;font-size:11px;font-weight:800}
 .contract-estimate-image-drop{display:grid;gap:3px;min-height:64px;padding:5px;border:1px dashed #9bcfc9;background:#f8fcfc;text-align:center}
 .contract-estimate-image-drop.dragging{border-color:#168f87;background:#e5f6f4}
 .contract-estimate-image-drop button{width:max-content;margin:auto;padding:4px 8px!important;border:1px solid #168f87!important;background:#fff!important;color:#168f87!important;font-size:10px!important}
@@ -172,18 +172,11 @@
 .contract-estimate-image-drop img{width:24px;height:24px;object-fit:cover}
 .contract-estimate-image-drop em{color:#9aa8ac;font-size:10px;font-style:normal}
 .estimate-task-entry{display:grid;grid-template-columns:minmax(150px,1fr) auto;gap:5px;align-items:start}
-.estimate-item-cell.estimate-item-empty{background:#fff!important}
-.estimate-item-cell.estimate-item-empty .estimate-item-spacer{display:block;min-height:32px;background:transparent!important;border:0!important}
-.contract-estimate-table tr:not([data-estimate-task-child="1"]) td[data-estimate-stt]{padding-top:16px;vertical-align:top}
-.contract-estimate-table tr[data-estimate-task-child="1"] td[data-estimate-stt],
-.contract-estimate-table tr[data-estimate-task-child="1"] td.estimate-item-cell{
-  border-top-color:transparent!important;
-  border-bottom-color:transparent!important;
-  background:#fff!important;
-  color:transparent!important;
-  box-shadow:none!important;
-}
-.contract-estimate-table tr[data-estimate-task-child="1"] td.estimate-item-cell *{visibility:hidden!important}
+.contract-estimate-table tbody tr{height:auto}
+.contract-estimate-table td{padding:6px 7px}
+.contract-estimate-table td[data-estimate-stt]{vertical-align:middle;text-align:center;color:#60777d;font-weight:800;background:#fbfdfd}
+.contract-estimate-table tr[data-estimate-task-child="1"] td[data-estimate-stt]{color:#8da0a5}
+.contract-estimate-table tr[data-estimate-task-child="1"] td.estimate-item-cell{background:#fff}
 .estimate-row-actions{display:flex!important;gap:3px;justify-content:flex-end}
 .estimate-row-actions button{width:24px;height:24px;padding:0!important;border:1px solid #d8e4e5!important;background:#fff!important;color:#60777d!important;font-size:11px!important;cursor:pointer}
 .estimate-task-actions button[data-estimate-add-task]{width:auto;padding:0 7px!important;border-color:#cce8e5!important;background:#eefbf9!important;color:#117f77!important;font-size:9px!important;font-weight:700;white-space:nowrap}
@@ -275,10 +268,6 @@ body.estimate-column-resizing{cursor:col-resize;user-select:none}
 }
 .contract-estimate-side-card{display:grid;align-content:start;gap:6px;padding:8px;border:1px solid #dce5e6;background:#fff}
 .contract-estimate-side-card h3{margin:0;color:#117f77;font-size:13px}
-.contract-estimate-filter-card{gap:8px}
-.contract-estimate-filter-toggle{display:grid;grid-template-columns:1fr 1fr;gap:4px}
-.contract-estimate-filter-toggle button{min-height:30px;padding:6px;border:1px solid #dce5e6;background:#fbfdfd;color:#40575d;font-weight:700;cursor:pointer}
-.contract-estimate-filter-toggle button.active{border-color:#168f87;background:#e8f7f5;color:#0f766f}
 .contract-estimate-total-card{gap:2px;min-height:0}
 .contract-estimate-total-card .contract-total-preview{display:block;margin:0}
 .contract-estimate-total-card .contract-total-preview strong{display:block;margin-top:0;color:#0e8f86;font-size:20px;line-height:1.15}
@@ -292,8 +281,6 @@ body.estimate-column-resizing{cursor:col-resize;user-select:none}
 .contract-estimate-side-form textarea{min-height:54px;resize:vertical}
 .contract-estimate-nav-card{min-height:0;overflow:hidden}
 .contract-estimate-nav-card .contract-estimate-group-summary{max-height:calc(100vh - 380px);overflow:auto}
-.contract-estimate-groups.location-mode .estimate-location-hidden{display:none}
-.contract-estimate-groups.location-mode .contract-estimate-group.estimate-location-empty{display:none}
 .contract-estimate-group-summary button:disabled{opacity:.58;cursor:not-allowed}
 .contract-create-modal[data-contract-create-modal="quote"] .contract-estimate-toolbar,
 .contract-create-modal[data-contract-create-modal="variation-quote"] .contract-estimate-toolbar,
@@ -328,7 +315,7 @@ body.estimate-column-resizing{cursor:col-resize;user-select:none}
 .contract-create-modal[data-contract-create-modal="variation-quote"] .contract-estimate-table,
 .contract-create-modal[data-contract-create-modal="estimate"] .contract-estimate-table{min-width:1398px}
 .contract-estimate-table .estimate-task-cell textarea{min-height:30px}
-.estimate-item-cell{display:grid;gap:6px}
+.estimate-item-cell{display:table-cell!important;gap:0;vertical-align:middle!important}
 .estimate-row-actions button[data-estimate-drag-handle]{cursor:grab}
 .contract-estimate-group-summary button.estimate-drop-target,
 .contract-estimate-group.estimate-drop-target{border-color:#16a095!important;background:#e5f8f5!important;box-shadow:inset 0 0 0 2px #16a095}
