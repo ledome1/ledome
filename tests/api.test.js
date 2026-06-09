@@ -839,7 +839,7 @@ test("landing page and project detail clients expose expected workflows", async 
 
   const html = await fetch(`${origin}/constructions/detail/p1/`).then((res) => res.text());
   assert.match(html, /project-app/);
-  assert.match(html, /construction\.js\?v=229/);
+  assert.match(html, /construction\.js\?v=232/);
 
   const script = await fetch(`${origin}/construction.js`).then((res) => res.text());
   assert.match(script, /data-project-info-delete/);
@@ -910,6 +910,7 @@ test("landing page and project detail clients expose expected workflows", async 
   assert.match(script, /data-estimate-group-summary="material"/);
   assert.match(script, /contractEstimateEnsureCatalogRows/);
   assert.match(script, /contractEstimateGroupIdForItemName/);
+  assert.match(script, /contractEstimateGroupIdForDraftRow/);
   assert.match(script, /contractMaterialEstimateGroups/);
   assert.match(script, /materialCategoryGroups/);
   assert.match(script, /contractNormalizeCategoryGroups/);
