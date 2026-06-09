@@ -1,5 +1,5 @@
 const $ = (selector) => document.querySelector(selector);
-const state = { position: null, photo: null, config: null, account: null, locating: false, watchId: null, records: [], submitting: false };
+const state = { position: null, photo: null, config: null, account: null, locating: false, watchId: null, records: [], submitting: false, mapPoint: null, hasLocated: false };
 
 const api = (path, options = {}) => fetch(`/api/v1${path}`, { credentials: "same-origin", ...options }).then(async (response) => {
   const body = await response.json();
@@ -68,6 +68,29 @@ function siteOptionExists(siteId) {
   return Boolean(id && state.config?.sites?.some((site) => String(site.id) === id));
 }
 
+function siteOptionById(siteId) {
+  const id = String(siteId || "").trim();
+  return state.config?.sites?.find((site) => String(site.id) === id) || null;
+}
+
+function siteHasGps(site) {
+  return Boolean(site && Number.isFinite(Number(site.latitude)) && Number.isFinite(Number(site.longitude)) && Number(site.radiusMeters) > 0);
+}
+
+function validPreferredSiteId(siteId) {
+  const site = siteOptionById(siteId);
+  if (!site) return "";
+  return site.fixed || siteHasGps(site) ? String(site.id) : "";
+}
+
+function defaultSiteId() {
+  const sites = Array.isArray(state.config?.sites) ? state.config.sites : [];
+  const office = sites.find((site) => String(site.id) === "ledome");
+  if (office) return String(office.id);
+  const geofenced = sites.find(siteHasGps);
+  return geofenced ? String(geofenced.id) : String(sites[0]?.id || "");
+}
+
 function latestRecordSiteId(employeeId, records = state.records) {
   const id = String(employeeId || "").trim();
   if (!id || !Array.isArray(records)) return "";
@@ -106,8 +129,8 @@ function rememberLastSite(employeeId, siteId) {
 }
 
 function applyPreferredSite(employeeId, records = state.records) {
-  const preferredSiteId = [latestRecordSiteId(employeeId, records), storedSiteId(employeeId)].find(siteOptionExists);
-  if (preferredSiteId) $("#site").value = preferredSiteId;
+  const nextSiteId = [latestRecordSiteId(employeeId, records), storedSiteId(employeeId)].map(validPreferredSiteId).find(Boolean) || defaultSiteId();
+  if (siteOptionExists(nextSiteId)) $("#site").value = nextSiteId;
 }
 
 function gpsResult(record) {
@@ -131,6 +154,20 @@ function renderHistory(records) {
 
 const gpsOptions = { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 };
 
+function gpsDistanceMeters(from, to) {
+  const fromLat = Number(from?.latitude);
+  const fromLng = Number(from?.longitude);
+  const toLat = Number(to?.latitude);
+  const toLng = Number(to?.longitude);
+  if (![fromLat, fromLng, toLat, toLng].every(Number.isFinite)) return Infinity;
+  const earthRadius = 6371000;
+  const toRad = (value) => value * Math.PI / 180;
+  const latDistance = toRad(toLat - fromLat);
+  const lngDistance = toRad(toLng - fromLng);
+  const a = Math.sin(latDistance / 2) ** 2 + Math.cos(toRad(fromLat)) * Math.cos(toRad(toLat)) * Math.sin(lngDistance / 2) ** 2;
+  return earthRadius * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
 function updateGpsMap(coords) {
   const latitude = Number(coords?.latitude);
   const longitude = Number(coords?.longitude);
@@ -138,8 +175,11 @@ function updateGpsMap(coords) {
   const query = `${latitude.toFixed(6)},${longitude.toFixed(6)}`;
   const mapUrl = `https://maps.google.com/maps?q=${encodeURIComponent(query)}&z=18&output=embed`;
   const linkUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`;
-  $("#gps-map").src = mapUrl;
   $("#gps-map-link").href = linkUrl;
+  if (!state.mapPoint || gpsDistanceMeters(state.mapPoint, { latitude, longitude }) >= 35) {
+    state.mapPoint = { latitude, longitude };
+    $("#gps-map").src = mapUrl;
+  }
   $("#gps-map-frame").classList.add("located");
 }
 
@@ -149,7 +189,10 @@ function setGpsPosition(position) {
   $("#gps-status").textContent = `Độ chính xác ±${Math.round(position.coords.accuracy)} m`;
   $("#gps-detail").textContent = `${position.coords.latitude.toFixed(6)}, ${position.coords.longitude.toFixed(6)}`;
   updateGpsMap(position.coords);
-  notice("Đã tự động lấy vị trí GPS. Chụp ảnh và chọn Check-in hoặc Check-out.", "ok");
+  if (!state.hasLocated) {
+    state.hasLocated = true;
+    notice("Đã tự động lấy vị trí GPS. Chụp ảnh và chọn Check-in hoặc Check-out.", "ok");
+  }
 }
 
 function setGpsError(error) {

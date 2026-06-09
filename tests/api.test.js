@@ -912,6 +912,10 @@ test("landing page and project detail clients expose expected workflows", async 
   assert.match(script, /contractEstimateGroupIdForItemName/);
   assert.match(script, /contractEstimateGroupIdForDraftRow/);
   assert.match(script, /contractMaterialEstimateGroups/);
+  assert.match(script, /contractEstimateLabels/);
+  assert.match(script, /taskHead:material\?"Tên":"Nhiệm vụ"/);
+  assert.match(script, /descriptionHead:material\?"Thương hiệu \/ NCC":"Mô tả"/);
+  assert.match(script, /addTask:material\?"\+":"\+ Nhiệm vụ"/);
   assert.match(script, /materialCategoryGroups/);
   assert.match(script, /contractNormalizeCategoryGroups/);
   assert.match(script, /contractNormalizeConstructionCategoryGroups/);

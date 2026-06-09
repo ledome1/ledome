@@ -81,7 +81,7 @@ const dossierConfigs = {
 };
 
 const attendanceFixedSites = [
-  { id: "ledome", name: "VP Le Dome", latitude: 21.022739, longitude: 105.819454, radiusMeters: 180, fixed: true },
+  { id: "ledome", name: "VP Le Dome", latitude: 21.052696, longitude: 105.789988, radiusMeters: 180, fixed: true },
   { id: "other", name: "Khác", radiusMeters: 0, fixed: true, requiresReview: true }
 ];
 const mime = {
