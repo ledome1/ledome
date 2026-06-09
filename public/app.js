@@ -2,7 +2,7 @@
 const money = (value) => new Intl.NumberFormat("vi-VN").format(value);
 const moneyInput = (value) => Number(value || 0).toLocaleString("vi-VN");
 const parseMoneyInput = (value) => Number(String(value || "").replace(/[^\d]/g, "")) || 0;
-const state = { page: location.hash.slice(1) || "projects", nav: [], account: null, customerId: "", customerQuery: "", customerFilter: "Tất cả", crmQuery: "", crmStatus: "Tất cả", crmSupplierCategory: "Tất cả", crmContractorCategory: "Tất cả", catalogType: "constructionCategories", catalogQuery: "", catalogCollapsed: {}, catalogOrder: [], materialsQuery: "", materialsLocation: "Tất cả", materialsStatus: "Tất cả", standardsQuery: "", standardsCategory: "Tất cả", driveQuery: "", driveUploadMessage: "", financeQuery: "", financeKind: "Tất cả", financeFilterOpen: "", financeFilters: { type: [], group: [], topic: [], category: [], partner: [] }, personalQuery: "", personalKind: "Tất cả", navCollapsed: {} };
+const state = { page: location.hash.slice(1) || "projects", nav: [], account: null, customerId: "", customerQuery: "", customerFilter: "Tất cả", crmQuery: "", crmStatus: "Tất cả", crmSupplierCategory: "Tất cả", crmContractorCategory: "Tất cả", catalogType: "constructionCategories", catalogQuery: "", catalogCollapsed: {}, catalogOrder: [], materialsQuery: "", materialsLocation: "Tất cả", materialsStatus: "Tất cả", standardsQuery: "", standardsCategory: "Tất cả", driveQuery: "", driveUploadMessage: "", configDocsQuery: "", configDocsUploadMessage: "", financeQuery: "", financeKind: "Tất cả", financeFilterOpen: "", financeFilters: { type: [], group: [], topic: [], category: [], partner: [] }, personalQuery: "", personalKind: "Tất cả", navCollapsed: {} };
 const AUTH_STORAGE = "ledome.auth.v1";
 const LOGIN_REMEMBER_STORAGE = "ledome.login.remember.v1";
 const NAV_COLLAPSE_STORAGE = "ledome.navCollapsed.v1";
@@ -20,9 +20,9 @@ const MODULE_PERMISSION = {
   "hrm-overview": "hrm", "hrm-staff": "hrm", "hrm-attendance": "hrm", "hrm-overtime": "hrm", "hrm-leave": "hrm", "hrm-payroll": "hrm",
   "finance-overview": "finance", "finance-ledome": "finance", "finance-projects": "finance",
   "personal-finance-overview": "personalFinance", "personal-finance-transactions": "personalFinance", "personal-finance-budget": "personalFinance", "personal-finance-report": "personalFinance",
-  catalog: "config", materials: "materials", processes: "config", standards: "config", accounts: "config"
+  catalog: "config", materials: "materials", processes: "config", standards: "config", "config-documents": "config", accounts: "config"
 };
-const pageTitles = { home: "DASHBOARD", insight: "INSIGHT", projects: "❖ DASHBOARD", "projects-overview": "▣ Tổng quan dự án", drive: "▰ LE DOME DRIVE", "partners-overview": "▣ Tổng quan đối tác", customers: "♟ Khách hàng", contractors: "▣ Nhà thầu", suppliers: "▤ Nhà cung cấp", "hrm-overview": "▣ Tổng quan nhân sự", "hrm-staff": "♟ Nhân sự", "hrm-attendance": "▣ Bảng chấm công", "hrm-overtime": "▤ Phiếu Overtime", "hrm-leave": "▤ Phiếu xin nghỉ phép", "hrm-payroll": "$ Lương", "finance-overview": "▣ Tổng quan", "finance-ledome": "▣ Vận hành", "finance-projects": "▤ Dự án", "personal-finance-overview": "◈ Tài chính cá nhân", "personal-finance-transactions": "▤ Giao dịch cá nhân", "personal-finance-budget": "▣ Ngân sách tháng", "personal-finance-report": "◉ Báo cáo tháng", catalog: "▰ Cơ sở dữ liệu", materials: "▰ Kho", processes: "▰ Quy trình", standards: "▰ Quy chuẩn Tiêu chuẩn", accounts: "▣ Tài khoản" };
+const pageTitles = { home: "DASHBOARD", insight: "INSIGHT", projects: "❖ DASHBOARD", "projects-overview": "▣ Tổng quan dự án", drive: "▰ LE DOME DRIVE", "partners-overview": "▣ Tổng quan đối tác", customers: "♟ Khách hàng", contractors: "▣ Nhà thầu", suppliers: "▤ Nhà cung cấp", "hrm-overview": "▣ Tổng quan nhân sự", "hrm-staff": "♟ Nhân sự", "hrm-attendance": "▣ Bảng chấm công", "hrm-overtime": "▤ Phiếu Overtime", "hrm-leave": "▤ Phiếu xin nghỉ phép", "hrm-payroll": "$ Lương", "finance-overview": "▣ Tổng quan", "finance-ledome": "▣ Vận hành", "finance-projects": "▤ Dự án", "personal-finance-overview": "◈ Tài chính cá nhân", "personal-finance-transactions": "▤ Giao dịch cá nhân", "personal-finance-budget": "▣ Ngân sách tháng", "personal-finance-report": "◉ Báo cáo tháng", catalog: "▰ Cơ sở dữ liệu", materials: "▰ Kho", processes: "▰ Quy trình", standards: "▰ Quy chuẩn Tiêu chuẩn", "config-documents": "▰ Giấy tờ", accounts: "▣ Tài khoản" };
 const api = (url, options = {}) => fetch(`/api/v1${url}`, { credentials: "same-origin", ...options }).then(async (res) => {
   const body = await res.json();
   if (!res.ok) throw new Error(body.error || `API ${res.status}`);
@@ -99,6 +99,8 @@ let projectNavItems = null;
 let sidebarHidden = false;
 let dashboardVoucherCache = [];
 let dashboardVoucherApprovedCache = null;
+let dashboardProjectRows = [];
+const dashboardTaskDraftCounters = {};
 
 function isMobileSidebar() {
   return matchMedia("(max-width: 900px)").matches;
@@ -111,7 +113,7 @@ function syncSidebarToggle() {
   const open = Boolean(sidebar?.classList.contains("open"));
   document.body.classList.toggle("sidebar-mobile-open", isMobileSidebar() && open);
   const label = isMobileSidebar() ? (open ? "Ẩn sidebar" : "Hiện sidebar") : (sidebarHidden ? "Hiện sidebar" : "Ẩn sidebar");
-  button.textContent = "☰";
+  button.textContent = "";
   button.setAttribute("aria-label", label);
   button.setAttribute("title", label);
   button.setAttribute("aria-expanded", String(isMobileSidebar() ? open : !sidebarHidden));
@@ -208,7 +210,7 @@ function renderNav() {
     ["NHÂN SỰ", [["▣  Tổng quan", "hrm-overview"], ["♟  Nhân sự", "hrm-staff"], ["▣  Bảng chấm công", "hrm-attendance"], ["▤  Phiếu Overtime", "hrm-overtime"], ["▤  Phiếu xin nghỉ", "hrm-leave"], ["$  Lương", "hrm-payroll"]]],
     ["TÀI CHÍNH", [["▣  Tổng quan", "finance-overview"], ["▣  Vận hành", "finance-ledome"], ["▤  Dự án", "finance-projects"]]],
     ["KHO", [["▰  Kho", "materials"]]],
-    ["CẤU HÌNH", [["▰  Cơ sở dữ liệu", "catalog"], ["▰  Quy trình", "processes"], ["▰  Quy chuẩn Tiêu chuẩn", "standards"], ["▣  Tài khoản", "accounts"]]],
+    ["CẤU HÌNH", [["▰  Cơ sở dữ liệu", "catalog"], ["▰  Quy trình", "processes"], ["▰  Quy chuẩn Tiêu chuẩn", "standards"], ["▰  Giấy tờ", "config-documents"], ["▣  Tài khoản", "accounts"]]],
     ["TÀI CHÍNH CÁ NHÂN", [["◈  Tổng quan", "personal-finance-overview"], ["▤  Giao dịch", "personal-finance-transactions"], ["▣  Ngân sách tháng", "personal-finance-budget"], ["◉  Báo cáo tháng", "personal-finance-report"]]]
   ].map(([group, items]) => [group, items.filter(([, id]) => canAccess(id))]).filter(([, items]) => items.length);
   $("#nav").innerHTML = groups.map(([group, items], index) => {
@@ -316,6 +318,19 @@ function dashboardSourceButton(item = {}, label = "Mở nguồn") {
   const attr = dashboardLinkAttr(item);
   return attr ? `<button type="button" ${attr}>${label}</button>` : "";
 }
+function dashboardTaskProjectOptions() {
+  const fromProjects = (dashboardProjectRows || []).map((project) => project?.name || project?.code);
+  const fromCatalog = projectListOptions();
+  const options = financeUnique([...fromCatalog, ...fromProjects]);
+  return options.length ? options : ["Chưa chọn dự án"];
+}
+function dashboardTaskCategoryOptions() {
+  const options = constructionCategoryOptions();
+  return options.length ? options : CATALOG_FALLBACK.constructionCategories;
+}
+function dashboardVoucherTypeOptions(items = []) {
+  return financeUnique([...voucherTypeOptions(), ...(items || []).map((item) => dashboardVoucherTypeLabel(item.type))]);
+}
 function dashboardKpi(label, value, note, link, tone = "") {
   const attr = link && canAccess(link) ? ` data-dashboard-link="${escapeHtml(link)}"` : "";
   return `<button type="button" class="dashboard-kpi ${tone}"${attr}><small>${escapeHtml(label)}</small><b>${escapeHtml(value)}</b><span>${escapeHtml(note || "")}</span></button>`;
@@ -337,20 +352,10 @@ const APP_VOUCHER_TYPE_DEFAULTS = [
   "Phiếu Yêu cầu cần CDT phê duyệt",
   "Phiếu Vấn đề sự cố"
 ];
-const DASHBOARD_VOUCHER_TYPE_DEFS = [
-  "Phiếu chấm công",
-  "Phiếu Overtime",
-  "Phiếu xin nghỉ phép",
-  "Phiếu nhiệm vụ",
-  "Phiếu Nhật ký thi công",
-  "Phiếu nhập kho",
-  "Phiếu xuất kho",
-  "Phiếu chi",
-  "Phiếu Yêu cầu Phát sinh của CDT",
-  "Phiếu Yêu cầu ghi chú của CDT",
-  "Phiếu Yêu cầu cần CDT phê duyệt",
-  "Phiếu Vấn đề sự cố"
-];
+function dashboardVoucherTypeLabel(type = "") {
+  const text = String(type || "").trim();
+  return plainVietnamese(text) === "phieu giao nhiem vu" ? "Phiếu nhiệm vụ" : text;
+}
 const DASHBOARD_VOUCHER_FORM_GROUPS = [
   {
     title: "Cá nhân",
@@ -367,7 +372,7 @@ const DASHBOARD_VOUCHER_FORM_GROUPS = [
             { label: "Nhân sự", kind: "select", options: ["DINH Công Hoàng", "Bùi Xuân Dũng", "Nguyễn Hoàng Hải", "Hoàng Thu Mai"] },
             { label: "Ngày chấm công", kind: "date", value: "today" },
             { label: "Dự án / vị trí", placeholder: "VD: 6ATS, Văn phòng Le Dome" },
-            { label: "Loại ghi nhận", kind: "select", options: ["Check-in", "Check-out", "Bổ sung công", "Điều chỉnh công"] },
+            { label: "Loại ghi nhận", kind: "select", options: () => attendanceVoucherTypeOptions() },
             { label: "Giờ vào", kind: "time", value: "08:00" },
             { label: "Giờ ra", kind: "time", value: "17:30" }
           ] },
@@ -383,19 +388,21 @@ const DASHBOARD_VOUCHER_FORM_GROUPS = [
         type: "Phiếu Overtime",
         codePrefix: "OT",
         title: "Tạo phiếu overtime",
+        submitHandler: "overtime",
         note: "Đề xuất làm thêm giờ và kết quả cần hoàn thành trước khi duyệt.",
         sections: [
           { title: "Thông tin overtime", fields: [
-            { label: "Nhân sự", kind: "select", options: ["DINH Công Hoàng", "Bùi Xuân Dũng", "Nguyễn Hoàng Hải", "Hoàng Thu Mai"] },
-            { label: "Ngày overtime", kind: "date", value: "today" },
-            { label: "Vị trí / dự án", placeholder: "VD: Nhà phố VPH" },
-            { label: "Người duyệt", kind: "select", options: ["DINH Công Hoàng", "Bùi Xuân Dũng", "Hoàng Thu Mai"] },
-            { label: "Giờ bắt đầu", kind: "time", value: "18:00" },
-            { label: "Giờ kết thúc", kind: "time", value: "20:00" }
+            { label: "Nhân sự", name: "staff", kind: "select", options: () => dashboardStaffNameOptions() },
+            { label: "Loại phiếu overtime", name: "voucherType", kind: "select", options: () => overtimeVoucherTypeOptions() },
+            { label: "Ngày overtime", name: "date", kind: "date", value: "today" },
+            { label: "Vị trí / dự án", name: "project", kind: "select", options: () => dashboardWorkLocationOptions() },
+            { label: "Người duyệt", name: "approver", kind: "select", options: () => dashboardApproverOptions() },
+            { label: "Giờ bắt đầu", name: "start", kind: "time", value: "18:00" },
+            { label: "Giờ kết thúc", name: "end", kind: "time", value: "20:00" }
           ] },
           { title: "Nội dung", fields: [
-            { label: "Lý do xin overtime", kind: "textarea", placeholder: "Nêu việc cần hoàn thành, deadline và ảnh hưởng nếu không làm thêm.", wide: true },
-            { label: "Kết quả dự kiến", kind: "textarea", placeholder: "VD: hoàn thành hồ sơ gửi CDT, kiểm kê xong vật tư, xử lý lỗi kỹ thuật.", wide: true }
+            { label: "Lý do xin overtime", name: "reason", kind: "textarea", placeholder: "Nêu việc cần hoàn thành, deadline và ảnh hưởng nếu không làm thêm.", wide: true },
+            { label: "Kết quả dự kiến", name: "expected", kind: "textarea", placeholder: "VD: hoàn thành hồ sơ gửi CDT, kiểm kê xong vật tư, xử lý lỗi kỹ thuật.", wide: true }
           ] }
         ]
       },
@@ -405,19 +412,20 @@ const DASHBOARD_VOUCHER_FORM_GROUPS = [
         type: "Phiếu xin nghỉ phép",
         codePrefix: "NP",
         title: "Tạo phiếu xin nghỉ phép",
+        submitHandler: "leave",
         note: "Ghi nhận thời gian nghỉ, lý do và nội dung bàn giao.",
         sections: [
           { title: "Thông tin nghỉ phép", fields: [
-            { label: "Nhân sự", kind: "select", options: ["DINH Công Hoàng", "Bùi Xuân Dũng", "Nguyễn Hoàng Hải", "Hoàng Thu Mai"] },
-            { label: "Từ ngày", kind: "date", value: "today" },
-            { label: "Đến ngày", kind: "date", value: "today" },
-            { label: "Loại nghỉ", kind: "select", options: ["Nghỉ phép năm", "Nghỉ cá nhân", "Nghỉ không lương", "Nghỉ ốm", "Khác"] },
-            { label: "Người duyệt", kind: "select", options: ["DINH Công Hoàng", "Bùi Xuân Dũng", "Hoàng Thu Mai"] },
-            { label: "Số ngày dự kiến", placeholder: "VD: 1" }
+            { label: "Nhân sự", name: "staff", kind: "select", options: () => dashboardStaffNameOptions() },
+            { label: "Từ ngày", name: "fromDate", kind: "date", value: "today" },
+            { label: "Đến ngày", name: "toDate", kind: "date", value: "today" },
+            { label: "Loại nghỉ", name: "leaveType", kind: "select", options: ["Nghỉ phép năm", "Nghỉ cá nhân", "Nghỉ không lương", "Nghỉ ốm", "Khác"] },
+            { label: "Người duyệt", name: "approver", kind: "select", options: () => dashboardApproverOptions() },
+            { label: "Số ngày dự kiến", name: "expectedDays", placeholder: "VD: 1" }
           ] },
           { title: "Lý do và bàn giao", fields: [
-            { label: "Lý do xin nghỉ", kind: "textarea", placeholder: "Nêu rõ lý do xin nghỉ.", wide: true },
-            { label: "Bàn giao công việc", kind: "textarea", placeholder: "Ghi người nhận bàn giao, việc đang xử lý và deadline liên quan.", wide: true }
+            { label: "Lý do xin nghỉ", name: "reason", kind: "textarea", placeholder: "Nêu rõ lý do xin nghỉ.", wide: true },
+            { label: "Bàn giao công việc", name: "handover", kind: "textarea", placeholder: "Ghi người nhận bàn giao, việc đang xử lý và deadline liên quan.", wide: true }
           ] }
         ]
       },
@@ -428,14 +436,13 @@ const DASHBOARD_VOUCHER_FORM_GROUPS = [
         codePrefix: "NV",
         title: "Tạo phiếu nhiệm vụ",
         note: "Tạo đầu việc mới và gắn người thực hiện, hạn xử lý, kết quả cần đạt.",
+        fullTemplate: "task",
         sections: [
           { title: "Thông tin nhiệm vụ", fields: [
-            { label: "Dự án / phạm vi", placeholder: "VD: PN An Định" },
-            { label: "Công việc", placeholder: "Nhập tên nhiệm vụ cần giao" },
+            { label: "Dự án", kind: "select", options: () => dashboardTaskProjectOptions() },
+            { label: "Hạng mục", kind: "select", options: () => dashboardTaskCategoryOptions() },
             { label: "Người thực hiện", kind: "select", options: ["DINH Công Hoàng", "Bùi Xuân Dũng", "Nguyễn Hoàng Hải", "Bùi Vũ Kiên"] },
-            { label: "Người theo dõi", kind: "select", options: ["DINH Công Hoàng", "Bùi Xuân Dũng", "Hoàng Thu Mai"] },
-            { label: "Bắt đầu kế hoạch", kind: "date", value: "today" },
-            { label: "Kết thúc kế hoạch", kind: "date", value: "today" }
+            { label: "Người theo dõi", kind: "select", options: ["DINH Công Hoàng", "Bùi Xuân Dũng", "Hoàng Thu Mai"] }
           ] },
           { title: "Yêu cầu hoàn thành", fields: [
             { label: "Nội dung giao việc", kind: "textarea", placeholder: "Ghi rõ việc cần làm, tiêu chuẩn nghiệm thu và tài liệu liên quan.", wide: true },
@@ -457,12 +464,13 @@ const DASHBOARD_VOUCHER_FORM_GROUPS = [
         note: "Xác nhận thiết bị vật tư NCC giao, người nhận và kho lưu trữ.",
         sections: [
           { title: "Thông tin nhập kho", fields: [
+            { label: "Loại phiếu nhập kho", kind: "select", options: () => inventoryReceiptTypeOptions() },
             { label: "Nhà cung cấp", placeholder: "VD: NCC HOMEKIT" },
             { label: "Ngày nhận", kind: "date", value: "today" },
-            { label: "Kho nhận", kind: "select", options: ["Kho VP", "Kho dự án", "Kho công trình", "Kho tạm"] },
+            { label: "Kho nhận", kind: "select", options: () => warehouseOptions() },
             { label: "Người nhận", kind: "select", options: ["DINH Công Hoàng", "Bùi Xuân Dũng", "Nguyễn Hoàng Hải", "Bùi Vũ Kiên"] },
-            { label: "Dự án liên quan", placeholder: "VD: 6ATS" },
-            { label: "Hạng mục vật tư", placeholder: "VD: Thiết bị điện, vật liệu hoàn thiện" }
+            { label: "Dự án liên quan", kind: "select", options: () => dashboardTaskProjectOptions() },
+            { label: "Hạng mục Thiết bị Vật tư", kind: "select", options: () => materialCategoryOptions() }
           ] },
           { title: "Vật tư nhận", fields: [
             { label: "Danh sách vật tư / thiết bị", kind: "textarea", placeholder: "Ghi tên vật tư, số lượng, đơn vị, tình trạng khi nhận.", wide: true },
@@ -480,12 +488,13 @@ const DASHBOARD_VOUCHER_FORM_GROUPS = [
         note: "Ghi nhận vật tư xuất dùng cho thi công, người nhận và nhật ký liên quan.",
         sections: [
           { title: "Thông tin xuất kho", fields: [
-            { label: "Kho xuất", kind: "select", options: ["Kho VP", "Kho dự án", "Kho công trình", "Kho tạm"] },
+            { label: "Loại phiếu xuất kho", kind: "select", options: () => inventoryIssueTypeOptions() },
+            { label: "Kho xuất", kind: "select", options: () => warehouseOptions() },
             { label: "Ngày xuất", kind: "date", value: "today" },
             { label: "Người nhận / tổ đội", placeholder: "VD: Tổ điện nước, VHD" },
             { label: "Người lập phiếu", kind: "select", options: ["DINH Công Hoàng", "Bùi Xuân Dũng", "Nguyễn Hoàng Hải"] },
-            { label: "Dự án", placeholder: "VD: 6ATS" },
-            { label: "Phiếu nhật ký liên quan", placeholder: "VD: NK-2026-0001" }
+            { label: "Dự án", kind: "select", options: () => dashboardTaskProjectOptions() },
+            { label: "Phiếu nhật ký liên quan", placeholder: `VD: NK-${dashboardCodeDateToken()}-001` }
           ] },
           { title: "Vật tư xuất dùng", fields: [
             { label: "Danh sách vật tư / thiết bị", kind: "textarea", placeholder: "Ghi tên vật tư, số lượng, đơn vị, hạng mục sử dụng.", wide: true },
@@ -503,6 +512,7 @@ const DASHBOARD_VOUCHER_FORM_GROUPS = [
         note: "Ghi nhận khoản chi dự án hoặc vận hành kèm đối tượng, hạng mục và chứng từ.",
         sections: [
           { title: "Thông tin chi", fields: [
+            { label: "Loại phiếu chi", kind: "select", options: () => paymentVoucherTypeOptions() },
             { label: "Ngày lập phiếu", kind: "date", value: "today" },
             { label: "Giá trị", kind: "money", placeholder: "0" },
             { label: "Nhóm", kind: "select", options: ["DỰ ÁN", "TÀI CHÍNH", "VẬN HÀNH LE DOME"] },
@@ -532,11 +542,12 @@ const DASHBOARD_VOUCHER_FORM_GROUPS = [
         fullTemplate: "cdt-change",
         sections: [
           { title: "Thông tin phát sinh", fields: [
-            { label: "Dự án", placeholder: "VD: PN An Định" },
+            { label: "Dự án", kind: "select", options: () => dashboardTaskProjectOptions() },
             { label: "Ngày ghi nhận", kind: "date", value: "today" },
             { label: "CDT / người yêu cầu", placeholder: "Nhập đại diện CDT" },
             { label: "Chủ trì dự án", kind: "select", options: ["DINH Công Hoàng", "Bùi Xuân Dũng", "Nguyễn Hoàng Hải"] },
-            { label: "Hạng mục thi công", placeholder: "VD: Ốp lát, thiết bị vệ sinh" },
+            { label: "Loại phát sinh", kind: "select", options: () => cdtChangeRequestTypeOptions() },
+            { label: "Hạng mục thi công", kind: "select", options: () => constructionCategoryOptions() },
             { label: "Ảnh hưởng tiến độ", kind: "select", options: ["Không ảnh hưởng", "Cần cộng tiến độ", "Cần điều chỉnh kế hoạch"] }
           ] },
           { title: "Nội dung và chi phí", fields: [
@@ -556,9 +567,10 @@ const DASHBOARD_VOUCHER_FORM_GROUPS = [
         fullTemplate: "cdt-note",
         sections: [
           { title: "Thông tin ghi chú", fields: [
-            { label: "Dự án", placeholder: "VD: VPH" },
+            { label: "Dự án", kind: "select", options: () => dashboardTaskProjectOptions() },
             { label: "Ngày nhận", kind: "date", value: "today" },
             { label: "Người gửi phía CDT", placeholder: "Nhập tên người gửi" },
+            { label: "Loại ghi chú", kind: "select", options: () => cdtNoteRequestTypeOptions() },
             { label: "Kênh ghi nhận", kind: "select", options: ["Zalo", "Email", "Gặp trực tiếp", "Điện thoại", "Biên bản"] },
             { label: "Mức độ", kind: "select", options: ["Cần xử lý", "Cần phản hồi", "Thông tin", "Gấp"] },
             { label: "Phụ trách xử lý", kind: "select", options: ["DINH Công Hoàng", "Bùi Xuân Dũng", "Nguyễn Hoàng Hải"] }
@@ -579,10 +591,11 @@ const DASHBOARD_VOUCHER_FORM_GROUPS = [
         fullTemplate: "cdt-approval",
         sections: [
           { title: "Thông tin phê duyệt", fields: [
-            { label: "Dự án", placeholder: "VD: 38TQK" },
+            { label: "Dự án", kind: "select", options: () => dashboardTaskProjectOptions() },
             { label: "Ngày gửi", kind: "date", value: "today" },
+            { label: "Loại phê duyệt", kind: "select", options: () => cdtApprovalRequestTypeOptions() },
             { label: "Nội dung cần duyệt", placeholder: "VD: mẫu vật liệu, báo giá, bản vẽ" },
-            { label: "Hạng mục thi công", placeholder: "VD: Gỗ nội thất" },
+            { label: "Hạng mục thi công", kind: "select", options: () => constructionCategoryOptions() },
             { label: "Chủ trì dự án", kind: "select", options: ["DINH Công Hoàng", "Bùi Xuân Dũng", "Nguyễn Hoàng Hải"] },
             { label: "Deadline CDT duyệt", kind: "date", value: "today" }
           ] },
@@ -603,8 +616,9 @@ const DASHBOARD_VOUCHER_FORM_GROUPS = [
         fullTemplate: "issue",
         sections: [
           { title: "Thông tin sự cố", fields: [
-            { label: "Dự án", placeholder: "VD: Hoàng Đạo Thúy -17T5" },
+            { label: "Dự án", kind: "select", options: () => dashboardTaskProjectOptions() },
             { label: "Ngày ghi nhận", kind: "date", value: "today" },
+            { label: "Loại sự cố", kind: "select", options: () => incidentIssueTypeOptions() },
             { label: "Nguồn phát hiện", kind: "select", options: ["Chủ trì dự án", "Nhật ký thi công", "CDT phản ánh", "Nhà thầu báo", "Nhân sự công trường"] },
             { label: "Mức độ", kind: "select", options: ["Cần xử lý ngay", "Khẩn cấp", "Ảnh hưởng chất lượng", "Ảnh hưởng tiến độ", "Theo dõi"] },
             { label: "Người phụ trách xử lý", kind: "select", options: ["DINH Công Hoàng", "Bùi Xuân Dũng", "Nguyễn Hoàng Hải"] },
@@ -621,34 +635,137 @@ const DASHBOARD_VOUCHER_FORM_GROUPS = [
   }
 ];
 const DASHBOARD_VOUCHER_FORM_DEFS = new Map(DASHBOARD_VOUCHER_FORM_GROUPS.flatMap((group) => group.items.map((item) => [item.id, item])));
+const DASHBOARD_VOUCHER_FORM_TYPE_TO_ID = new Map(DASHBOARD_VOUCHER_FORM_GROUPS.flatMap((group) => group.items.map((item) => [item.type, item.id])));
 function dashboardVoucherFormToday() {
-  return new Date().toISOString().slice(0, 10);
+  return dashboardVoucherDateInput(new Date());
+}
+function dashboardVoucherDateInput(date = new Date()) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+function dashboardVoucherDateTimeInput(date = new Date()) {
+  return `${dashboardVoucherDateInput(date)}T${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+}
+function dashboardVoucherDateFromInput(value) {
+  const parts = financeDateParts(value);
+  return parts ? new Date(parts.year, parts.month - 1, parts.day) : dashboardTodayDate();
+}
+function dashboardVoucherStrictDateParts(value) {
+  if (value instanceof Date && Number.isFinite(value.getTime())) return { year: value.getFullYear(), month: value.getMonth() + 1, day: value.getDate() };
+  const text = String(value || "").trim();
+  let match = text.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})$/);
+  let parts = match ? { year: Number(match[1]), month: Number(match[2]), day: Number(match[3]) } : null;
+  if (!parts) {
+    match = text.match(/^(\d{1,2})[./-](\d{1,2})[./-](\d{4})$/);
+    if (match) parts = { year: Number(match[3]), month: Number(match[2]), day: Number(match[1]) };
+  }
+  if (!parts || parts.year < 1900 || parts.month < 1 || parts.month > 12 || parts.day < 1 || parts.day > 31) return null;
+  const date = new Date(parts.year, parts.month - 1, parts.day);
+  return date.getFullYear() === parts.year && date.getMonth() + 1 === parts.month && date.getDate() === parts.day ? parts : null;
+}
+function dashboardVoucherDateIsoValue(value) {
+  const parts = dashboardVoucherStrictDateParts(value);
+  if (!parts) return "";
+  return `${parts.year}-${String(parts.month).padStart(2, "0")}-${String(parts.day).padStart(2, "0")}`;
+}
+function dashboardVoucherDateDisplayValue(value) {
+  const parts = dashboardVoucherStrictDateParts(value);
+  if (!parts) return String(value || "");
+  return `${String(parts.day).padStart(2, "0")}/${String(parts.month).padStart(2, "0")}/${parts.year}`;
+}
+function dashboardTaskVoucherExistingCount(date = new Date()) {
+  const key = dashboardDateKey(date);
+  return dashboardVoucherCache.filter((item) => dashboardVoucherTypeLabel(item.type) === "Phiếu nhiệm vụ" && dashboardDateKey(dashboardVoucherDateObject(item.createdAt || item.date)) === key).length;
+}
+function dashboardTaskVoucherCodeForSequence(date = new Date(), sequence = 1) {
+  return `NV-${String(date.getDate()).padStart(2, "0")}${String(date.getMonth() + 1).padStart(2, "0")} ${String(sequence).padStart(3, "0")}`;
+}
+function dashboardTaskVoucherCodeInfo(date = new Date()) {
+  const key = dashboardDateKey(date);
+  const sequence = Math.max(dashboardTaskVoucherExistingCount(date), dashboardTaskDraftCounters[key] || 0) + 1;
+  dashboardTaskDraftCounters[key] = sequence;
+  return { code: dashboardTaskVoucherCodeForSequence(date, sequence), sequence };
+}
+function dashboardCodeDateToken(date = new Date()) {
+  return `${String(date.getDate()).padStart(2, "0")}${String(date.getMonth() + 1).padStart(2, "0")}`;
+}
+function dashboardAutoCode(prefix = "PH", date = new Date(), suffix = String(Date.now()).slice(-4)) {
+  return `${prefix}-${dashboardCodeDateToken(date)}-${suffix}`;
 }
 function dashboardVoucherFormCode(def) {
-  return `${def.codePrefix || "PH"}-${new Date().getFullYear()}-${String(Date.now()).slice(-4)}`;
+  if (def?.id === "task" || def?.type === "Phiếu nhiệm vụ") return dashboardTaskVoucherCodeInfo(new Date()).code;
+  return dashboardAutoCode(def.codePrefix || "PH");
+}
+function dashboardVoucherFormIdForType(type = "") {
+  const text = dashboardVoucherTypeLabel(type);
+  if (!text) return "";
+  const exact = DASHBOARD_VOUCHER_FORM_TYPE_TO_ID.get(text);
+  if (exact) return exact;
+  const key = plainVietnamese(text);
+  const match = [...DASHBOARD_VOUCHER_FORM_TYPE_TO_ID.entries()].find(([voucherType]) => plainVietnamese(voucherType) === key);
+  return match?.[1] || "";
+}
+function dashboardStaffNameOptions() {
+  const names = typeof staffPeople === "function" ? staffPeople().map((person) => person.staffName) : [];
+  return catalogList(names, ["DINH Công Hoàng", "Bùi Xuân Dũng", "Nguyễn Hoàng Hải", "Hoàng Thu Mai"]);
+}
+function dashboardApproverOptions() {
+  return catalogList(["DINH Công Hoàng", "Bùi Xuân Dũng", "Hoàng Thu Mai", ...dashboardStaffNameOptions()], []);
+}
+function dashboardWorkLocationOptions() {
+  return financeUnique([...(typeof projectListOptions === "function" ? projectListOptions() : []), "VP Le Dome", "Kho Le Dome", "Khác"]);
+}
+function dashboardVoucherGenericFormDef(type = "") {
+  const voucherType = String(type || "").trim() || "Phiếu mẫu";
+  return {
+    id: "generic-voucher",
+    label: "Phiếu mẫu",
+    type: voucherType,
+    codePrefix: "PH",
+    title: `Phiếu mẫu - ${voucherType}`,
+    note: "Mẫu phiếu cơ bản được đính kèm với tên phiếu trong cơ sở dữ liệu.",
+    sections: [
+      { title: "Nội dung phiếu", fields: [
+        { label: "Tên phiếu", value: voucherType },
+        { label: "Nội dung / mục đích", kind: "textarea", placeholder: "Nhập nội dung chính, phạm vi sử dụng và điều kiện áp dụng của phiếu.", wide: true },
+        { label: "File Phiếu mẫu", kind: "file", placeholder: "Đính kèm file mẫu, ảnh, PDF hoặc chứng từ liên quan." }
+      ] }
+    ]
+  };
 }
 function dashboardVoucherFormValue(field = {}) {
   if (field.value === "today") return dashboardVoucherFormToday();
+  if (field.value === "now") return dashboardVoucherDateTimeInput(new Date());
   return field.value || "";
 }
+function dashboardVoucherFieldOptions(field = {}) {
+  const options = typeof field.options === "function" ? field.options() : field.options;
+  return Array.isArray(options) ? options : [];
+}
 function dashboardVoucherFieldMarkup(field = {}, index = 0) {
-  const name = `field-${index}`;
-  const cls = field.wide || field.kind === "file" ? "wide" : "";
+  const name = field.name || `field-${index}`;
+  const cls = [field.wide || field.kind === "file" ? "wide" : "", field.readOnly ? "readonly" : "", field.className || ""].filter(Boolean).join(" ");
   const value = dashboardVoucherFormValue(field);
   const placeholder = field.placeholder ? ` placeholder="${escapeHtml(field.placeholder)}"` : "";
-  if (field.kind === "textarea") return `<label class="${cls}"><span>${escapeHtml(field.label)}</span><textarea name="${name}"${placeholder}>${escapeHtml(value)}</textarea></label>`;
-  if (field.kind === "select") return `<label class="${cls}"><span>${escapeHtml(field.label)}</span><select name="${name}">${(field.options || []).map((option) => `<option value="${escapeHtml(option)}" ${option === value ? "selected" : ""}>${escapeHtml(option)}</option>`).join("")}</select></label>`;
+  const readonly = field.readOnly ? ' readonly aria-readonly="true"' : "";
+  const disabled = field.disabled ? " disabled" : "";
+  const attrs = field.attrs ? ` ${field.attrs}` : "";
+  if (field.kind === "textarea") return `<label class="${cls}"><span>${escapeHtml(field.label)}</span><textarea name="${escapeHtml(name)}"${placeholder}${readonly}${disabled}${attrs}>${escapeHtml(value)}</textarea></label>`;
+  if (field.kind === "select") return `<label class="${cls}"><span>${escapeHtml(field.label)}</span><select name="${escapeHtml(name)}"${disabled}${attrs}>${dashboardVoucherFieldOptions(field).map((option) => `<option value="${escapeHtml(option)}" ${option === value ? "selected" : ""}>${escapeHtml(option)}</option>`).join("")}</select></label>`;
   if (field.kind === "file") return `<label class="wide dashboard-voucher-upload"><span>${escapeHtml(field.label)}</span><input name="${name}" type="file" multiple><em>${escapeHtml(field.placeholder || "Đính kèm ảnh, file hoặc video liên quan.")}</em></label>`;
-  const type = field.kind === "date" || field.kind === "time" ? field.kind : "text";
+  if (field.kind === "date-text") {
+    const isoValue = dashboardVoucherDateIsoValue(value);
+    const displayValue = dashboardVoucherDateDisplayValue(value);
+    return `<label class="${cls} dashboard-date-field"><span>${escapeHtml(field.label)}</span><div class="dashboard-date-edit"><input name="${escapeHtml(name)}" type="text" inputmode="numeric"${placeholder || ' placeholder="dd/mm/yyyy"'} value="${escapeHtml(displayValue)}"${readonly}${disabled}${attrs}><input type="date" class="dashboard-date-picker" value="${escapeHtml(isoValue)}" aria-label="Chọn ${escapeHtml(field.label)}"${disabled}></div></label>`;
+  }
+  const type = field.kind === "date" || field.kind === "time" || field.kind === "datetime-local" ? field.kind : "text";
   const inputMode = field.kind === "money" ? ' inputmode="numeric"' : "";
-  return `<label class="${cls}"><span>${escapeHtml(field.label)}</span><input name="${name}" type="${type}"${inputMode}${placeholder} value="${escapeHtml(value)}"></label>`;
+  return `<label class="${cls}"><span>${escapeHtml(field.label)}</span><input name="${escapeHtml(name)}" type="${type}"${inputMode}${placeholder} value="${escapeHtml(value)}"${readonly}${disabled}${attrs}></label>`;
 }
 function dashboardVoucherSectionMarkup(section = {}, sectionIndex = 0) {
   const fields = section.fields || [];
   return `<section class="dashboard-voucher-form-card"><h4>${escapeHtml(section.title || `Mục ${sectionIndex + 1}`)}</h4><div class="dashboard-voucher-form-grid">${fields.map((field, index) => dashboardVoucherFieldMarkup(field, sectionIndex * 20 + index)).join("")}</div></section>`;
 }
 const DASHBOARD_FULL_FORM_PEOPLE = ["DINH Công Hoàng", "Bùi Xuân Dũng", "Nguyễn Hoàng Hải", "Bùi Vũ Kiên", "Hoàng Thu Mai"];
-const DASHBOARD_FULL_FORM_CATEGORIES = ["KHẢO SÁT - ĐO ĐẠC", "ỐP LÁT", "GỖ NỘI THẤT", "THIẾT BỊ ĐIỆN", "THẠCH CAO", "KHÁC"];
 const DASHBOARD_FULL_FORM_TASKS = ["Chưa liên kết công việc", "Khảo sát hiện trạng", "Thi công thô", "Hoàn thiện nội thất", "Nghiệm thu"];
 function dashboardVoucherFullGrid(fields = [], baseIndex = 0) {
   return `<div class="dashboard-voucher-form-grid">${fields.map((field, index) => dashboardVoucherFieldMarkup(field, baseIndex + index)).join("")}</div>`;
@@ -691,15 +808,16 @@ function dashboardVoucherFullCdtChange(def) {
     ${dashboardVoucherFullCard("Thông tin phiếu", [
       { label: "Mã phiếu", value: dashboardVoucherFormCode(def) },
       { label: "Ngày ghi nhận", kind: "date", value: "today" },
-      { label: "Dự án", value: "Dự án xây dựng" },
+      { label: "Dự án", kind: "select", options: () => dashboardTaskProjectOptions() },
       { label: "Người lập phiếu", value: state.account?.loginId || "HoangDINH" },
       { label: "CDT / Người yêu cầu", placeholder: "Nhập tên người yêu cầu phía CDT" },
       { label: "Chủ trì dự án", kind: "select", options: DASHBOARD_FULL_FORM_PEOPLE },
+      { label: "Loại phát sinh", kind: "select", options: () => cdtChangeRequestTypeOptions() },
       { label: "Nội dung phát sinh", value: "Bổ sung/điều chỉnh hạng mục theo yêu cầu của CDT", wide: true },
       { label: "Mô tả yêu cầu", kind: "textarea", placeholder: "Ghi rõ hiện trạng, yêu cầu thay đổi, phạm vi ảnh hưởng và lý do phát sinh.", wide: true }
     ])}
     ${dashboardVoucherFullCard("Hạng mục thi công và phạm vi", [
-      { label: "Hạng mục thi công", kind: "select", options: DASHBOARD_FULL_FORM_CATEGORIES },
+      { label: "Hạng mục thi công", kind: "select", options: () => constructionCategoryOptions() },
       { label: "Công việc liên quan", kind: "select", options: DASHBOARD_FULL_FORM_TASKS },
       { label: "Khu vực / vị trí", placeholder: "VD: Phòng khách, WC master, ban công..." },
       { label: "Mức ảnh hưởng tiến độ", kind: "select", options: ["Không ảnh hưởng", "Cần cộng tiến độ", "Cần điều chỉnh thứ tự thi công"] },
@@ -717,16 +835,17 @@ function dashboardVoucherFullCdtNote(def) {
     ${dashboardVoucherFullCard("Thông tin phiếu", [
       { label: "Mã phiếu", value: dashboardVoucherFormCode(def) },
       { label: "Ngày nhận", kind: "date", value: "today" },
-      { label: "Dự án", value: "Dự án xây dựng" },
+      { label: "Dự án", kind: "select", options: () => dashboardTaskProjectOptions() },
       { label: "Người lập phiếu", value: state.account?.loginId || "HoangDINH" },
       { label: "Người gửi phía CDT", placeholder: "Nhập tên người gửi / đại diện CDT" },
+      { label: "Loại ghi chú", kind: "select", options: () => cdtNoteRequestTypeOptions() },
       { label: "Kênh ghi nhận", kind: "select", options: ["Zalo", "Email", "Gặp trực tiếp", "Điện thoại", "Biên bản"] },
       { label: "Mức độ", kind: "select", options: ["Cần xử lý", "Cần phản hồi", "Thông tin", "Gấp"] },
       { label: "Trạng thái", kind: "select", options: ["Mới ghi nhận", "Đang xử lý", "Chờ CDT phản hồi", "Đã phản hồi"] },
       { label: "Nội dung ghi chú của CDT", kind: "textarea", placeholder: "Nhập nguyên văn hoặc tóm tắt rõ yêu cầu/ghi chú của CDT.", wide: true }
     ])}
     ${dashboardVoucherFullCard("Phân loại và xử lý", [
-      { label: "Hạng mục thi công", kind: "select", options: DASHBOARD_FULL_FORM_CATEGORIES },
+      { label: "Hạng mục thi công", kind: "select", options: () => constructionCategoryOptions() },
       { label: "Công việc liên quan", kind: "select", options: DASHBOARD_FULL_FORM_TASKS },
       { label: "Vị trí / khu vực", placeholder: "VD: Phòng khách, WC master, ban công..." },
       { label: "Phụ trách xử lý", kind: "select", options: DASHBOARD_FULL_FORM_PEOPLE },
@@ -748,9 +867,10 @@ function dashboardVoucherFullCdtApproval(def) {
     ${dashboardVoucherFullCard("Thông tin phê duyệt", [
       { label: "Mã phiếu", value: dashboardVoucherFormCode(def) },
       { label: "Ngày gửi", kind: "date", value: "today" },
-      { label: "Dự án", value: "Dự án xây dựng" },
+      { label: "Dự án", kind: "select", options: () => dashboardTaskProjectOptions() },
       { label: "Người lập phiếu", value: state.account?.loginId || "HoangDINH" },
-      { label: "Hạng mục thi công", kind: "select", options: DASHBOARD_FULL_FORM_CATEGORIES },
+      { label: "Loại phê duyệt", kind: "select", options: () => cdtApprovalRequestTypeOptions() },
+      { label: "Hạng mục thi công", kind: "select", options: () => constructionCategoryOptions() },
       { label: "Công việc liên quan", kind: "select", options: DASHBOARD_FULL_FORM_TASKS },
       { label: "Chủ trì dự án", kind: "select", options: DASHBOARD_FULL_FORM_PEOPLE },
       { label: "Deadline CDT duyệt", kind: "date", value: "today" },
@@ -767,8 +887,9 @@ function dashboardVoucherFullIssue(def) {
     ${dashboardVoucherFullCard("Thông tin sự cố", [
       { label: "Mã phiếu", value: dashboardVoucherFormCode(def) },
       { label: "Ngày ghi nhận", kind: "date", value: "today" },
-      { label: "Dự án", value: "Dự án xây dựng" },
+      { label: "Dự án", kind: "select", options: () => dashboardTaskProjectOptions() },
       { label: "Người ghi nhận", value: state.account?.loginId || "HoangDINH" },
+      { label: "Loại sự cố", kind: "select", options: () => incidentIssueTypeOptions() },
       { label: "Nguồn phát hiện", kind: "select", options: ["Chủ trì dự án", "Nhật ký thi công", "CDT phản ánh", "Nhà thầu báo", "Nhân sự công trường"] },
       { label: "Mức độ", kind: "select", options: ["Cần xử lý ngay", "Khẩn cấp", "Ảnh hưởng chất lượng", "Ảnh hưởng tiến độ", "Theo dõi"] },
       { label: "Trạng thái", kind: "select", options: ["Mới ghi nhận", "Đang xử lý", "Chờ nghiệm thu lại", "Đã xử lý"] },
@@ -776,7 +897,7 @@ function dashboardVoucherFullIssue(def) {
       { label: "Nội dung vấn đề / sự cố", kind: "textarea", placeholder: "Mô tả rõ vấn đề, thời điểm phát hiện, ai phát hiện và hiện trạng tại công trường.", wide: true }
     ])}
     ${dashboardVoucherFullCard("Phân loại và trách nhiệm", [
-      { label: "Hạng mục thi công", kind: "select", options: DASHBOARD_FULL_FORM_CATEGORIES },
+      { label: "Hạng mục thi công", kind: "select", options: () => constructionCategoryOptions() },
       { label: "Công việc liên quan", kind: "select", options: DASHBOARD_FULL_FORM_TASKS },
       { label: "Vị trí / khu vực", placeholder: "VD: WC master, trần phòng khách, ban công..." },
       { label: "Người phụ trách xử lý", kind: "select", options: DASHBOARD_FULL_FORM_PEOPLE },
@@ -792,7 +913,31 @@ function dashboardVoucherFullIssue(def) {
     ${dashboardVoucherFullCard("Ảnh hiện trường và hồ sơ kèm theo", [], 120, `${dashboardVoucherAttachmentBox("Ảnh hiện trường / bằng chứng sự cố", "Ảnh hiện trạng, vị trí phát sinh, lỗi thi công, biên bản hoặc nội dung phản ánh.", "Chọn ảnh hiện trường")}${dashboardVoucherAttachmentBox("Ảnh sau xử lý / xác nhận đóng phiếu", "Ảnh khắc phục, ảnh nghiệm thu lại hoặc xác nhận của Chủ trì dự án/CDT.", "Chọn ảnh xác nhận")}`)}
   </div>`;
 }
+function dashboardVoucherFullTask(def) {
+  const now = new Date();
+  const codeInfo = dashboardTaskVoucherCodeInfo(now);
+  const currentUser = state.account?.staffName || state.account?.loginId || "Tài khoản hiện tại";
+  return `<div class="dashboard-voucher-full-template task-template">
+    ${dashboardVoucherFullCard("Thông tin chung", [
+      { label: "Mã phiếu", name: "voucherCode", value: codeInfo.code, readOnly: true, attrs: `data-task-code data-task-code-sequence="${codeInfo.sequence}" data-task-code-date-key="${dashboardDateKey(now)}"` },
+      { label: "Ngày lập", name: "createdDate", kind: "date-text", value: dashboardVoucherDateInput(now), attrs: "data-task-date" },
+      { label: "Người lập phiếu", name: "createdBy", value: currentUser, readOnly: true, wide: true }
+    ])}
+    ${dashboardVoucherFullCard("Thông tin nhiệm vụ", [
+      { label: "Dự án", name: "project", kind: "select", options: () => dashboardTaskProjectOptions() },
+      { label: "Hạng mục", name: "category", kind: "select", options: () => dashboardTaskCategoryOptions() },
+      { label: "Người thực hiện", name: "assignee", kind: "select", options: ["DINH Công Hoàng", "Bùi Xuân Dũng", "Nguyễn Hoàng Hải", "Bùi Vũ Kiên"] },
+      { label: "Người theo dõi", name: "follower", kind: "select", options: ["DINH Công Hoàng", "Bùi Xuân Dũng", "Hoàng Thu Mai"] },
+      { label: "Thời gian bàn giao nhiệm vụ", name: "handoverAt", kind: "datetime-local", value: dashboardVoucherDateTimeInput(now), wide: true }
+    ], 40)}
+    ${dashboardVoucherFullCard("Yêu cầu hoàn thành", [
+      { label: "Nội dung giao việc", name: "taskContent", kind: "textarea", placeholder: "Ghi rõ việc cần làm, tiêu chuẩn nghiệm thu và tài liệu liên quan.", wide: true },
+      { label: "Kết quả", name: "taskResult", kind: "textarea", placeholder: "Kết quả mong muốn hoặc bằng chứng cần nộp khi hoàn thành.", wide: true }
+    ], 80)}
+  </div>`;
+}
 function dashboardVoucherFullForm(def) {
+  if (def.fullTemplate === "task") return dashboardVoucherFullTask(def);
   if (def.fullTemplate === "cdt-change") return dashboardVoucherFullCdtChange(def);
   if (def.fullTemplate === "cdt-note") return dashboardVoucherFullCdtNote(def);
   if (def.fullTemplate === "cdt-approval") return dashboardVoucherFullCdtApproval(def);
@@ -816,24 +961,105 @@ function dashboardVoucherFormModal() {
   return `<div class="modal-backdrop dashboard-voucher-form-backdrop" id="dashboard-voucher-form-modal">
     <section class="dashboard-voucher-form-modal" role="dialog" aria-modal="true" aria-labelledby="dashboard-voucher-form-title">
       <header><div><small data-voucher-form-kind>Form mẫu phiếu</small><h2 id="dashboard-voucher-form-title" data-voucher-form-title>Form mẫu</h2><p data-voucher-form-note></p></div><button type="button" data-action="close-voucher-form">×</button></header>
-      <form id="dashboard-voucher-form"><div data-voucher-form-body></div><footer><button type="button" class="btn secondary" data-action="close-voucher-form">Đóng</button><button class="btn">Lưu bản nháp</button></footer></form>
+      <form id="dashboard-voucher-form"><div data-voucher-form-body></div><footer><button type="button" class="btn secondary" data-action="close-voucher-form">Đóng</button><button class="btn">Gửi phiếu</button></footer></form>
     </section>
   </div>`;
 }
-function openDashboardVoucherForm(id) {
-  const def = DASHBOARD_VOUCHER_FORM_DEFS.get(id);
+function openDashboardVoucherForm(id, fallbackType = "") {
+  const def = DASHBOARD_VOUCHER_FORM_DEFS.get(id) || dashboardVoucherGenericFormDef(fallbackType || id);
   const modal = $("#dashboard-voucher-form-modal");
   if (!def || !modal) return;
   modal.dataset.currentVoucherForm = id;
+  modal.dataset.currentVoucherSubmit = def.submitHandler || "";
   modal.querySelector("[data-voucher-form-kind]").textContent = def.type;
   modal.querySelector("[data-voucher-form-title]").textContent = def.title;
   modal.querySelector("[data-voucher-form-note]").textContent = def.note || "";
   modal.querySelector("[data-voucher-form-body]").innerHTML = dashboardVoucherFormBody(def);
   modal.classList.add("open");
-  modal.querySelector("input, select, textarea")?.focus();
+  bindDashboardDateTextFields(modal);
+  if (def.id === "task") bindDashboardTaskVoucherForm(modal);
+  modal.querySelector("input:not([readonly]):not(:disabled), select:not(:disabled), textarea:not([readonly]):not(:disabled)")?.focus();
 }
 function closeDashboardVoucherForm() {
   $("#dashboard-voucher-form-modal")?.classList.remove("open");
+}
+function submitDashboardVoucherForm(form) {
+  const modal = form.closest("#dashboard-voucher-form-modal");
+  const submitHandler = modal?.dataset.currentVoucherSubmit || "";
+  const data = Object.fromEntries(new FormData(form));
+  if (submitHandler === "overtime") {
+    const hours = overtimeHours(data.start, data.end);
+    if (hours <= 0) return alert("Giờ kết thúc phải sau giờ bắt đầu.");
+    const code = `OT-${String(HRM_OVERTIME.length + 1).padStart(3, "0")}`;
+    HRM_OVERTIME.unshift([code, data.staff, overtimeDisplayDate(data.date), data.project, data.start, data.end, hours, data.reason, "Cần duyệt", Math.round(hours * OVERTIME_RATE_PER_HOUR), data.voucherType || overtimeVoucherTypeOptions()[0] || ""]);
+    saveHrmOvertime();
+    closeDashboardVoucherForm();
+    return state.page === "hrm-overtime" ? hrmOvertime() : projectLanding();
+  }
+  if (submitHandler === "leave") {
+    const days = leaveDayCount(data.fromDate, data.toDate);
+    const code = `NP-${String(HRM_LEAVE.length + 1).padStart(3, "0")}`;
+    const note = [data.reason, data.handover ? `Bàn giao: ${data.handover}` : ""].filter(Boolean).join(" · ");
+    HRM_LEAVE.unshift([code, data.staff, projectDateDisplayValue(data.fromDate), projectDateDisplayValue(data.toDate), days, data.leaveType, note, "Cần duyệt", data.approver]);
+    saveHrmLeave();
+    closeDashboardVoucherForm();
+    return state.page === "hrm-leave" ? hrmLeave() : projectLanding();
+  }
+  alert("Đã gửi phiếu.");
+  closeDashboardVoucherForm();
+}
+function bindDashboardDateTextFields(scope) {
+  scope.querySelectorAll(".dashboard-date-edit").forEach((wrap) => {
+    const textInput = wrap.querySelector('input[type="text"]');
+    const picker = wrap.querySelector('input[type="date"]');
+    if (!textInput || !picker || textInput.dataset.dateTextBound === "1") return;
+    textInput.dataset.dateTextBound = "1";
+    const syncPicker = () => {
+      const isoValue = dashboardVoucherDateIsoValue(textInput.value);
+      textInput.setCustomValidity(!textInput.value.trim() || isoValue ? "" : "Nhập ngày theo định dạng dd/mm/yyyy.");
+      if (isoValue) picker.value = isoValue;
+    };
+    const normalizeText = () => {
+      const isoValue = dashboardVoucherDateIsoValue(textInput.value);
+      if (!isoValue) return;
+      textInput.value = dashboardVoucherDateDisplayValue(isoValue);
+      picker.value = isoValue;
+    };
+    textInput.addEventListener("input", syncPicker);
+    textInput.addEventListener("change", normalizeText);
+    textInput.addEventListener("blur", normalizeText);
+    picker.addEventListener("change", () => {
+      if (!picker.value) return;
+      textInput.value = dashboardVoucherDateDisplayValue(picker.value);
+      textInput.dispatchEvent(new Event("input", { bubbles: true }));
+      textInput.dispatchEvent(new Event("change", { bubbles: true }));
+      textInput.focus();
+    });
+    syncPicker();
+  });
+}
+function bindDashboardTaskVoucherForm(modal) {
+  const codeInput = modal.querySelector("[data-task-code]");
+  const dateInput = modal.querySelector("[data-task-date]");
+  if (!codeInput || !dateInput) return;
+  dateInput.readOnly = false;
+  dateInput.disabled = false;
+  const updateTaskCode = () => {
+    const isoValue = dashboardVoucherDateIsoValue(dateInput.value);
+    if (!isoValue) return;
+    const date = dashboardVoucherDateFromInput(isoValue);
+    const dateKey = dashboardDateKey(date);
+    let sequence = Number(codeInput.dataset.taskCodeSequence || 1);
+    if (codeInput.dataset.taskCodeDateKey !== dateKey) {
+      const codeInfo = dashboardTaskVoucherCodeInfo(date);
+      sequence = codeInfo.sequence;
+      codeInput.dataset.taskCodeSequence = String(sequence);
+      codeInput.dataset.taskCodeDateKey = dateKey;
+    }
+    codeInput.value = dashboardTaskVoucherCodeForSequence(date, sequence);
+  };
+  dateInput.addEventListener("input", updateTaskCode);
+  dateInput.addEventListener("change", updateTaskCode);
 }
 function dashboardVoucherDateObject(value) {
   const parts = financeDateParts(value);
@@ -868,10 +1094,10 @@ function dashboardVoucherStatusLabel(item = {}) {
   return item.status || (dashboardVoucherNeedsApproval(item) ? "Cần duyệt" : "Đã ghi nhận");
 }
 function dashboardVoucherTypeKey(type = "") {
-  return plainVietnamese(type).replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "voucher";
+  return plainVietnamese(dashboardVoucherTypeLabel(type)).replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "voucher";
 }
 function dashboardVoucherApprovalKey(item = {}) {
-  return `${item.type || ""}::${item.code || ""}::${item.createdAt || item.date || ""}`;
+  return `${dashboardVoucherTypeLabel(item.type)}::${item.code || ""}::${item.createdAt || item.date || ""}`;
 }
 function dashboardVoucherApprovedKeys() {
   if (dashboardVoucherApprovedCache) return dashboardVoucherApprovedCache;
@@ -1067,12 +1293,14 @@ function dashboardBuildVoucherRows({ financeData, materialsRows, attendanceRecor
       projectView: "issues"
     });
   });
-  return vouchers.sort((a, b) => Number(dashboardVoucherNeedsApproval(b)) - Number(dashboardVoucherNeedsApproval(a)) || dashboardVoucherSortValue(a) - dashboardVoucherSortValue(b) || String(a.code).localeCompare(String(b.code), "vi", { numeric: true }));
+  return vouchers
+    .map((voucher) => ({ ...voucher, type: dashboardVoucherTypeLabel(voucher.type) }))
+    .sort((a, b) => Number(dashboardVoucherNeedsApproval(b)) - Number(dashboardVoucherNeedsApproval(a)) || dashboardVoucherSortValue(a) - dashboardVoucherSortValue(b) || String(a.code).localeCompare(String(b.code), "vi", { numeric: true }));
 }
 function dashboardVoucherRows(items) {
   return items.length ? items.map((item) => {
     const tone = dashboardVoucherTone(item);
-    return `<tr class="${escapeHtml(tone)}" ${dashboardLinkAttr(item)}><td><b>${escapeHtml(item.type)}</b><small>${escapeHtml(item.code || "")}</small></td><td>${escapeHtml(dashboardVoucherDateLabel(item))}</td><td><b>${escapeHtml(item.title || "")}</b><small>${escapeHtml(item.detail || "")}</small></td><td>${escapeHtml(item.owner || "")}</td><td>${escapeHtml(item.source || "")}</td><td><i class="dashboard-priority ${escapeHtml(tone)}">${escapeHtml(dashboardVoucherStatusLabel(item))}</i></td><td>${dashboardSourceButton(item, "Mở")}</td></tr>`;
+    return `<tr class="${escapeHtml(tone)}" ${dashboardLinkAttr(item)}><td><b>${escapeHtml(dashboardVoucherTypeLabel(item.type))}</b><small>${escapeHtml(item.code || "")}</small></td><td>${escapeHtml(dashboardVoucherDateLabel(item))}</td><td><b>${escapeHtml(item.title || "")}</b><small>${escapeHtml(item.detail || "")}</small></td><td>${escapeHtml(item.owner || "")}</td><td>${escapeHtml(item.source || "")}</td><td><i class="dashboard-priority ${escapeHtml(tone)}">${escapeHtml(dashboardVoucherStatusLabel(item))}</i></td><td>${dashboardSourceButton(item, "Mở")}</td></tr>`;
   }).join("") : `<tr><td colspan="7" class="dashboard-empty">Chưa có phiếu nào trong hệ thống.</td></tr>`;
 }
 function dashboardVoucherWithinWeek(item = {}, anchorDate = dashboardTodayDate()) {
@@ -1087,12 +1315,12 @@ function dashboardVoucherCardRow(item = {}) {
   const pending = dashboardVoucherNeedsApproval(item);
   const approve = pending ? `<button type="button" class="approve" data-voucher-approve="${escapeHtml(dashboardVoucherApprovalKey(item))}">Duyệt</button>` : `<button type="button" disabled>Đã duyệt</button>`;
   return `<article class="dashboard-voucher-item ${escapeHtml(tone)}">
-    <div><b>${escapeHtml(item.title || item.type || "")}</b><small>${escapeHtml([item.code, dashboardVoucherDateLabel(item), item.owner].filter(Boolean).join(" · "))}</small><p>${escapeHtml(item.detail || item.source || "")}</p><i class="dashboard-priority ${escapeHtml(tone)}">${escapeHtml(dashboardVoucherStatusLabel(item))}</i></div>
+    <div><b>${escapeHtml(item.title || dashboardVoucherTypeLabel(item.type) || "")}</b><small>${escapeHtml([item.code, dashboardVoucherDateLabel(item), item.owner].filter(Boolean).join(" · "))}</small><p>${escapeHtml(item.detail || item.source || "")}</p><i class="dashboard-priority ${escapeHtml(tone)}">${escapeHtml(dashboardVoucherStatusLabel(item))}</i></div>
     <aside>${approve}${dashboardSourceButton(item, "Mở")}</aside>
   </article>`;
 }
 function dashboardVoucherCard(type, items) {
-  const rows = items.filter((item) => item.type === type).sort(dashboardVoucherSort);
+  const rows = items.filter((item) => dashboardVoucherTypeLabel(item.type) === type).sort(dashboardVoucherSort);
   const latestDate = rows.reduce((latest, item) => {
     const date = dashboardVoucherDateObject(item.createdAt || item.date);
     return date > latest ? date : latest;
@@ -1108,7 +1336,7 @@ function dashboardVoucherCard(type, items) {
   </article>`;
 }
 function dashboardVoucherCards(items) {
-  return `<div class="dashboard-voucher-grid">${DASHBOARD_VOUCHER_TYPE_DEFS.map((type) => dashboardVoucherCard(type, items)).join("")}</div>`;
+  return `<div class="dashboard-voucher-grid">${dashboardVoucherTypeOptions(items).map((type) => dashboardVoucherCard(type, items)).join("")}</div>`;
 }
 function dashboardFindVoucherByKey(key = "") {
   return dashboardVoucherCache.find((item) => dashboardVoucherApprovalKey(item) === key);
@@ -1137,8 +1365,8 @@ async function dashboardApproveVoucher(key = "") {
   await projectLanding();
 }
 function dashboardVoucherSummary(items) {
-  return `<div class="dashboard-voucher-summary">${DASHBOARD_VOUCHER_TYPE_DEFS.map((type) => {
-    const rows = items.filter((item) => item.type === type);
+  return `<div class="dashboard-voucher-summary">${dashboardVoucherTypeOptions(items).map((type) => {
+    const rows = items.filter((item) => dashboardVoucherTypeLabel(item.type) === type);
     const pending = rows.filter(dashboardVoucherNeedsApproval).length;
     const tone = pending ? "warning" : rows.length ? "ok" : "empty";
     return `<article class="${tone}"><small>${escapeHtml(type)}</small><b>${rows.length}</b><span>${pending ? `${pending} chưa duyệt` : rows.length ? "Đã ghi nhận" : "Chưa có phiếu"}</span></article>`;
@@ -1417,6 +1645,43 @@ function dashboardTeamChatTime(value) {
   if (!Number.isFinite(date.getTime())) return "";
   return date.toLocaleString("vi-VN", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
 }
+function dashboardChatFileSize(value) {
+  const size = Number(value) || 0;
+  if (size >= 1024 * 1024) return `${(size / 1024 / 1024).toFixed(1)} MB`;
+  if (size >= 1024) return `${Math.ceil(size / 1024)} KB`;
+  return `${size} B`;
+}
+function dashboardChatFileType(file = {}) {
+  const name = String(file.name || "").toLowerCase();
+  if (file.category === "image" || /\.(jpe?g|png|webp|gif|bmp)$/i.test(name)) return "image";
+  if (file.category === "video" || /\.(mp4|mov|webm|m4v|avi|mkv)$/i.test(name)) return "video";
+  if (/\.pdf$/i.test(name)) return "pdf";
+  if (/\.(txt|md|note|log)$/i.test(name)) return "text";
+  if (/\.(zip|rar)$/i.test(name)) return "archive";
+  if (/\.(doc|docx|xls|xlsx|csv|ppt|pptx)$/i.test(name)) return "office";
+  return "file";
+}
+function dashboardChatAttachmentTarget(file = {}) {
+  const type = dashboardChatFileType(file);
+  return type === "office" || type === "archive" ? file.previewUrl || file.url : file.url;
+}
+function dashboardTeamChatAttachments(row = {}) {
+  const attachments = Array.isArray(row.attachments) ? row.attachments : [];
+  const body = attachments.map((file) => {
+    const type = dashboardChatFileType(file);
+    const name = escapeHtml(file.name || "Tệp đính kèm");
+    const url = escapeHtml(file.url || "");
+    const preview = escapeHtml(dashboardChatAttachmentTarget(file) || file.url || "");
+    const download = `${file.url || ""}${String(file.url || "").includes("?") ? "&" : "?"}download=1`;
+    const meta = `${dashboardChatFileSize(file.size)} · ${file.expiresAt ? `Hết hạn ${new Date(file.expiresAt).toLocaleDateString("vi-VN")}` : "Lưu 7 ngày"}`;
+    if (type === "image") return `<button type="button" class="dashboard-team-chat-attachment image" data-team-chat-open="${preview}" data-team-chat-type="${type}" data-team-chat-title="${name}" data-team-chat-download="${escapeHtml(download)}"><img src="${url}" alt="${name}"><span>${name}<small>${escapeHtml(meta)}</small></span></button>`;
+    if (type === "video") return `<div class="dashboard-team-chat-attachment video"><video src="${url}" controls preload="metadata"></video><button type="button" data-team-chat-open="${preview}" data-team-chat-type="${type}" data-team-chat-title="${name}" data-team-chat-download="${escapeHtml(download)}">${name}<small>${escapeHtml(meta)}</small></button></div>`;
+    const marker = type === "pdf" ? "PDF" : type === "office" ? "DOC" : type === "archive" ? "ZIP" : "FILE";
+    return `<button type="button" class="dashboard-team-chat-attachment file" data-team-chat-open="${preview}" data-team-chat-type="${type}" data-team-chat-title="${name}" data-team-chat-download="${escapeHtml(download)}"><b>${marker}</b><span>${name}<small>${escapeHtml(meta)}</small></span></button>`;
+  }).join("");
+  const expired = row.attachmentExpired ? `<small class="dashboard-team-chat-expired">Tệp đính kèm đã hết hạn lưu trữ 7 ngày.</small>` : "";
+  return body || expired ? `<div class="dashboard-team-chat-attachments">${body}${expired}</div>` : "";
+}
 
 function dashboardTeamChatMessages(rows = []) {
   if (!rows.length) return `<p class="dashboard-team-chat-empty">Chưa có tin nhắn.</p>`;
@@ -1425,7 +1690,8 @@ function dashboardTeamChatMessages(rows = []) {
     const agent = row.source === "agent";
     return `<article class="dashboard-team-chat-message ${own ? "own" : ""} ${agent ? "agent" : ""}">
       <header><b>${escapeHtml(agent ? "Agent" : row.author || row.loginId || "Thành viên")}</b><time>${escapeHtml(dashboardTeamChatTime(row.createdAt))}</time></header>
-      <p>${escapeHtml(row.text || "")}</p>
+      ${row.text ? `<p>${escapeHtml(row.text || "")}</p>` : ""}
+      ${dashboardTeamChatAttachments(row)}
     </article>`;
   }).join("");
 }
@@ -1435,9 +1701,12 @@ function dashboardTeamChatPanel(rows = []) {
     <header><div><h3>Chat chung</h3><p>Trao đổi nhanh giữa các thành viên Le Dome.</p></div><span>${rows.length} tin nhắn</span></header>
     <div class="dashboard-team-chat-body" id="team-chat-messages">${dashboardTeamChatMessages(rows)}</div>
     <form class="dashboard-team-chat-form" id="team-chat-form">
+      <button type="button" class="dashboard-team-chat-attach" data-team-chat-pick title="Gửi file">↥</button>
+      <input type="file" id="team-chat-file" hidden multiple accept="image/*,video/*,.gif,.webm,.pdf,.doc,.docx,.xls,.xlsx,.csv,.ppt,.pptx,.txt,.md,.note,.dwg,.zip,.rar">
       <input name="text" autocomplete="off" maxlength="2000" placeholder="Nhập tin nhắn...">
       <button type="submit">Gửi</button>
     </form>
+    <small class="dashboard-team-chat-hint" id="team-chat-status">Kéo thả file vào ô chat để gửi và đọc trực tiếp.</small>
   </section>`;
 }
 
@@ -1455,11 +1724,39 @@ async function dashboardRefreshTeamChat() {
   if (count) count.textContent = `${rows.length} tin nhắn`;
   dashboardScrollTeamChat();
 }
+async function uploadDashboardTeamChatFiles(files = []) {
+  const fileList = Array.from(files || []).filter((file) => file && file.name);
+  if (!fileList.length) return;
+  const pick = document.querySelector("[data-team-chat-pick]");
+  const status = $("#team-chat-status");
+  if (pick) pick.disabled = true;
+  if (status) status.textContent = `Đang gửi ${fileList.length} file...`;
+  try {
+    for (const file of fileList) {
+      const response = await fetch(`/api/v1/team-chat/files?name=${encodeURIComponent(file.name)}`, {
+        method: "POST",
+        credentials: "same-origin",
+        body: file
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(body.error || `Không gửi được ${file.name}`);
+    }
+    await dashboardRefreshTeamChat();
+  } catch (error) {
+    alert(error.message || "Không gửi được file.");
+  } finally {
+    if (pick) pick.disabled = false;
+    if (status) status.textContent = "Kéo thả file vào ô chat để gửi và đọc trực tiếp.";
+  }
+}
 
 async function projectLanding() {
   setTitle("projects", "");
-  const projectBody = await api("/projects");
+  const [projectBody] = await Promise.all([api("/projects"), loadCatalogData()]);
   const sourceProjects = activeProjectsOnly(projectBody.data || []);
+  dashboardProjectRows = sourceProjects;
+  catalogProjectDefaults = catalogList(sourceProjects.map((project) => project.code || project.name), catalogProjectDefaults);
+  catalogData = normalizeCatalogData(catalogData);
   const projectIndex = dashboardProjectIndex(sourceProjects);
   const [financeData, materialsRows, attendanceRuntime, teamChatRuntime] = await Promise.all([
     hasClientPermission("finance.view") ? loadFinanceData() : normalizeFinanceData({}),
@@ -1525,14 +1822,14 @@ async function projectLanding() {
     <div class="project-toolbar">
       <div class="menu-wrap"><button class="btn quick" data-action="toggle-quick">♟ Xem nhanh⌄</button><div class="tool-menu" id="quick-menu"><button data-dashboard-link="projects-overview">▦ Tổng quan dự án</button><button data-dashboard-link="finance-projects">▤ Tài chính dự án</button><button data-dashboard-link="hrm-attendance">◉ Chấm công</button></div></div>
       <button class="btn quick" data-action="reload">⟳ Tải lại</button>
-      <button class="btn" data-action="create-project">+ Dự án</button>
+      <button class="btn toolbar-create-action" data-action="create-project">+ Dự án</button>
       <div class="menu-wrap"><button class="btn" data-action="toggle-utility">Tiện ích⌄</button><div class="tool-menu right" id="utility-menu"><button data-dashboard-link="catalog">Cấu hình dữ liệu</button><button data-dashboard-link="drive">Mở Drive</button><button data-dashboard-link="standards">Quy chuẩn</button></div></div>
     </div>
     <header class="dashboard-head"><div><h2>Dashboard điều hành</h2><p>Tổng hợp danh sách phiếu từ Tài chính, Kho, Chấm công, Overtime, Xin nghỉ phép và các phiếu CDT / sự cố. Phiếu chưa duyệt được ưu tiên trước, trong cùng nhóm phiếu tạo trước nằm trước.</p></div><time>${escapeHtml(todayLabel)}</time></header>
     ${dashboardQuickAccessPanel()}
     ${dashboardMyTasksPanel(myTasks)}
     <section class="dashboard-panel dashboard-voucher-panel">
-      <header><div><h3>Danh sách phiếu</h3><p>Gồm Phiếu chấm công, Overtime, Xin nghỉ phép, Giao nhiệm vụ, Nhật ký thi công, Kho, Phiếu chi, các phiếu CDT và Phiếu Vấn đề sự cố.</p></div><span>${pendingVoucherRows.length} chưa duyệt / ${voucherRows.length} phiếu</span></header>
+      <header><div><h3>Danh sách phiếu</h3><p>Gồm Phiếu chấm công, Overtime, Xin nghỉ phép, Phiếu nhiệm vụ, Nhật ký thi công, Kho, Phiếu chi, các phiếu CDT và Phiếu Vấn đề sự cố.</p></div><span>${pendingVoucherRows.length} chưa duyệt / ${voucherRows.length} phiếu</span></header>
       ${dashboardVoucherCards(voucherRows)}
     </section>
     ${dashboardTeamChatPanel(teamChatRows)}
@@ -1557,6 +1854,11 @@ function projectModal() {
 
 function bindLanding() {
   $("#app").onclick = (event) => {
+    const chatAttachment = event.target.closest("[data-team-chat-open]");
+    if (chatAttachment) {
+      event.preventDefault();
+      return openDashboardChatAttachment(chatAttachment.dataset.teamChatOpen, chatAttachment.dataset.teamChatTitle || "File", chatAttachment.dataset.teamChatType || "file", chatAttachment.dataset.teamChatDownload || "");
+    }
     const voucherToggle = event.target.closest("[data-voucher-toggle]");
     if (voucherToggle) {
       dashboardSetVoucherCollapsed(voucherToggle.dataset.voucherToggle, !dashboardVoucherCollapsed(voucherToggle.dataset.voucherToggle));
@@ -1643,11 +1945,26 @@ function bindLanding() {
       input.focus();
     }
   };
+  const teamChatPanel = document.querySelector("[data-team-chat-panel]");
+  const teamChatFile = $("#team-chat-file");
+  document.querySelector("[data-team-chat-pick]")?.addEventListener("click", () => teamChatFile?.click());
+  teamChatFile?.addEventListener("change", async () => {
+    await uploadDashboardTeamChatFiles(teamChatFile.files);
+    teamChatFile.value = "";
+  });
+  ["dragenter", "dragover"].forEach((type) => teamChatPanel?.addEventListener(type, (event) => {
+    event.preventDefault();
+    teamChatPanel.classList.add("dragging");
+  }));
+  ["dragleave", "drop"].forEach((type) => teamChatPanel?.addEventListener(type, (event) => {
+    event.preventDefault();
+    teamChatPanel.classList.remove("dragging");
+    if (type === "drop") uploadDashboardTeamChatFiles(event.dataTransfer?.files || []);
+  }));
   const voucherForm = $("#dashboard-voucher-form");
   if (voucherForm) voucherForm.onsubmit = (event) => {
     event.preventDefault();
-    alert("Đã lưu bản nháp phiếu mẫu.");
-    closeDashboardVoucherForm();
+    submitDashboardVoucherForm(event.currentTarget);
   };
   const projectForm = $("#project-form");
   const syncProjectDuration = () => {
@@ -1673,7 +1990,7 @@ async function projectTable() {
   const response = await api("/projects");
   const data = activeProjectsOnly(response.data);
   setTitle("projects", "Quản lý danh sách và trạng thái dự án xây dựng");
-  $("#app").innerHTML = `<div class="hero"><div><h2>DASHBOARD</h2><span class="muted">${data.length} dự án đang hiển thị</span></div><button class="btn">+ Tạo dự án</button></div>
+  $("#app").innerHTML = `<div class="hero"><div><h2>DASHBOARD</h2><span class="muted">${data.length} dự án đang hiển thị</span></div><button class="btn toolbar-create-action">+ Tạo dự án</button></div>
   <table><thead><tr><th>Mã dự án</th><th>Tên dự án</th><th>Loại</th><th>Quản lý</th><th>Tiến độ</th><th>Tình trạng</th><th>Ngân sách</th></tr></thead><tbody>
   ${data.map((p) => `<tr><td>${p.code}</td><td class="project-name" data-project="${p.id}">${p.name}</td><td>${p.type}</td><td>${p.manager}</td><td>${progress(p.progress)}<small>${p.progress}%</small></td><td>${badge(p.health)}</td><td>${money(p.budget)} đ</td></tr>`).join("")}</tbody></table>`;
   $("#app").onclick = (event) => {
@@ -1686,7 +2003,7 @@ async function home() {
   const data = await api("/dashboard");
   setTitle("home", "Theo dõi hoạt động xây dựng theo thời gian thực");
   $("#app").innerHTML = `
-    <div class="hero"><div><h2>${data.greeting}</h2><span class="muted">Đây là tình hình hoạt động nổi bật hôm nay.</span></div><button class="btn">+ Tạo dự án</button></div>
+    <div class="hero"><div><h2>${data.greeting}</h2><span class="muted">Đây là tình hình hoạt động nổi bật hôm nay.</span></div><button class="btn toolbar-create-action">+ Tạo dự án</button></div>
     <div class="grid stats">${data.stats.map(stat).join("")}</div>
     <div class="grid two">
       <article class="card"><h3>Tổng quan tài chính</h3>${data.finance.map(([x,y]) => `<div class="money-row"><span>${x}</span><b>${money(y)} đ</b></div>`).join("")}</article>
@@ -1918,9 +2235,81 @@ async function ensureCustomerPartnersFromProjects(financeData = {}) {
 }
 const CATALOG_FALLBACK = {
   projectList: [],
-  constructionCategories: ["KHẢO SÁT - ĐO ĐẠC", "CHE PHỦ", "PHÁ DỠ", "VẬN CHUYỂN", "XÂY TRÁT", "CHỐNG THẤM", "ĐIỆN NƯỚC", "PCCC / AN TOÀN KỸ THUẬT", "ĐIỀU HÒA", "THIẾT BỊ THÔNG MINH - MẠNG - CAMERA", "THẠCH CAO", "ỐP LÁT", "ĐÁ", "SƠN BẢ", "SÀN GỖ - SÀN NHỰA", "CỬA", "NHÔM KÍNH", "SẮT", "GỖ NỘI THẤT", "RÈM", "CÂY - TIỂU CẢNH", "BIỂN BẢNG LOGO", "DEFECT CHẤM VÁ", "VỆ SINH CN", "KHÁC"],
+  staffList: [],
+  constructionCategories: ["KHẢO SÁT - ĐO ĐẠC", "CHE PHỦ", "PHÁ DỠ", "VẬN CHUYỂN", "XÂY TRÁT", "CHỐNG THẤM", "ĐIỆN NƯỚC", "PCCC / AN TOÀN KỸ THUẬT", "THIẾT BỊ THÔNG MINH - MẠNG - CAMERA", "THẠCH CAO", "ỐP LÁT", "ĐÁ", "SƠN BẢ", "TẤM ỐP NHỰA - THAN TRE", "SÀN GỖ - SÀN NHỰA", "CỬA", "GỖ NỘI THẤT", "RÈM", "NHÔM KÍNH", "SẮT", "ĐIỀU HÒA", "VỆ SINH CN", "DEFECT CHẤM VÁ", "DECOR TRANG TRÍ", "CÂY - TIỂU CẢNH", "BIỂN BẢNG LOGO", "KHÁC"],
+  constructionCategoryGroups: [
+    {
+      id: "rough",
+      title: "Nhóm 1: Phần thô & Xây dựng cơ bản",
+      role: "Nhà thầu xây dựng",
+      desc: "Kết cấu, xây tô, cán nền, chống thấm, phá dỡ và chuẩn bị mặt bằng.",
+      items: ["KHẢO SÁT - ĐO ĐẠC", "CHE PHỦ", "PHÁ DỠ", "VẬN CHUYỂN", "XÂY TRÁT", "CHỐNG THẤM"]
+    },
+    {
+      id: "surface-mep",
+      title: "Nhóm 2: Phần hoàn thiện bề mặt & Cơ điện",
+      role: "Nhà thầu hoàn thiện / Điện nước",
+      desc: "Đi dây điện, ống nước, thạch cao, ốp lát, đá, sơn bả và hệ kỹ thuật âm tường.",
+      items: ["ĐIỆN NƯỚC", "PCCC / AN TOÀN KỸ THUẬT", "THIẾT BỊ THÔNG MINH - MẠNG - CAMERA", "THẠCH CAO", "ỐP LÁT", "ĐÁ", "SƠN BẢ", "TẤM ỐP NHỰA - THAN TRE"]
+    },
+    {
+      id: "wood-interior",
+      title: "Nhóm 3: Phần gỗ & Nội thất",
+      role: "Xưởng sản xuất nội thất",
+      desc: "Gia công tại xưởng và lắp ráp tại công trình: tủ, giường, vách ốp, sàn gỗ, cửa gỗ.",
+      items: ["SÀN GỖ - SÀN NHỰA", "CỬA", "GỖ NỘI THẤT", "RÈM"]
+    },
+    {
+      id: "metal-equipment",
+      title: "Nhóm 4: Phần cơ khí, nhôm kính & Thiết bị chuyên dụng",
+      role: "Đội thầu phụ chuyên dụng",
+      desc: "Nhôm kính, sắt, lan can, điều hòa và các hệ thiết bị chuyên môn.",
+      items: ["NHÔM KÍNH", "SẮT", "ĐIỀU HÒA"]
+    },
+    {
+      id: "completion",
+      title: "Nhóm 5: Hoàn thiện",
+      role: "Đội hoàn thiện cuối kỳ",
+      desc: "Vệ sinh CN, defect chấm vá, decor trang trí, cây cảnh, logo và các đầu mục hoàn thiện cuối.",
+      items: ["VỆ SINH CN", "DEFECT CHẤM VÁ", "DECOR TRANG TRÍ", "CÂY - TIỂU CẢNH", "BIỂN BẢNG LOGO", "KHÁC"]
+    }
+  ],
+  designCategories: ["KHẢO SÁT HIỆN TRẠNG", "MẶT BẰNG CÔNG NĂNG", "CONCEPT / Ý TƯỞNG", "THIẾT KẾ 3D", "HỒ SƠ KỸ THUẬT", "BỔ KỸ THUẬT", "VẬT LIỆU / MÀU SẮC", "DỰ TOÁN THIẾT KẾ", "TRÌNH DUYỆT CDT", "KHÁC"],
   materialCategories: ["VẬT LIỆU HOÀN THIỆN", "PHỤ KIỆN ĐỒ NỘI THẤT", "THIẾT BỊ CHIẾU SÁNG", "THIẾT BỊ BẾP", "THIẾT BỊ VỆ SINH", "ĐÈN DECOR", "ĐỒ DECOR", "ĐỒ DECOR BẾP", "CHĂN GA ĐỆM", "ĐỒ THỦ CÔNG", "KHÁC"],
+  materialCategoryGroups: [
+    {
+      id: "material-finishing",
+      title: "Nhóm 1: Vật liệu hoàn thiện",
+      role: "Nhà cung cấp vật liệu hoàn thiện",
+      desc: "Keo, nẹp, phào, sơn, đá, vật liệu ốp lát và hoàn thiện bề mặt.",
+      items: ["VẬT LIỆU HOÀN THIỆN"]
+    },
+    {
+      id: "material-interior",
+      title: "Nhóm 2: Phụ kiện & Nội thất",
+      role: "NCC phụ kiện nội thất",
+      desc: "Phụ kiện đồ nội thất, đồ decor, đồ decor bếp, chăn ga đệm và đồ thủ công.",
+      items: ["PHỤ KIỆN ĐỒ NỘI THẤT", "ĐỒ DECOR", "ĐỒ DECOR BẾP", "CHĂN GA ĐỆM", "ĐỒ THỦ CÔNG"]
+    },
+    {
+      id: "material-equipment",
+      title: "Nhóm 3: Thiết bị công trình",
+      role: "NCC thiết bị chuyên dụng",
+      desc: "Thiết bị chiếu sáng, thiết bị bếp, thiết bị vệ sinh và đèn decor.",
+      items: ["THIẾT BỊ CHIẾU SÁNG", "THIẾT BỊ BẾP", "THIẾT BỊ VỆ SINH", "ĐÈN DECOR"]
+    },
+    {
+      id: "material-other",
+      title: "Nhóm 4: Khác",
+      role: "NCC bổ sung",
+      desc: "Các nhóm vật tư chưa phân loại hoặc phát sinh theo dự án.",
+      items: ["KHÁC"]
+    }
+  ],
   contractTypes: ["Hợp đồng thiết kế", "Hợp đồng thi công", "Hợp đồng thiết kế thi công", "Hợp đồng phát sinh"],
+  designContractTypes: ["Hợp đồng thiết kế", "Phụ lục hợp đồng thiết kế", "Biên bản nghiệm thu thiết kế", "Thanh lý hợp đồng thiết kế"],
+  constructionContractTypes: ["Hợp đồng thi công", "Phụ lục hợp đồng thi công", "Báo giá hợp đồng", "Hồ sơ bản vẽ hợp đồng", "Phát sinh hợp đồng thi công", "Quyết toán hợp đồng thi công"],
+  subcontractTypes: ["Hợp đồng giao thầu", "Phụ lục hợp đồng giao thầu", "Báo giá nhà thầu", "Hồ sơ bản vẽ giao thầu", "Phát sinh hợp đồng giao thầu", "Quyết toán hợp đồng giao thầu"],
   voucherTypes: APP_VOUCHER_TYPE_DEFAULTS,
   overtimeVoucherTypes: ["Phiếu OT ngày thường", "Phiếu OT cuối tuần", "Phiếu OT ngày lễ", "Phiếu OT bổ sung"],
   paymentVoucherTypes: ["Phiếu chi dự án", "Phiếu chi vận hành", "Phiếu chi tạm ứng", "Phiếu chi hoàn ứng", "Phiếu chi khác"],
@@ -1933,24 +2322,96 @@ const CATALOG_FALLBACK = {
   cdtApprovalRequestTypes: ["Duyệt báo giá", "Duyệt phương án", "Duyệt vật liệu", "Duyệt tiến độ", "Duyệt phát sinh"],
   incidentIssueTypes: ["Sự cố kỹ thuật", "Sự cố vật tư", "Sự cố an toàn", "Sự cố tiến độ", "Sự cố chất lượng"]
 };
-let catalogData = Object.fromEntries(Object.entries(CATALOG_FALLBACK).map(([key, values]) => [key, [...values]]));
+let catalogData = typeof structuredClone === "function" ? structuredClone(CATALOG_FALLBACK) : JSON.parse(JSON.stringify(CATALOG_FALLBACK));
 let catalogProjectDefaults = [];
 let catalogProjectRows = [];
 let catalogAutosaveTimer = null;
+let catalogSearchRenderTimer = null;
 let catalogAutosaveScope = "";
+const catalogEditing = {};
 function catalogList(input, fallback) {
   const source = Array.isArray(input) ? input : fallback;
   return [...new Set(source.map((item) => String(item || "").trim()).filter(Boolean))];
+}
+function catalogListTitles(input = {}) {
+  const source = input && typeof input === "object" ? input : {};
+  return Object.fromEntries(Object.entries(source)
+    .map(([key, value]) => [key, String(value || "").replace(/\s+/g, " ").trim()])
+    .filter(([, value]) => value));
+}
+function catalogTextKey(value) {
+  return String(value || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/đ/g, "d").replace(/Đ/g, "D").toLocaleUpperCase("vi");
+}
+function constructionGroupIdForName(name) {
+  const text = catalogTextKey(name);
+  if (/VE SINH|DEFECT|CHAM VA|DECOR|TRANG TRI|CAY|TIEU CANH|BIEN BANG|LOGO|DO THU CONG|CHAN GA|KHAC/.test(text)) return "completion";
+  if (/NHOM KINH|SAT|CO KHI|LAN CAN|THANG MAY|DIEU HOA|MAY LANH|THIET BI VE SINH|THIET BI BEP/.test(text)) return "metal-equipment";
+  if (/GO|NOI THAT|SAN GO|SAN NHUA|CUA|REM|PHU KIEN/.test(text)) return "wood-interior";
+  if (/DIEN|NUOC|PCCC|AN TOAN|THONG MINH|MANG|CAMERA|THACH CAO|OP LAT|DA|SON|TAM OP|THAN TRE|VAT LIEU HOAN THIEN|THIET BI CHIEU SANG|DEN/.test(text)) return "surface-mep";
+  if (/KHAO SAT|DO DAC|CHE PHU|PHA DO|VAN CHUYEN|XAY|TRAT|CHONG THAM|CAN NEN|BE TONG/.test(text)) return "rough";
+  return "completion";
+}
+function materialGroupIdForName(name) {
+  const text = catalogTextKey(name);
+  if (/PHU KIEN|NOI THAT|DO DECOR|DECOR BEP|CHAN GA|DO THU CONG/.test(text)) return "material-interior";
+  if (/THIET BI|CHIEU SANG|DEN|BEP|VE SINH/.test(text)) return "material-equipment";
+  if (/VAT LIEU|HOAN THIEN|OP LAT|DA|SON|KEO|NEP|PHAO/.test(text)) return "material-finishing";
+  return "material-other";
+}
+function normalizeCatalogCategoryGroups(input, categories, fallbackGroups, fallbackCategories, groupIdForName) {
+  const categoryItems = catalogList(categories, fallbackCategories);
+  const categoryByKey = new Map(categoryItems.map((item) => [catalogTextKey(item), item]));
+  const metadata = new Map(fallbackGroups.map((group) => [group.id, { ...group, items: [] }]));
+  if (Array.isArray(input)) input.forEach((group) => {
+    if (!group?.id || !metadata.has(group.id)) return;
+    metadata.set(group.id, { ...metadata.get(group.id), ...group, items: [] });
+  });
+  const groups = fallbackGroups.map((group) => ({ ...metadata.get(group.id), items: [] }));
+  const byId = new Map(groups.map((group) => [group.id, group]));
+  const seen = new Set();
+  if (Array.isArray(input)) input.forEach((group) => {
+    const target = byId.get(group?.id);
+    if (!target) return;
+    (Array.isArray(group.items) ? group.items : []).forEach((item) => {
+      const key = catalogTextKey(item);
+      const canonical = categoryByKey.get(key);
+      if (!canonical || seen.has(key)) return;
+      target.items.push(canonical);
+      seen.add(key);
+    });
+  });
+  categoryItems.forEach((item) => {
+    const key = catalogTextKey(item);
+    if (seen.has(key)) return;
+    (byId.get(groupIdForName(item)) || groups[groups.length - 1]).items.push(item);
+    seen.add(key);
+  });
+  return groups;
+}
+function normalizeConstructionCategoryGroups(input, categories) {
+  return normalizeCatalogCategoryGroups(input, categories, CATALOG_FALLBACK.constructionCategoryGroups, CATALOG_FALLBACK.constructionCategories, constructionGroupIdForName);
+}
+function normalizeMaterialCategoryGroups(input, categories) {
+  return normalizeCatalogCategoryGroups(input, categories, CATALOG_FALLBACK.materialCategoryGroups, CATALOG_FALLBACK.materialCategories, materialGroupIdForName);
 }
 function catalogProjectLookupKey(value) {
   return String(value || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/đ/g, "d").replace(/Đ/g, "D").toLocaleLowerCase("vi").replace(/[^a-z0-9]/g, "");
 }
 function normalizeCatalogData(input = {}) {
+  const constructionCategories = catalogList(input.constructionCategories, CATALOG_FALLBACK.constructionCategories);
+  const materialCategories = catalogList(input.materialCategories, CATALOG_FALLBACK.materialCategories);
   return {
     projectList: catalogList(input.projectList, catalogProjectDefaults.length ? catalogProjectDefaults : CATALOG_FALLBACK.projectList),
-    constructionCategories: catalogList(input.constructionCategories, CATALOG_FALLBACK.constructionCategories),
-    materialCategories: catalogList(input.materialCategories, CATALOG_FALLBACK.materialCategories),
+    staffList: catalogList(input.staffList, CATALOG_FALLBACK.staffList),
+    constructionCategories,
+    constructionCategoryGroups: normalizeConstructionCategoryGroups(input.constructionCategoryGroups, constructionCategories),
+    designCategories: catalogList(input.designCategories, CATALOG_FALLBACK.designCategories),
+    materialCategories,
+    materialCategoryGroups: normalizeMaterialCategoryGroups(input.materialCategoryGroups, materialCategories),
     contractTypes: catalogList(input.contractTypes, CATALOG_FALLBACK.contractTypes),
+    designContractTypes: catalogList(input.designContractTypes, CATALOG_FALLBACK.designContractTypes),
+    constructionContractTypes: catalogList(input.constructionContractTypes, CATALOG_FALLBACK.constructionContractTypes),
+    subcontractTypes: catalogList(input.subcontractTypes, CATALOG_FALLBACK.subcontractTypes),
     voucherTypes: catalogList(input.voucherTypes, CATALOG_FALLBACK.voucherTypes),
     overtimeVoucherTypes: catalogList(input.overtimeVoucherTypes, CATALOG_FALLBACK.overtimeVoucherTypes),
     paymentVoucherTypes: catalogList(input.paymentVoucherTypes, CATALOG_FALLBACK.paymentVoucherTypes),
@@ -1961,19 +2422,43 @@ function normalizeCatalogData(input = {}) {
     cdtChangeRequestTypes: catalogList(input.cdtChangeRequestTypes, CATALOG_FALLBACK.cdtChangeRequestTypes),
     cdtNoteRequestTypes: catalogList(input.cdtNoteRequestTypes, CATALOG_FALLBACK.cdtNoteRequestTypes),
     cdtApprovalRequestTypes: catalogList(input.cdtApprovalRequestTypes, CATALOG_FALLBACK.cdtApprovalRequestTypes),
-    incidentIssueTypes: catalogList(input.incidentIssueTypes, CATALOG_FALLBACK.incidentIssueTypes)
+    incidentIssueTypes: catalogList(input.incidentIssueTypes, CATALOG_FALLBACK.incidentIssueTypes),
+    listTitles: catalogListTitles(input.listTitles)
   };
 }
 const projectListOptions = () => catalogList(catalogData.projectList, catalogProjectDefaults.length ? catalogProjectDefaults : CATALOG_FALLBACK.projectList);
+const staffListOptions = () => catalogList(catalogData.staffList, CATALOG_FALLBACK.staffList);
 const materialCategoryOptions = () => catalogList(catalogData.materialCategories, CATALOG_FALLBACK.materialCategories);
 const constructionCategoryOptions = () => catalogList(catalogData.constructionCategories, CATALOG_FALLBACK.constructionCategories);
+const designCategoryOptions = () => catalogList(catalogData.designCategories, CATALOG_FALLBACK.designCategories);
 const contractTypeOptions = () => catalogList(catalogData.contractTypes, CATALOG_FALLBACK.contractTypes);
+const designContractTypeOptions = () => catalogList(catalogData.designContractTypes, CATALOG_FALLBACK.designContractTypes);
+const constructionContractTypeOptions = () => catalogList(catalogData.constructionContractTypes, CATALOG_FALLBACK.constructionContractTypes);
+const subcontractTypeOptions = () => catalogList(catalogData.subcontractTypes, CATALOG_FALLBACK.subcontractTypes);
+const voucherTypeOptions = () => financeUnique(catalogList(catalogData.voucherTypes, CATALOG_FALLBACK.voucherTypes).map(dashboardVoucherTypeLabel));
+const overtimeVoucherTypeOptions = () => catalogList(catalogData.overtimeVoucherTypes, CATALOG_FALLBACK.overtimeVoucherTypes);
+const paymentVoucherTypeOptions = () => catalogList(catalogData.paymentVoucherTypes, CATALOG_FALLBACK.paymentVoucherTypes);
+const attendanceVoucherTypeOptions = () => catalogList(catalogData.attendanceVoucherTypes, CATALOG_FALLBACK.attendanceVoucherTypes);
+const inventoryReceiptTypeOptions = () => catalogList(catalogData.inventoryReceiptTypes, CATALOG_FALLBACK.inventoryReceiptTypes);
+const inventoryIssueTypeOptions = () => catalogList(catalogData.inventoryIssueTypes, CATALOG_FALLBACK.inventoryIssueTypes);
+const warehouseOptions = () => catalogList(catalogData.warehouseList, CATALOG_FALLBACK.warehouseList);
+const cdtChangeRequestTypeOptions = () => catalogList(catalogData.cdtChangeRequestTypes, CATALOG_FALLBACK.cdtChangeRequestTypes);
+const cdtNoteRequestTypeOptions = () => catalogList(catalogData.cdtNoteRequestTypes, CATALOG_FALLBACK.cdtNoteRequestTypes);
+const cdtApprovalRequestTypeOptions = () => catalogList(catalogData.cdtApprovalRequestTypes, CATALOG_FALLBACK.cdtApprovalRequestTypes);
+const incidentIssueTypeOptions = () => catalogList(catalogData.incidentIssueTypes, CATALOG_FALLBACK.incidentIssueTypes);
 const CATALOG_LIST_CONFIG = {
   projectList: {
     title: "Danh sách dự án",
     note: "Dùng cho Chủ đề của nhóm DỰ ÁN trong sổ giao dịch tài chính.",
     placeholder: "VD: 6ATS",
     preserveCase: true
+  },
+  staffList: {
+    title: "Danh sách nhân sự",
+    note: "Lấy tự động từ module Nhân sự Le Dome. Muốn thêm/sửa/xóa nhân sự thì cập nhật ở NHÂN SỰ > Nhân sự.",
+    placeholder: "",
+    preserveCase: true,
+    readOnly: true
   },
   partnerCustomers: {
     title: "Danh sách khách hàng",
@@ -1998,8 +2483,13 @@ const CATALOG_LIST_CONFIG = {
   },
   constructionCategories: {
     title: "Danh sách Hạng mục thi công",
-    note: "Dùng cho Nhà thầu, Hợp đồng nhận thầu/giao thầu và các màn thi công.",
+    note: "Dùng cho Nhà thầu, Hợp đồng thi công/giao thầu và các màn thi công.",
     placeholder: "VD: ỐP LÁT"
+  },
+  designCategories: {
+    title: "Danh sách Hạng mục Thiết kế",
+    note: "Dùng cho giai đoạn thiết kế, hồ sơ 3D/kỹ thuật và phiếu nhiệm vụ thiết kế.",
+    placeholder: "VD: THIẾT KẾ 3D"
   },
   materialCategories: {
     title: "Danh sách hạng mục Thiết bị Vật tư",
@@ -2010,6 +2500,24 @@ const CATALOG_LIST_CONFIG = {
     title: "Danh sách hợp đồng",
     note: "Dùng để phân loại hợp đồng trong dự án và giao dịch tài chính.",
     placeholder: "VD: Hợp đồng bảo trì",
+    preserveCase: true
+  },
+  designContractTypes: {
+    title: "Danh sách Hợp đồng thiết kế",
+    note: "Kết nối với mục Hợp đồng nhận thầu > Hợp đồng thiết kế.",
+    placeholder: "VD: Phụ lục hợp đồng thiết kế",
+    preserveCase: true
+  },
+  constructionContractTypes: {
+    title: "Danh sách hợp đồng thi công",
+    note: "Kết nối với mục Hợp đồng nhận thầu > Hợp đồng thi công.",
+    placeholder: "VD: Phụ lục hợp đồng thi công",
+    preserveCase: true
+  },
+  subcontractTypes: {
+    title: "Danh sách Hợp đồng giao thầu",
+    note: "Kết nối với mục Hợp đồng giao thầu của nhà thầu.",
+    placeholder: "VD: Phụ lục hợp đồng giao thầu",
     preserveCase: true
   },
   voucherTypes: {
@@ -2079,7 +2587,7 @@ const CATALOG_LIST_CONFIG = {
     preserveCase: true
   }
 };
-const CATALOG_PAGE_LIST_TYPES = ["projectList", "partnerCustomers", "partnerContractors", "partnerSuppliers", "constructionCategories", "materialCategories", "contractTypes", "voucherTypes", "overtimeVoucherTypes", "paymentVoucherTypes", "attendanceVoucherTypes", "inventoryReceiptTypes", "inventoryIssueTypes", "warehouseList", "cdtChangeRequestTypes", "cdtNoteRequestTypes", "cdtApprovalRequestTypes", "incidentIssueTypes"];
+const CATALOG_PAGE_LIST_TYPES = ["projectList", "staffList", "partnerCustomers", "partnerContractors", "partnerSuppliers", "constructionCategories", "designCategories", "materialCategories", "contractTypes", "designContractTypes", "constructionContractTypes", "subcontractTypes", "voucherTypes", "overtimeVoucherTypes", "paymentVoucherTypes", "attendanceVoucherTypes", "inventoryReceiptTypes", "inventoryIssueTypes", "warehouseList", "cdtChangeRequestTypes", "cdtNoteRequestTypes", "cdtApprovalRequestTypes", "incidentIssueTypes"];
 const FINANCE_CAPITAL_CATEGORY_OPTIONS = ["NGÂN HÀNG", "KHÁC"];
 let lastRoutePage = "";
 
@@ -2102,7 +2610,10 @@ function normalizeCatalogOrder(order = [], types = CATALOG_PAGE_LIST_TYPES) {
     normalized.push(type);
   });
   types.forEach((type) => {
-    if (!seen.has(type)) normalized.push(type);
+    if (seen.has(type)) return;
+    if (type === "staffList" && normalized.includes("projectList")) normalized.splice(normalized.indexOf("projectList") + 1, 0, type);
+    else normalized.push(type);
+    seen.add(type);
   });
   return normalized;
 }
@@ -2419,7 +2930,7 @@ function supplierPrimaryCategory(row) {
 }
 
 function supplierCategoryOptions(rows) {
-  return ["Tất cả", ...sortMaterialCategories(materialCategoryOptions())];
+  return ["Tất cả", ...materialCategoryOptions()];
 }
 
 function directoryCheckOptionMarkup(name, option) {
@@ -2428,8 +2939,8 @@ function directoryCheckOptionMarkup(name, option) {
 }
 
 function supplierCategoryFieldMarkup(selected = []) {
-  const options = sortMaterialCategories([...materialCategoryOptions(), ...selected]);
-  return `<fieldset class="directory-multi directory-form-wide"><legend>Hạng mục vật tư</legend><div class="directory-check-list">${options.map((option) => directoryCheckOptionMarkup("supplierCategories", option)).join("")}</div></fieldset>`;
+  const options = financeUnique([...materialCategoryOptions(), ...sortMaterialCategories(selected)]);
+  return `<fieldset class="directory-multi directory-form-wide"><legend>Hạng mục Thiết bị Vật tư</legend><div class="directory-check-list">${options.map((option) => directoryCheckOptionMarkup("supplierCategories", option)).join("")}</div></fieldset>`;
 }
 
 function setSupplierCategoryChecks(form, categories = []) {
@@ -2776,7 +3287,7 @@ function bindCrmDirectory(type, financeData = {}, profileByCode = new Map()) {
     const data = Object.fromEntries(new FormData(form));
     const categories = isSupplier ? supplierSelectedFormCategories(form) : [];
     if (isSupplier && !categories.length) {
-      alert("Chọn ít nhất một hạng mục vật tư cho nhà cung cấp.");
+      alert("Chọn ít nhất một hạng mục Thiết bị Vật tư cho nhà cung cấp.");
       return;
     }
     const contractorCategoryValues = isContractor ? contractorSelectedFormCategories(form) : [];
@@ -2871,8 +3382,10 @@ const drivePreviewKind = (name) => {
   const ext = driveExt(name);
   if (ext === ".pdf") return "pdf";
   if ([".png", ".jpg", ".jpeg", ".webp"].includes(ext)) return "image";
+  if ([".mp4", ".mov", ".webm", ".m4v", ".avi", ".mkv"].includes(ext)) return "video";
   if ([".zip", ".rar"].includes(ext)) return "archive";
-  if ([".doc", ".docx", ".xls", ".xlsx", ".csv", ".ppt", ".pptx", ".txt", ".md", ".note"].includes(ext)) return "office";
+  if ([".txt", ".md", ".note", ".log"].includes(ext)) return "text";
+  if ([".doc", ".docx", ".xls", ".xlsx", ".csv", ".ppt", ".pptx"].includes(ext)) return "office";
   return "file";
 };
 const driveCanPreview = (file) => DRIVE_PREVIEW_EXTENSIONS.has(driveExt(file?.[1]));
@@ -2905,6 +3418,80 @@ function driveRowsMarkup(rows) {
   }).join("");
 }
 
+function drivePreviewColumnLabel(index) {
+  let value = Number(index) + 1;
+  let label = "";
+  while (value > 0) {
+    const remainder = (value - 1) % 26;
+    label = String.fromCharCode(65 + remainder) + label;
+    value = Math.floor((value - 1) / 26);
+  }
+  return label || "A";
+}
+
+function drivePreviewSheetMarkup(sheet) {
+  const rows = Array.isArray(sheet.rows) ? sheet.rows : [];
+  const rowCells = (row) => Array.isArray(row) ? row : Array.isArray(row?.cells) ? row.cells : [];
+  const columnCount = Math.max(1, ...rows.map((row) => rowCells(row).length));
+  const columns = Array.isArray(sheet.columns) && sheet.columns.length
+    ? sheet.columns
+    : Array.from({ length: columnCount }, (_, index) => drivePreviewColumnLabel(index));
+  const notes = [
+    sheet.truncatedRows ? "Đang hiển thị các dòng đầu" : "",
+    sheet.truncatedColumns ? "Đang hiển thị các cột đầu" : ""
+  ].filter(Boolean).join(" · ");
+  const body = rows.map((row, rowIndex) => {
+    const cells = rowCells(row);
+    const rowNumber = Array.isArray(sheet.rowNumbers) ? sheet.rowNumbers[rowIndex] : row?.number || rowIndex + 1;
+    return `<tr><th scope="row">${escapeHtml(rowNumber)}</th>${columns.map((_, columnIndex) => {
+      const value = cells[columnIndex] ?? "";
+      return `<td${String(value).trim() ? "" : ` class="empty"`}>${escapeHtml(value)}</td>`;
+    }).join("")}</tr>`;
+  }).join("");
+  return `<section class="drive-preview-sheet"><div class="drive-preview-sheet-head"><h4>${escapeHtml(sheet.title || "Sheet")}</h4>${notes ? `<small>${escapeHtml(notes)}</small>` : ""}</div><div class="drive-preview-table-wrap">${body ? `<table class="drive-preview-table"><thead><tr><th scope="col"></th>${columns.map((column) => `<th scope="col">${escapeHtml(column)}</th>`).join("")}</tr></thead><tbody>${body}</tbody></table>` : `<div class="drive-preview-empty">Không có dữ liệu xem nhanh.</div>`}</div></section>`;
+}
+
+function drivePreviewDocTextMarkup(value) {
+  return escapeHtml(value || "").replace(/\t/g, `<span class="drive-preview-doc-tab"></span>`).replace(/\n/g, "<br>");
+}
+
+function drivePreviewRunMarkup(run = {}) {
+  let html = drivePreviewDocTextMarkup(run.text || "");
+  if (!html) return "";
+  if (run.underline) html = `<u>${html}</u>`;
+  if (run.italic) html = `<em>${html}</em>`;
+  if (run.bold) html = `<strong>${html}</strong>`;
+  return html;
+}
+
+function drivePreviewWordParagraphMarkup(block = {}) {
+  const roles = new Set(["title", "subtitle", "heading"]);
+  const aligns = new Set(["center", "right", "both", "justify"]);
+  const classes = ["drive-preview-doc-p"];
+  if (roles.has(block.role)) classes.push(block.role);
+  if (aligns.has(block.align)) classes.push(block.align);
+  const runs = Array.isArray(block.runs) && block.runs.length
+    ? block.runs.map((run) => drivePreviewRunMarkup(run)).join("")
+    : drivePreviewDocTextMarkup(block.text || "");
+  return `<p class="${classes.join(" ")}">${runs || "&nbsp;"}</p>`;
+}
+
+function drivePreviewWordTableMarkup(block = {}) {
+  const rows = Array.isArray(block.rows) ? block.rows : [];
+  if (!rows.length) return "";
+  return `<table class="drive-preview-doc-table"><tbody>${rows.map((row) => `<tr>${(Array.isArray(row) ? row : []).map((cell) => `<td>${drivePreviewDocTextMarkup(cell)}</td>`).join("")}</tr>`).join("")}</tbody></table>`;
+}
+
+function drivePreviewDocumentMarkup(data = {}) {
+  const blocks = Array.isArray(data.blocks) && data.blocks.length
+    ? data.blocks
+    : (Array.isArray(data.sections) ? data.sections.flatMap((section) => (section.lines || []).map((line) => ({ type: "p", text: line, runs: [{ text: line }] }))) : []);
+  const content = blocks.map((block) => block?.type === "table" ? drivePreviewWordTableMarkup(block) : drivePreviewWordParagraphMarkup(block)).join("");
+  const notice = data.notice ? `<p class="drive-preview-doc-note">${escapeHtml(data.notice)}</p>` : "";
+  const note = data.truncated ? `<p class="drive-preview-doc-note">Đang hiển thị phần đầu của tài liệu. Dùng nút Mở tab hoặc Tải file để xem toàn bộ file gốc.</p>` : "";
+  return `<article class="drive-preview-document"><div class="drive-preview-page">${content || `<div class="drive-preview-empty">Không có nội dung text để xem nhanh.</div>`}</div>${notice}${note}</article>`;
+}
+
 function drivePreviewContent(data) {
   if (data.kind === "archive") {
     const entries = Array.isArray(data.entries) ? data.entries : [];
@@ -2917,28 +3504,38 @@ function drivePreviewContent(data) {
       return `<p class="drive-archive-entry ${type}" style="--level:${level}"><b>${marker}</b><span>${escapeHtml(entry.name || entry.path)}</span><small>${escapeHtml(entry.path || "")}</small></p>`;
     }).join("")}</div>${data.total && data.total > entries.length ? `<p class="drive-archive-note">Đang hiển thị ${entries.length} mục đầu tiên.</p>` : ""}</section>`;
   }
+  if (data.kind === "word") return drivePreviewDocumentMarkup(data);
   if (data.text) return `<pre>${escapeHtml(data.text)}</pre>`;
   if (data.message) return `<div class="drive-preview-empty">${escapeHtml(data.message)}</div>`;
   if (Array.isArray(data.sheets)) {
-    return data.sheets.map((sheet) => `<section><h4>${escapeHtml(sheet.title)}</h4><div class="drive-preview-table-wrap"><table>${(sheet.rows || []).map((row) => `<tr>${row.map((cell) => `<td>${escapeHtml(cell)}</td>`).join("")}</tr>`).join("") || `<tr><td>Không có dữ liệu xem nhanh.</td></tr>`}</table></div></section>`).join("");
+    const notice = data.notice ? `<p class="drive-preview-doc-note">${escapeHtml(data.notice)}</p>` : "";
+    return `${notice}${data.sheets.map((sheet) => drivePreviewSheetMarkup(sheet)).join("")}`;
   }
   if (Array.isArray(data.sections)) {
-    return data.sections.map((section) => `<section><h4>${escapeHtml(section.title)}</h4>${(section.lines || []).map((line) => `<p>${escapeHtml(line)}</p>`).join("") || `<p>Không có nội dung text để xem nhanh.</p>`}</section>`).join("");
+    const notice = data.notice ? `<p class="drive-preview-doc-note">${escapeHtml(data.notice)}</p>` : "";
+    return `${notice}${data.sections.map((section) => `<section><h4>${escapeHtml(section.title)}</h4>${(section.lines || []).map((line) => `<p>${escapeHtml(line)}</p>`).join("") || `<p>Không có nội dung text để xem nhanh.</p>`}</section>`).join("")}`;
   }
   return `<div class="drive-preview-empty">Không có nội dung xem nhanh.</div>`;
 }
 
-async function openDrivePreview(file) {
-  if (!file?.[10]) return alert("File mẫu chưa có bản lưu trữ thật để đọc nhanh.");
+async function openStoredFilePreview(file, urls, missingMessage) {
+  if (!file?.[10]) return alert(missingMessage);
   const title = escapeHtml(file[1]);
   const kind = drivePreviewKind(file[1]);
-  const viewUrl = driveViewUrl(file);
-  const shell = (body, cls = "") => `<div class="drive-preview-modal ${cls}"><section><header><h3>${title}</h3><div><a href="${driveDownloadUrl(file)}" download>Tải file</a><button type="button" data-drive-preview-close>×</button></div></header><main class="drive-preview-body">${body}</main></section></div>`;
+  const viewUrl = escapeHtml(urls.viewUrl || urls.downloadUrl || "#");
+  const downloadUrl = escapeHtml(urls.downloadUrl || urls.viewUrl || "#");
+  const shell = (body, cls = "") => `<div class="drive-preview-modal ${cls}"><section><header><h3 title="${title}">${title}</h3><div><a href="${viewUrl}" target="_blank" rel="noopener">Mở tab</a><a href="${downloadUrl}" download>Tải file</a><button type="button" data-drive-preview-close>×</button></div></header><main class="drive-preview-body">${body}</main></section></div>`;
   const body = kind === "image"
     ? `<img src="${viewUrl}" alt="${title}">`
     : kind === "pdf"
       ? `<iframe src="${viewUrl}" title="${title}"></iframe>`
-      : `<div class="drive-preview-empty">Đang đọc nhanh nội dung...</div>`;
+      : kind === "video"
+        ? `<video src="${viewUrl}" controls autoplay></video>`
+        : kind === "text"
+          ? `<pre>Đang tải nội dung...</pre>`
+          : kind === "file"
+            ? `<div class="drive-preview-empty">File này chưa hỗ trợ đọc nhanh trực tiếp. Dùng nút Tải file để mở bằng phần mềm phù hợp.</div>`
+            : `<div class="drive-preview-empty">Đang đọc nhanh nội dung...</div>`;
   document.body.insertAdjacentHTML("beforeend", shell(body, kind));
   const modal = document.querySelector(".drive-preview-modal");
   const close = () => {
@@ -2948,16 +3545,40 @@ async function openDrivePreview(file) {
   const onKey = (event) => { if (event.key === "Escape") close(); };
   modal.querySelector("[data-drive-preview-close]").onclick = close;
   document.addEventListener("keydown", onKey);
+  if (kind === "text") {
+    try {
+      modal.querySelector(".drive-preview-body pre").textContent = await fetch(urls.viewUrl, { credentials: "same-origin" }).then((response) => response.text());
+    } catch {
+      modal.querySelector(".drive-preview-body pre").textContent = "Không tải được nội dung file.";
+    }
+  }
   if (kind === "office" || kind === "archive") {
     try {
-      const response = await fetch(drivePreviewUrl(file), { credentials: "same-origin" });
+      const response = await fetch(urls.previewUrl, { credentials: "same-origin" });
       const bodyJson = await response.json();
       if (!response.ok) throw new Error(bodyJson.error || "Không đọc được file.");
-      modal.querySelector(".drive-preview-body").innerHTML = drivePreviewContent(bodyJson.data || {});
+      const previewData = bodyJson.data || {};
+      modal.classList.toggle("word-preview", previewData.kind === "word");
+      modal.querySelector(".drive-preview-body").innerHTML = drivePreviewContent(previewData);
     } catch (error) {
+      modal.classList.remove("word-preview");
       modal.querySelector(".drive-preview-body").innerHTML = `<div class="drive-preview-empty">${escapeHtml(error.message || "Không đọc được file.")}</div>`;
     }
   }
+}
+
+async function openDashboardChatAttachment(src, title, type = "file", download = "") {
+  const file = ["CHAT", title || "File", type, "", "", "", "", 0, "", "", "chat-file"];
+  const urls = { downloadUrl: download || src, viewUrl: src, previewUrl: src };
+  return openStoredFilePreview(file, urls, "Không có file để đọc nhanh.");
+}
+
+async function openDrivePreview(file) {
+  return openStoredFilePreview(file, {
+    downloadUrl: driveDownloadUrl(file),
+    viewUrl: driveViewUrl(file),
+    previewUrl: drivePreviewUrl(file)
+  }, "File mẫu chưa có bản lưu trữ thật để đọc nhanh.");
 }
 
 function driveFileWithPath(file, relativePath) {
@@ -3099,7 +3720,232 @@ function bindDrive() {
   };
 }
 
-const MATERIAL_LOCATION_TYPES = ["Kho VP", "Kho dự án"];
+const CONFIG_DOCUMENT_SEED = [
+  ["GT001","Giấy phép kinh doanh.pdf","PDF","Pháp lý công ty","Đăng ký doanh nghiệp","DINH Công Hoàng","2026-06-03",0,"Ban lãnh đạo","Bản lưu pháp lý công ty"],
+  ["GT002","Mẫu hợp đồng nhận thầu.docx","Word","Mẫu biểu","Hợp đồng","DINH Công Hoàng","2026-06-02",0,"Toàn công ty","Mẫu dùng khi lập hợp đồng nhận thầu"],
+  ["GT003","Biểu mẫu nghiệm thu.xlsx","Excel","Mẫu biểu","Nghiệm thu","DINH Công Hoàng","2026-06-01",0,"Thiết kế, Thi công","Bảng mẫu tổng hợp nghiệm thu"],
+  ["GT004","Slide giới thiệu năng lực.pptx","PowerPoint","Hồ sơ năng lực","Công ty","DINH Công Hoàng","2026-05-30",0,"Toàn công ty","File trình bày năng lực Le Dome"]
+];
+const configDocumentDownloadUrl = (file) => `/api/v1/config-document-files/download?storedName=${encodeURIComponent(file[10])}`;
+const configDocumentViewUrl = (file) => `/api/v1/config-document-files/view?storedName=${encodeURIComponent(file[10])}`;
+const configDocumentPreviewUrl = (file) => `/api/v1/config-document-files/preview?storedName=${encodeURIComponent(file[10])}`;
+
+async function loadConfigDocuments() {
+  try {
+    const body = await api("/config-documents");
+    return Array.isArray(body.data) ? body.data : structuredClone(CONFIG_DOCUMENT_SEED);
+  } catch {
+    return structuredClone(CONFIG_DOCUMENT_SEED);
+  }
+}
+
+async function saveConfigDocuments(files) {
+  await api("/config-documents", {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ files })
+  });
+}
+
+async function uploadConfigDocumentFile(file, displayName = file.name) {
+  const response = await fetch(`/api/v1/config-document-files?name=${encodeURIComponent(displayName)}`, {
+    method: "POST",
+    credentials: "same-origin",
+    body: file
+  });
+  const body = await response.json();
+  if (!response.ok) throw new Error(body.error || `Upload ${response.status}`);
+  return body;
+}
+
+async function deleteConfigDocumentStoredFile(storedName) {
+  if (!storedName) return;
+  await api(`/config-document-files?storedName=${encodeURIComponent(storedName)}`, { method: "DELETE" });
+}
+
+async function openConfigDocumentPreview(file) {
+  return openStoredFilePreview(file, {
+    downloadUrl: configDocumentDownloadUrl(file),
+    viewUrl: configDocumentViewUrl(file),
+    previewUrl: configDocumentPreviewUrl(file)
+  }, "Giấy tờ này chưa có file thật để đọc nhanh.");
+}
+
+function configDocumentRowsMarkup(rows) {
+  return rows.map(({ file, originalIndex }) => {
+    const canPreview = file[10] && driveCanPreview(file);
+    const fileOpen = canPreview ? `<button type="button" class="drive-file drive-file-button" data-config-doc="preview" data-index="${originalIndex}" title="${escapeHtml(file[1])}">` : `<div class="drive-file" title="${escapeHtml(file[1])}">`;
+    const fileClose = canPreview ? "</button>" : "</div>";
+    const storedLabel = file[10] ? "Có file gốc" : "Chưa đính kèm file";
+    const previewAction = `<button data-config-doc="preview" data-index="${originalIndex}">Xem</button>`;
+    const downloadAction = `<button data-config-doc="download" data-index="${originalIndex}">Tải</button>`;
+    const editAction = `<button data-config-doc="edit" data-index="${originalIndex}">Sửa</button>`;
+    const deleteAction = `<button data-config-doc="delete" data-index="${originalIndex}">×</button>`;
+    return `<tr><td>${fileOpen}${driveIcon(file[2])}<span>${escapeHtml(file[1])}<small>${escapeHtml(file[0])} · ${escapeHtml(file[2])} · ${storedLabel}</small></span>${fileClose}</td><td>${escapeHtml(file[3])}<small>${escapeHtml(file[4])}</small></td><td>${escapeHtml(file[5])}</td><td>${financeDate(file[6])}</td><td>${money(file[7])} KB</td><td>${driveBadge(file[8])}</td><td>${escapeHtml(file[9])}</td><td class="drive-actions">${previewAction}${downloadAction}${editAction}${deleteAction}</td></tr>`;
+  }).join("");
+}
+
+function openConfigDocumentModal(file, index) {
+  const modal = $("#config-doc-modal");
+  const form = $("#config-doc-form");
+  if (!modal || !form) return;
+  form.reset();
+  form.elements.index.value = Number.isInteger(index) ? String(index) : "";
+  form.elements.name.value = file?.[1] || "";
+  form.elements.type.value = file?.[2] || "PDF";
+  form.elements.group.value = file?.[3] || "Giấy tờ";
+  form.elements.topic.value = file?.[4] || "";
+  form.elements.scope.value = file?.[8] || "Toàn công ty";
+  form.elements.note.value = file?.[9] || "";
+  $("#config-doc-modal-title").textContent = Number.isInteger(index) ? "Sửa giấy tờ" : "Thêm giấy tờ";
+  $("#config-doc-file-hint").textContent = Number.isInteger(index)
+    ? "Chọn file mới nếu cần thay bản gốc. Bỏ trống để chỉ sửa thông tin."
+    : "Có thể bỏ trống để tạo dòng giấy tờ trước, rồi đính kèm file sau.";
+  modal.classList.add("open");
+  setTimeout(() => form.elements.name.focus(), 0);
+}
+
+async function addConfigDocumentFiles(items) {
+  const incoming = Array.from(items || []).filter((file) => file && file.name);
+  const picked = incoming.filter(driveIsAllowedFile);
+  const skipped = incoming.length - picked.length;
+  if (!picked.length) {
+    if (skipped) {
+      state.configDocsUploadMessage = `Đã bỏ qua ${skipped} file chưa hỗ trợ.`;
+      renderConfigDocuments();
+    }
+    return;
+  }
+  state.configDocsUploadMessage = `Đang tải lên ${picked.length} file${skipped ? `, bỏ qua ${skipped} file chưa hỗ trợ` : ""}...`;
+  renderConfigDocuments();
+  try {
+    const rows = await loadConfigDocuments();
+    for (const file of picked) {
+      const displayName = driveRelativeName(file) || file.name;
+      const stored = await uploadConfigDocumentFile(file, displayName);
+      const updatedAt = stored.updatedAt || new Date().toISOString();
+      rows.unshift([`GT${String(rows.length + 1).padStart(3, "0")}`, displayName, driveTypeFromName(displayName), "Giấy tờ", driveFolderTopic(displayName), state.account?.staffName || "LE DOME", updatedAt.slice(0, 10), Math.max(1, Math.ceil(file.size / 1024)), "Toàn công ty", "File lưu trữ trong Cấu hình", stored.storedName, updatedAt]);
+    }
+    await saveConfigDocuments(rows);
+    state.configDocsUploadMessage = `Đã tải lên ${picked.length} file${skipped ? `, bỏ qua ${skipped} file chưa hỗ trợ.` : "."}`;
+    renderConfigDocuments();
+  } catch (error) {
+    state.configDocsUploadMessage = error.message || "Không tải file lên được.";
+    renderConfigDocuments();
+  }
+}
+
+async function renderConfigDocuments() {
+  const files = await loadConfigDocuments();
+  const query = state.configDocsQuery.toLocaleLowerCase("vi");
+  const filtered = files.map((file, originalIndex) => ({ file, originalIndex })).filter(({ file }) => !query || file.join(" ").toLocaleLowerCase("vi").includes(query));
+  const totalSize = files.reduce((sum, file) => sum + Number(file[7] || 0), 0);
+  const storedCount = files.filter((file) => file[10]).length;
+  const officeCount = files.filter((file) => ["PDF", "Word", "Excel", "PowerPoint"].includes(file[2])).length;
+  setTitle("config-documents", "Kho lưu trữ giấy tờ và file cấu hình vận hành");
+  $("#app").innerHTML = `<section class="drive-page config-documents-page">
+    <header class="drive-head"><div><h2>▰ Giấy tờ</h2><p>Lưu trữ giấy tờ pháp lý, mẫu biểu, PDF, Word, Excel, PowerPoint và các file vận hành khác.</p></div><button class="btn" data-config-doc="open-upload">＋ Thêm giấy tờ</button></header>
+    <div class="finance-kpis drive-kpis"><article><small>Tổng giấy tờ</small><b>${files.length}</b><span>Đang quản lý trong Cấu hình</span></article><article><small>Đã đính kèm</small><b>${storedCount}</b><span>Có file gốc trên server</span></article><article><small>Dung lượng</small><b>${money(totalSize)} KB</b><span>Tổng dung lượng hiện có</span></article><article><small>PDF / Office</small><b>${officeCount}</b><span>Hỗ trợ xem nhanh nội dung</span></article></div>
+    <div class="drive-layout">
+      <main class="drive-main"><p class="drive-rule">Kho Giấy tờ là dữ liệu gốc thuộc Mục Cấu hình, dùng để lưu file lâu dài. Có thể kéo thả file hoặc folder, xem nhanh PDF/Word/Excel/PowerPoint, tải bản gốc và thay file mới khi cần chỉnh sửa nội dung.</p><label class="drive-drop" id="config-doc-drop"><input id="config-doc-upload-input" type="file" multiple accept="${DRIVE_ACCEPT}"><strong>Kéo thả file hoặc folder vào đây</strong><span>Hỗ trợ PDF, ảnh, Word, Excel, PowerPoint, TXT, ZIP và RAR. Có thể thả cả folder để giữ tên đường dẫn.</span><em>${escapeHtml(state.configDocsUploadMessage || "Hoặc bấm để chọn file từ máy. File mới sẽ được lưu bền vững trong Cấu hình.")}</em></label><div class="drive-tools"><input id="config-doc-search" value="${escapeHtml(state.configDocsQuery)}" placeholder="Tìm tên giấy tờ, nhóm, chủ đề, người cập nhật, ghi chú"><button data-config-doc="reset">Khôi phục mẫu</button></div><div class="drive-table-wrap"><table class="drive-table config-doc-table"><thead><tr><th>File</th><th>Nhóm / chủ đề</th><th>Người cập nhật</th><th>Cập nhật</th><th>Dung lượng</th><th>Quyền xem</th><th>Ghi chú</th><th></th></tr></thead><tbody>${configDocumentRowsMarkup(filtered) || `<tr><td colspan="8">Chưa có giấy tờ phù hợp.</td></tr>`}</tbody></table></div></main>
+    </div>
+    <div class="finance-modal" id="config-doc-modal"><form id="config-doc-form"><header><h3 id="config-doc-modal-title">Thêm giấy tờ</h3><button type="button" data-config-doc="close-upload">×</button></header><input type="hidden" name="index"><label class="wide">Tên giấy tờ<input name="name" required placeholder="VD: Giấy phép kinh doanh.pdf"></label><label>Loại<select name="type"><option>PDF</option><option>Word</option><option>Excel</option><option>PowerPoint</option><option>Ảnh</option><option>ZIP</option><option>RAR</option><option>File</option></select></label><label>Nhóm<input name="group" placeholder="VD: Pháp lý công ty"></label><label>Chủ đề<input name="topic" placeholder="VD: Hợp đồng, Nghiệm thu"></label><label>Quyền xem<input name="scope" value="Toàn công ty"></label><label class="wide">File gốc<input name="file" type="file" accept="${DRIVE_ACCEPT}"><small id="config-doc-file-hint">Có thể bỏ trống để tạo dòng giấy tờ trước.</small></label><label class="wide">Ghi chú<textarea name="note" placeholder="Mô tả ngắn về giấy tờ"></textarea></label><footer><button type="button" class="btn secondary" data-config-doc="close-upload">Đóng</button><button class="btn">Lưu giấy tờ</button></footer></form></div>
+  </section>`;
+  bindConfigDocuments();
+}
+
+function bindConfigDocuments() {
+  $("#config-doc-search").oninput = (event) => { state.configDocsQuery = event.target.value; renderConfigDocuments(); };
+  const uploadInput = $("#config-doc-upload-input");
+  const dropZone = $("#config-doc-drop");
+  uploadInput.onchange = (event) => addConfigDocumentFiles(event.target.files);
+  ["dragenter", "dragover"].forEach((type) => {
+    dropZone.addEventListener(type, (event) => {
+      event.preventDefault();
+      dropZone.classList.add("dragging");
+    });
+  });
+  ["dragleave", "drop"].forEach((type) => {
+    dropZone.addEventListener(type, (event) => {
+      event.preventDefault();
+      dropZone.classList.remove("dragging");
+    });
+  });
+  dropZone.ondrop = async (event) => addConfigDocumentFiles(await driveDroppedFiles(event.dataTransfer));
+  $("#app").onclick = async (event) => {
+    const action = event.target.closest("[data-config-doc]")?.dataset.configDoc;
+    if (!action) return;
+    const modal = $("#config-doc-modal");
+    const rows = await loadConfigDocuments();
+    if (action === "open-upload") return openConfigDocumentModal(null, null);
+    if (action === "close-upload") return modal.classList.remove("open");
+    if (action === "reset" && confirm("Khôi phục danh sách giấy tờ mẫu?")) {
+      await saveConfigDocuments(structuredClone(CONFIG_DOCUMENT_SEED));
+      return renderConfigDocuments();
+    }
+    const index = Number(event.target.closest("[data-index]")?.dataset.index);
+    if (action === "preview" && Number.isInteger(index)) {
+      await openConfigDocumentPreview(rows[index]);
+      return;
+    }
+    if (action === "download" && Number.isInteger(index)) {
+      if (!rows[index]?.[10]) return alert("Giấy tờ này chưa có file thật để tải.");
+      location.href = configDocumentDownloadUrl(rows[index]);
+      return;
+    }
+    if (action === "edit" && Number.isInteger(index)) return openConfigDocumentModal(rows[index], index);
+    if (action === "delete" && Number.isInteger(index) && confirm("Xóa giấy tờ này khỏi Cấu hình?")) {
+      if (rows[index]?.[10]) {
+        try { await deleteConfigDocumentStoredFile(rows[index][10]); } catch {}
+      }
+      rows.splice(index, 1);
+      await saveConfigDocuments(rows);
+      return renderConfigDocuments();
+    }
+  };
+  $("#config-doc-form").onsubmit = async (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const data = Object.fromEntries(new FormData(form));
+    const index = data.index === "" ? -1 : Number(data.index);
+    const rows = await loadConfigDocuments();
+    const previous = Number.isInteger(index) && index >= 0 ? rows[index] : null;
+    const pickedFile = form.elements.file.files?.[0] || null;
+    let storedName = previous?.[10] || "";
+    let sizeKb = Number(previous?.[7] || 0);
+    let updatedAt = new Date().toISOString();
+    let name = String(data.name || pickedFile?.name || previous?.[1] || "").trim();
+    if (pickedFile) {
+      const uploaded = await uploadConfigDocumentFile(pickedFile, name || pickedFile.name);
+      if (previous?.[10]) {
+        try { await deleteConfigDocumentStoredFile(previous[10]); } catch {}
+      }
+      storedName = uploaded.storedName;
+      sizeKb = Math.max(1, Math.ceil(pickedFile.size / 1024));
+      updatedAt = uploaded.updatedAt || updatedAt;
+      if (!name) name = pickedFile.name;
+    }
+    const row = [
+      previous?.[0] || `GT${String(rows.length + 1).padStart(3, "0")}`,
+      name,
+      data.type || driveTypeFromName(name),
+      data.group || "Giấy tờ",
+      data.topic || "Chưa phân loại",
+      state.account?.staffName || "LE DOME",
+      updatedAt.slice(0, 10),
+      sizeKb,
+      data.scope || "Toàn công ty",
+      data.note || "",
+      storedName,
+      updatedAt
+    ];
+    if (previous) rows[index] = row;
+    else rows.unshift(row);
+    await saveConfigDocuments(rows);
+    renderConfigDocuments();
+  };
+}
+
 const MATERIAL_STATUSES = ["Đã nhận", "Lưu kho", "Đã xuất dùng", "Cần kiểm tra"];
 let MATERIAL_ROWS = [];
 
@@ -3134,8 +3980,12 @@ function materialQuantity(value) {
 }
 
 function materialOptions(values, selected = "", placeholder = "Chọn") {
-  const list = financeUnique([...(values || []), selected]);
+  const list = catalogList([...(values || []), selected], []);
   return `<option value="">${placeholder}</option>${list.map((value) => `<option value="${escapeHtml(value)}" ${value === selected ? "selected" : ""}>${escapeHtml(value)}</option>`).join("")}`;
+}
+
+function optionTags(values, selected = "") {
+  return catalogList([...(values || []), selected], []).map((value) => `<option value="${escapeHtml(value)}" ${value === selected ? "selected" : ""}>${escapeHtml(value)}</option>`).join("");
 }
 
 function materialBadge(status) {
@@ -3153,9 +4003,10 @@ function materialFilteredRows(rows = MATERIAL_ROWS) {
 }
 
 function materialForm(row = {}) {
-  const categories = financeUnique([...materialCategoryOptions(), ...constructionCategoryOptions(), ...MATERIAL_ROWS.map((item) => item.category)]);
+  const categories = financeUnique([...materialCategoryOptions(), ...MATERIAL_ROWS.map((item) => item.category)]);
   const suppliers = financeUnique([...(CRM_DIRECTORY.suppliers?.rows || []).map((item) => item[1]), ...MATERIAL_ROWS.map((item) => item.supplier)]);
   const projects = financeUnique([...projectListOptions(), ...MATERIAL_ROWS.map((item) => item.project)]);
+  const locations = warehouseOptions();
   return `<div class="finance-modal" id="material-modal"><form id="material-form"><header><h3>${row.id ? "Chỉnh sửa vật tư" : "Thêm vật tư"}</h3><button type="button" data-material="close-modal">×</button></header>
     <input type="hidden" name="currentId" value="${escapeHtml(row.id || "")}">
     <label>Ngày nhận<input name="date" type="date" value="${escapeHtml(row.date || new Date().toISOString().slice(0, 10))}" required></label>
@@ -3164,7 +4015,7 @@ function materialForm(row = {}) {
     <label>NCC<select name="supplier">${materialOptions(suppliers, row.supplier, "Chọn NCC")}</select></label>
     <label>Số lượng<input name="quantity" inputmode="decimal" value="${escapeHtml(row.quantity ?? 1)}" required></label>
     <label>Đơn vị<input name="unit" value="${escapeHtml(row.unit || "cái")}"></label>
-    <label>Kho lưu<select name="locationType">${MATERIAL_LOCATION_TYPES.map((type) => `<option ${row.locationType === type ? "selected" : ""}>${type}</option>`).join("")}</select></label>
+    <label>Kho lưu<select name="locationType">${optionTags(locations, row.locationType)}</select></label>
     <label>Vị trí kho<input name="location" value="${escapeHtml(row.location || "")}" placeholder="VD: Văn phòng Le Dome"></label>
     <label>Dự án<select name="project">${materialOptions(projects, row.project, "Không gắn dự án")}</select></label>
     <label>Trạng thái<select name="status">${MATERIAL_STATUSES.map((status) => `<option ${row.status === status ? "selected" : ""}>${status}</option>`).join("")}</select></label>
@@ -3193,17 +4044,20 @@ function materialTableRows(rows) {
 async function renderMaterials() {
   await Promise.all([loadCatalogData(), loadCatalogProjectDefaults().then((items) => { catalogProjectDefaults = items; }), loadPartnerRows("suppliers")]);
   await loadMaterialsRows();
+  if (!warehouseOptions().includes(state.materialsLocation)) state.materialsLocation = "Tất cả";
   const rows = materialFilteredRows(MATERIAL_ROWS);
+  const warehouses = warehouseOptions();
+  const [primaryWarehouse = "Kho VP", secondaryWarehouse = "Kho dự án"] = warehouses;
   const totalQty = MATERIAL_ROWS.reduce((sum, row) => sum + Number(row.quantity || 0), 0);
-  const officeCount = MATERIAL_ROWS.filter((row) => row.locationType === "Kho VP").length;
-  const projectCount = MATERIAL_ROWS.filter((row) => row.locationType === "Kho dự án").length;
+  const primaryCount = MATERIAL_ROWS.filter((row) => row.locationType === primaryWarehouse).length;
+  const secondaryCount = MATERIAL_ROWS.filter((row) => row.locationType === secondaryWarehouse).length;
   const checkCount = MATERIAL_ROWS.filter((row) => row.status === "Cần kiểm tra").length;
   const canEdit = Boolean(state.account?.permissions?.["materials.edit"]);
   setTitle("materials", "Danh sách vật tư thiết bị nhận từ NCC");
   $("#app").innerHTML = `<section class="materials-page">
-    <header class="materials-head"><div><h2>▰ Kho</h2><p>Quản lý vật tư thiết bị nhận từ NCC, lưu tại Kho VP hoặc Kho dự án.</p></div>${canEdit ? `<button class="btn" data-material="add">＋ Thêm vật tư</button>` : ""}</header>
-    <div class="materials-kpis"><article><small>Dòng vật tư</small><b>${MATERIAL_ROWS.length}</b><span>Đã ghi nhận</span></article><article><small>Tổng số lượng</small><b>${materialQuantity(totalQty)}</b><span>Theo đơn vị từng dòng</span></article><article><small>Kho VP</small><b>${officeCount}</b><span>Dòng đang lưu văn phòng</span></article><article><small>Kho dự án</small><b>${projectCount}</b><span>Dòng gắn công trình</span></article></div>
-    <div class="materials-tools"><input id="materials-search" value="${escapeHtml(state.materialsQuery)}" placeholder="Tìm vật tư, NCC, dự án, ghi chú"><select id="materials-location"><option>Tất cả</option>${MATERIAL_LOCATION_TYPES.map((type) => `<option ${state.materialsLocation === type ? "selected" : ""}>${type}</option>`).join("")}</select><select id="materials-status"><option>Tất cả</option>${MATERIAL_STATUSES.map((status) => `<option ${state.materialsStatus === status ? "selected" : ""}>${status}</option>`).join("")}</select><span>${rows.length} dòng hiển thị${checkCount ? ` · ${checkCount} cần kiểm tra` : ""}</span></div>
+    <header class="materials-head"><div><h2>▰ Kho</h2><p>Quản lý vật tư thiết bị nhận từ NCC, lưu theo Danh sách Kho trong Cơ sở dữ liệu.</p></div>${canEdit ? `<button class="btn" data-material="add">＋ Thêm vật tư</button>` : ""}</header>
+    <div class="materials-kpis"><article><small>Dòng vật tư</small><b>${MATERIAL_ROWS.length}</b><span>Đã ghi nhận</span></article><article><small>Tổng số lượng</small><b>${materialQuantity(totalQty)}</b><span>Theo đơn vị từng dòng</span></article><article><small>${escapeHtml(primaryWarehouse)}</small><b>${primaryCount}</b><span>Theo thứ tự danh sách Kho</span></article><article><small>${escapeHtml(secondaryWarehouse)}</small><b>${secondaryCount}</b><span>Theo thứ tự danh sách Kho</span></article></div>
+    <div class="materials-tools"><input id="materials-search" value="${escapeHtml(state.materialsQuery)}" placeholder="Tìm vật tư, NCC, dự án, ghi chú"><select id="materials-location"><option>Tất cả</option>${warehouseOptions().map((type) => `<option ${state.materialsLocation === type ? "selected" : ""}>${escapeHtml(type)}</option>`).join("")}</select><select id="materials-status"><option>Tất cả</option>${MATERIAL_STATUSES.map((status) => `<option ${state.materialsStatus === status ? "selected" : ""}>${status}</option>`).join("")}</select><span>${rows.length} dòng hiển thị${checkCount ? ` · ${checkCount} cần kiểm tra` : ""}</span></div>
     <div class="materials-table-wrap"><table class="materials-table"><thead><tr><th>Ngày nhận</th><th>Vật tư / thiết bị</th><th>Hạng mục</th><th>NCC</th><th>Số lượng</th><th>Kho lưu</th><th>Dự án</th><th>Trạng thái</th><th>Ghi chú</th><th></th></tr></thead><tbody>${materialTableRows(rows) || `<tr><td colspan="10">Chưa có vật tư phù hợp.</td></tr>`}</tbody></table></div>
     ${materialForm()}
   </section>`;
@@ -3220,7 +4074,7 @@ function bindMaterials() {
     const modal = $("#material-modal");
     if (action === "close-modal") return modal.classList.remove("open");
     if (action === "add") {
-      $("#material-form").outerHTML = materialForm({ id: "", quantity: 1, status: "Đã nhận", locationType: "Kho VP" }).match(/<form[\s\S]*<\/form>/)[0];
+      $("#material-form").outerHTML = materialForm({ id: "", quantity: 1, status: "Đã nhận", locationType: warehouseOptions()[0] || "Kho VP" }).match(/<form[\s\S]*<\/form>/)[0];
       $("#material-form").onsubmit = materialSubmitHandler;
       return modal.classList.add("open");
     }
@@ -4073,7 +4927,7 @@ function financeDatalist(id, values) {
 }
 
 function financeSelectOptions(values, selected = "", placeholder = "Chọn") {
-  const list = financeUnique([...(values || []), selected]);
+  const list = catalogList([...(values || []), selected], []);
   return `<option value="">${placeholder}</option>${list.map((value) => `<option value="${escapeHtml(value)}" ${value === selected ? "selected" : ""}>${escapeHtml(value)}</option>`).join("")}`;
 }
 
@@ -4980,6 +5834,9 @@ function normalizeAccountAccess(account = {}) {
   const accessLevel = knownAccountAccessLevel(account.accessLevel) ? account.accessLevel : inferAccountAccessLevel(account);
   return {
     ...account,
+    positionCode: account.positionCode || account.staffCode || "",
+    personKey: account.personKey || personKey(account.staffName) || account.staffCode || "",
+    position: account.position || account.role || "",
     accessLevel,
     accessScope: ACCOUNT_ACCESS_BY_KEY[accessLevel].scope,
     permissions: permissionsForAccount(account, accessLevel)
@@ -4990,17 +5847,20 @@ function staffPeople() {
   ORG_STAFF.forEach((staff) => {
     const key = personKey(staff[1]) || staff[0];
     const person = people.get(key) || {
+      personKey: key,
       staffCode: staff[0],
       staffName: staff[1],
       phone: staff[4],
       email: staff[5],
       status: staff[6],
       photo: staff[8],
+      positionCodes: [],
       roles: [],
       departments: [],
       titles: [],
       positions: []
     };
+    person.positionCodes.push(staff[0]);
     person.roles.push(staff[2]);
     person.departments.push(staff[3]);
     if (staff[3] === "Ban lãnh đạo" || LEADERSHIP_TITLES.includes(staff[2])) person.titles.push(staff[2]);
@@ -5013,6 +5873,7 @@ function staffPeople() {
     roles: uniqueValues(person.roles),
     departments: uniqueValues(person.departments),
     titles: uniqueValues(person.titles),
+    positionCodes: uniqueValues(person.positionCodes),
     positions: uniqueValues(person.positions)
   }));
 }
@@ -5021,15 +5882,18 @@ function defaultAccountPermissions(staff) {
 }
 function defaultAccounts() {
   const used = new Set();
-  return staffPeople().map((person) => {
+  return ORG_STAFF.map((staff) => {
     const account = {
-      staffCode: person.staffCode,
-      staffName: person.staffName,
-      role: person.titles[0] || person.roles[0] || "",
-      department: person.departments.join(", "),
-      title: person.titles.join(", ") || "Không có chức danh lãnh đạo",
-      positions: person.positions.length ? person.positions : person.roles.map((role, index) => `${role} - ${person.departments[index] || person.departments[0] || ""}`),
-      loginId: accountLoginId(person.staffName, used),
+      staffCode: staff[0],
+      positionCode: staff[0],
+      personKey: personKey(staff[1]) || staff[0],
+      staffName: staff[1],
+      role: staff[2],
+      position: staff[2],
+      department: staff[3],
+      title: staff[3] === "Ban lãnh đạo" || LEADERSHIP_TITLES.includes(staff[2]) ? staff[2] : "",
+      positions: [`${staff[2]} - ${staff[3]}`],
+      loginId: accountLoginId(staff[1], used),
       password: "1",
       active: true
     };
@@ -5327,28 +6191,98 @@ function attendanceApprovalTable(rows) {
 const hrmStatus = (text) => `<i class="hrm-status ${["Hợp lệ","Đang làm việc","Đủ công"].includes(text) ? "ok" : ["Cần duyệt","Cần kiểm tra"].includes(text) ? "review" : ["Đi muộn","Thiếu công"].includes(text) ? "late" : "off"}">${text}</i>`;
 const hrmHeader = (title, subtitle, action = "") => `<header class="hrm-head"><div><h2>${title}</h2><p>${subtitle}</p></div>${action}</header>`;
 const hrmStats = (items) => `<div class="hrm-stats">${items.map(([label,value,note]) => `<article><small>${label}</small><b>${value}</b><span>${note}</span></article>`).join("")}</div>`;
+const ORG_TREE_GROUPS = [
+  ["Ban lãnh đạo",["Ban lãnh đạo"],"01"],
+  ["Khối thiết kế",["Phòng thiết kế"],"02"],
+  ["Khối thi công",["Phòng thi công"],"03"],
+  ["Khối văn phòng",["Khối văn phòng"],"04"],
+  ["Khối kinh doanh",["Khối kinh doanh"],"05"]
+];
+function orgPersonByKey(key) {
+  return staffPeople().find((person) => person.personKey === key) || staffPeople()[0];
+}
+function orgPeopleOptions(selectedName = "") {
+  const selectedKey = personKey(selectedName);
+  return staffPeople().map((person) => `<option value="${escapeHtml(person.personKey)}" ${person.personKey === selectedKey ? "selected" : ""}>${escapeHtml(person.staffName)} · ${escapeHtml(person.departments.join(", "))}</option>`).join("");
+}
+function orgFillPersonFields(form, person) {
+  if (!form || !person) return;
+  form.elements.name.value = person.staffName || "";
+  form.elements.phone.value = person.phone || "";
+  form.elements.email.value = person.email || "";
+  form.elements.status.value = person.status || "Đang làm việc";
+  form.elements.photo.value = person.photo || "";
+}
+function orgAssignPersonToPosition(positionCode, key) {
+  const row = ORG_STAFF.find((staff) => staff[0] === positionCode);
+  const person = orgPersonByKey(key);
+  if (!row || !person) return false;
+  row[1] = person.staffName;
+  row[4] = person.phone || row[4] || "";
+  row[5] = person.email || row[5] || "";
+  row[6] = person.status || row[6] || "Đang làm việc";
+  row[8] = person.photo || row[8] || "";
+  return true;
+}
+function orgPeoplePool() {
+  return `<section class="org-people-pool"><header><b>Nhân sự Ledome</b><span>${staffPeople().length} người thật</span></header><div>${staffPeople().map((person) => `<article class="org-real-person" draggable="true" data-person-key="${escapeHtml(person.personKey)}"><img src="${escapeHtml(person.photo)}" alt=""><span><b>${escapeHtml(person.staffName)}</b><small>${person.positionCodes.length} vị trí đang đảm nhiệm</small></span></article>`).join("")}</div></section>`;
+}
+function orgPositionCard(staff) {
+  const person = orgPersonByKey(personKey(staff[1]));
+  return `<article class="org-position-node ${selectedOrgStaff === staff[0] ? "selected" : ""}" data-hrm="select-staff" data-code="${escapeHtml(staff[0])}" data-drop-position="${escapeHtml(staff[0])}"><div class="org-position-title"><b>${escapeHtml(staff[2])}</b><small>${escapeHtml(staff[0])} · 1 account</small></div><div class="org-position-person"><img src="${escapeHtml(person?.photo || staff[8])}" alt=""><span><em>Nhân sự đảm nhiệm</em><strong>${escapeHtml(staff[1])}</strong></span></div><button type="button" data-hrm="edit-staff" data-code="${escapeHtml(staff[0])}">Gán / sửa</button></article>`;
+}
+function orgTreeBranches() {
+  return `<section class="org-chart"><div class="org-root"><b>LE DOME</b><span>Cấu trúc bộ máy</span></div><div class="org-branch-grid">${ORG_TREE_GROUPS.map(([name,departments,index]) => {
+    const rows = ORG_STAFF.filter((staff) => departments.includes(staff[3]));
+    return `<article class="org-chart-branch"><h3><i>${index}</i><span>${name}</span><b>${rows.length} vị trí</b></h3><div>${rows.map(orgPositionCard).join("") || `<p class="org-empty-position">Chưa có vị trí.</p>`}</div></article>`;
+  }).join("")}</div></section>`;
+}
+function orgAssignmentList(staff) {
+  const key = personKey(staff?.[1]);
+  return ORG_STAFF.filter((row) => personKey(row[1]) === key).map((row) => `<p><span>${escapeHtml(row[3])}</span><b>${escapeHtml(row[2])}</b><small>Account: ${escapeHtml(row[0])}</small></p>`).join("");
+}
 
 async function hrmStaff() {
   await loadOrgStaff();
   const selected = ORG_STAFF.find((staff) => staff[0] === selectedOrgStaff) || ORG_STAFF[0];
-  const groups = [
-    ["Ban lãnh đạo",["Ban lãnh đạo"],"♜"],
-    ["Phòng thiết kế",["Phòng thiết kế"],"▧"],
-    ["Phòng thi công",["Phòng thi công"],"▣"],
-    ["Khối văn phòng",["Khối văn phòng"],"▤"],
-    ["Khối kinh doanh",["Khối kinh doanh"],"◉"]
-  ];
+  const people = staffPeople();
   setTitle("hrm-staff", "");
-  $("#app").innerHTML = `<section class="hrm-page">${hrmHeader("♟ Nhân sự","Sơ đồ tổ chức và hồ sơ nhân sự Le Dome",'<button class="btn" data-hrm="add-staff">＋ Thêm nhân sự</button>')}
-  <div class="org-layout"><section class="org-tree"><div class="org-toolbar"><b>Sơ đồ tổ chức</b><span>${staffPeople().length} nhân sự thật · ${ORG_STAFF.length} vị trí</span><button data-hrm="add-staff">＋</button></div>
-  ${groups.map(([name,departments,icon], index) => `<article class="org-branch ${index === 0 ? "leadership" : ""}"><h3><i>${icon}</i>${name}<b>${ORG_STAFF.filter((staff) => departments.includes(staff[3])).length}</b></h3><div>${ORG_STAFF.filter((staff) => departments.includes(staff[3])).map(orgStaffCard).join("")}</div></article>`).join("")}</section>
-  <aside class="org-profile"><header><span>Hồ sơ nhân sự</span><button data-hrm="edit-staff" data-code="${selected[0]}" title="Chỉnh sửa">✎</button></header><img src="${selected[8]}" alt="${selected[1]}"><h2>${selected[1]}</h2><strong>${selected[2]}</strong>${hrmStatus(selected[6])}<div class="org-profile-info"><p><span>Mã nhân sự</span><b>${selected[0]}</b></p><p><span>Phòng ban</span><b>${selected[3]}</b></p><p><span>Điện thoại</span><b>${selected[4]}</b></p><p><span>Email</span><b>${selected[5]}</b></p><p><span>Phụ trách</span><b>${selected[7]}</b></p></div><button class="org-detail" data-hrm="staff-private" data-code="${selected[0]}">Chi tiết <small>Chỉ Ban lãnh đạo</small></button><button class="org-edit" data-hrm="edit-staff" data-code="${selected[0]}">✎ Chỉnh sửa thông tin</button><button class="org-delete" data-hrm="delete-staff" data-code="${selected[0]}">× Xóa nhân sự</button></aside></div>
-  <div class="directory-modal" id="hrm-staff-modal"><form id="hrm-staff-form"><header><h3 id="hrm-staff-modal-title">Thêm nhân sự</h3><button type="button" data-hrm="close">×</button></header><input type="hidden" name="currentCode"><label>Mã nhân viên<input name="code" value="NS${String(ORG_STAFF.length + 1).padStart(3,"0")}"></label><label>Họ và tên<input name="name" required placeholder="Nhập họ tên"></label><label>Chức vụ<select name="role">${["Giám đốc","Phó giám đốc","Trưởng phòng thiết kế","Kiến trúc sư","Trưởng phòng thi công","Giám sát thi công","Kỹ sư","Hành chính","Kế toán","Nhân sự","Marketing & Sale"].map((role) => `<option>${role}</option>`).join("")}</select></label><label>Phòng ban<select name="department">${["Ban lãnh đạo","Phòng thiết kế","Phòng thi công","Khối văn phòng","Khối kinh doanh"].map((department) => `<option>${department}</option>`).join("")}</select></label><label>Số điện thoại<input name="phone" placeholder="Nhập số điện thoại"></label><label>Email<input name="email" type="email" placeholder="email@ledome.vn"></label><label>Trạng thái<select name="status"><option>Đang làm việc</option><option>Tạm nghỉ</option></select></label><label>Phụ trách<input name="scope" placeholder="Nhiệm vụ hoặc dự án"></label><label class="directory-form-wide">URL ảnh hồ sơ<input name="photo" placeholder="https://..."></label><footer><button type="button" class="btn secondary" data-hrm="close">Đóng</button><button class="btn">Lưu</button></footer></form></div></section>`;
+  $("#app").innerHTML = `<section class="hrm-page org-management-page">${hrmHeader("♟ Nhân sự","Tách nhân sự thật khỏi vị trí đảm nhiệm. Kéo nhân sự Ledome vào từng vị trí để gán account và phân quyền riêng.",'<button class="btn" data-hrm="add-staff">＋ Thêm vị trí</button>')}
+  <div class="org-layout"><div class="org-main-panel">${orgPeoplePool()}<section class="org-tree"><div class="org-toolbar"><b>Sơ đồ cây cấu trúc bộ máy</b><span>${people.length} nhân sự thật · ${ORG_STAFF.length} vị trí/account</span><button data-hrm="add-staff">＋</button></div>${orgTreeBranches()}</section></div>
+  <aside class="org-profile"><header><span>Vị trí đảm nhiệm</span><button data-hrm="edit-staff" data-code="${selected[0]}" title="Chỉnh sửa">✎</button></header><img src="${escapeHtml(orgPersonByKey(personKey(selected[1]))?.photo || selected[8])}" alt="${escapeHtml(selected[1])}"><h2>${escapeHtml(selected[2])}</h2><strong>${escapeHtml(selected[3])}</strong>${hrmStatus(selected[6])}<div class="org-profile-info"><p><span>Mã vị trí / account</span><b>${escapeHtml(selected[0])}</b></p><p><span>Nhân sự đang gán</span><b>${escapeHtml(selected[1])}</b></p><p><span>Điện thoại</span><b>${escapeHtml(selected[4])}</b></p><p><span>Email</span><b>${escapeHtml(selected[5])}</b></p><p><span>Phụ trách</span><b>${escapeHtml(selected[7])}</b></p></div><section class="org-person-assignments"><h3>Các vị trí của ${escapeHtml(selected[1])}</h3>${orgAssignmentList(selected)}</section><button class="org-detail" data-hrm="staff-private" data-code="${selected[0]}">Hồ sơ nhân sự <small>Chỉ Ban lãnh đạo</small></button><button class="org-edit" data-hrm="edit-staff" data-code="${selected[0]}">✎ Gán / chỉnh vị trí</button><button class="org-delete" data-hrm="delete-staff" data-code="${selected[0]}">× Xóa vị trí</button></aside></div>
+  <div class="directory-modal" id="hrm-staff-modal"><form id="hrm-staff-form"><header><h3 id="hrm-staff-modal-title">Thêm vị trí đảm nhiệm</h3><button type="button" data-hrm="close">×</button></header><input type="hidden" name="currentCode"><label>Mã vị trí / account<input name="code" value="NS${String(ORG_STAFF.length + 1).padStart(3,"0")}"></label><label>Nhân sự Ledome<select name="personKey" data-org-person-select>${orgPeopleOptions()}</select></label><label>Họ và tên<input name="name" required placeholder="Nhân sự đảm nhiệm"></label><label>Vị trí đảm nhiệm<select name="role">${["Giám đốc","Phó giám đốc","Trưởng phòng thiết kế","Kiến trúc sư","Trưởng phòng thi công","Giám sát thi công","Kỹ sư","Hành chính","Kế toán","Nhân sự","Marketing & Sale"].map((role) => `<option>${role}</option>`).join("")}</select></label><label>Phòng ban<select name="department">${["Ban lãnh đạo","Phòng thiết kế","Phòng thi công","Khối văn phòng","Khối kinh doanh"].map((department) => `<option>${department}</option>`).join("")}</select></label><label>Số điện thoại<input name="phone" placeholder="Nhập số điện thoại"></label><label>Email<input name="email" type="email" placeholder="email@ledome.vn"></label><label>Trạng thái<select name="status"><option>Đang làm việc</option><option>Tạm nghỉ</option></select></label><label>Phụ trách<input name="scope" placeholder="Nhiệm vụ hoặc dự án"></label><label class="directory-form-wide">URL ảnh hồ sơ<input name="photo" placeholder="https://..."></label><footer><button type="button" class="btn secondary" data-hrm="close">Đóng</button><button class="btn">Lưu vị trí</button></footer></form></div></section>`;
   bindHrm("staff");
 }
 
 function orgStaffCard(staff) {
   return `<article class="org-person ${selectedOrgStaff === staff[0] ? "selected" : ""}" data-hrm="select-staff" data-code="${staff[0]}"><img src="${staff[8]}" alt=""><span><b>${staff[1]}</b><small>${staff[2]}</small></span><i>›</i></article>`;
+}
+
+function bindOrgDragDrop() {
+  const form = $("#hrm-staff-form");
+  $("#app").querySelectorAll("[data-person-key]").forEach((card) => {
+    card.addEventListener("dragstart", (event) => {
+      event.dataTransfer.setData("text/plain", card.dataset.personKey);
+      event.dataTransfer.effectAllowed = "copy";
+    });
+  });
+  $("#app").querySelectorAll("[data-drop-position]").forEach((node) => {
+    node.addEventListener("dragover", (event) => {
+      event.preventDefault();
+      node.classList.add("drag-over");
+    });
+    node.addEventListener("dragleave", () => node.classList.remove("drag-over"));
+    node.addEventListener("drop", async (event) => {
+      event.preventDefault();
+      node.classList.remove("drag-over");
+      const key = event.dataTransfer.getData("text/plain");
+      if (!key || !orgAssignPersonToPosition(node.dataset.dropPosition, key)) return;
+      await saveOrgStaff();
+      selectedOrgStaff = node.dataset.dropPosition;
+      hrmStaff();
+    });
+  });
+  form?.elements.personKey?.addEventListener("change", () => orgFillPersonFields(form, orgPersonByKey(form.elements.personKey.value)));
 }
 
 async function hrmAttendance() {
@@ -5389,7 +6323,8 @@ async function hrmAttendance() {
   bindHrm("attendance", attendanceRows);
 }
 
-function hrmOvertime() {
+async function hrmOvertime() {
+  await loadCatalogData();
   loadHrmOvertime();
   setTitle("hrm-overtime", "");
   const approvedRows = HRM_OVERTIME.filter((row) => row[8] === "Hợp lệ");
@@ -5398,7 +6333,7 @@ function hrmOvertime() {
   const pending = HRM_OVERTIME.filter((row) => row[8] === "Cần duyệt").length;
   $("#app").innerHTML = `<section class="hrm-page">${hrmHeader("▤ Phiếu Overtime","Phiếu xin phép làm thêm giờ. Chỉ phiếu đã được cấp trên xét duyệt mới tính vào công và chi phí.",'<button class="btn" data-hrm="add-overtime">＋ Tạo phiếu</button>')}${hrmStats([["Tổng phiếu",HRM_OVERTIME.length,"Trong tháng 06 / 2026"],["Giờ được tính",`${totalHours} giờ`,"Chỉ tính phiếu Hợp lệ"],["Cần duyệt",pending,"Chờ cấp trên xác nhận"],["Chi phí được tính",`${money(totalCost)} đ`,"Theo phiếu đã duyệt"]])}
   <div class="hrm-tools"><input placeholder="⌕ Tìm nhân sự, dự án hoặc lý do"><input type="month" value="2026-06"><select><option>Tất cả trạng thái</option><option>Cần duyệt</option><option>Hợp lệ</option><option>Từ chối</option></select><button>↻ Tải lại</button></div>
-  <div class="hrm-table-wrap"><table class="hrm-table payroll-table overtime-table"><thead><tr><th>Mã phiếu</th><th>Nhân sự</th><th>Ngày</th><th>Vị trí / dự án</th><th>Giờ bắt đầu</th><th>Giờ kết thúc</th><th>Tổng giờ</th><th>Lý do xin OT</th><th>Trạng thái</th><th>Chi phí tính</th><th></th></tr></thead><tbody>${HRM_OVERTIME.map((row) => hrmOvertimeRow(row)).join("")}</tbody><tfoot><tr><td colspan="6">Tổng overtime được tính</td><td>${totalHours} giờ</td><td colspan="2">${approvedRows.length} phiếu đã duyệt</td><td colspan="2">${money(totalCost)} đ</td></tr></tfoot></table></div>${hrmOvertimeModal()}</section>`;
+  <div class="hrm-table-wrap"><table class="hrm-table payroll-table overtime-table"><thead><tr><th>Mã phiếu</th><th>Nhân sự</th><th>Ngày</th><th>Vị trí / dự án</th><th>Giờ bắt đầu</th><th>Giờ kết thúc</th><th>Tổng giờ</th><th>Lý do xin OT</th><th>Trạng thái</th><th>Chi phí tính</th><th></th></tr></thead><tbody>${HRM_OVERTIME.map((row) => hrmOvertimeRow(row)).join("")}</tbody><tfoot><tr><td colspan="6">Tổng overtime được tính</td><td>${totalHours} giờ</td><td colspan="2">${approvedRows.length} phiếu đã duyệt</td><td colspan="2">${money(totalCost)} đ</td></tr></tfoot></table></div>${dashboardVoucherFormModal()}</section>`;
   bindHrm("overtime");
 }
 
@@ -5440,21 +6375,6 @@ function hrmLeaveRow(row) {
   return `<tr><td><b>${escapeHtml(row[0])}</b></td><td>${escapeHtml(row[1])}</td><td>${escapeHtml(row[2])}</td><td>${escapeHtml(row[3])}</td><td><strong>${escapeHtml(row[4])} ngày</strong></td><td>${escapeHtml(row[5])}</td><td class="overtime-reason">${escapeHtml(row[6])}</td><td>${escapeHtml(row[8] || "")}</td><td>${hrmStatus(row[7])}</td><td class="overtime-actions">${pending ? `<button class="hrm-view approve" data-hrm="approve-leave" data-code="${escapeHtml(row[0])}">Xét duyệt</button><button class="hrm-view reject" data-hrm="reject-leave" data-code="${escapeHtml(row[0])}">Từ chối</button>` : `<button class="hrm-view" data-hrm="view-leave" data-code="${escapeHtml(row[0])}">Chi tiết</button>`}</td></tr>`;
 }
 
-function hrmLeaveModal() {
-  const staffOptions = staffPeople().map((person) => `<option value="${escapeHtml(person.staffName)}">${escapeHtml(person.staffCode)} · ${escapeHtml(person.staffName)}</option>`).join("");
-  const today = new Date().toISOString().slice(0, 10);
-  return `<div class="directory-modal overtime-modal" id="hrm-leave-modal"><form id="hrm-leave-form"><header><h3>Tạo phiếu xin nghỉ</h3><button type="button" data-hrm="close-leave">×</button></header>
-    <label>Nhân sự<select name="staff" required>${staffOptions}</select></label>
-    <label>Từ ngày<input name="fromDate" type="date" value="${today}" required></label>
-    <label>Đến ngày<input name="toDate" type="date" value="${today}" required></label>
-    <label>Loại nghỉ<select name="leaveType"><option>Nghỉ phép năm</option><option>Nghỉ phép cá nhân</option><option>Nghỉ không lương</option><option>Nghỉ ốm</option><option>Khác</option></select></label>
-    <label>Cấp trên duyệt<select name="approver"><option>DINH Công Hoàng</option><option>Bùi Xuân Dũng</option><option>Hoàng Thu Mai</option></select></label>
-    <label class="directory-form-wide">Lý do xin nghỉ<textarea name="reason" required placeholder="Nêu rõ lý do xin nghỉ"></textarea></label>
-    <label class="directory-form-wide">Bàn giao công việc<textarea name="handover" placeholder="Ghi người nhận bàn giao, việc đang xử lý và deadline liên quan"></textarea></label>
-    <section class="overtime-form-note directory-form-wide"><b>Luồng duyệt</b><span>Sau khi gửi, phiếu vào trạng thái Cần duyệt. Chỉ phiếu Hợp lệ mới được tính là ngày nghỉ hợp lệ trong bảng công.</span></section>
-    <footer><button type="button" class="btn secondary" data-hrm="close-leave">Đóng</button><button class="btn">Gửi phiếu</button></footer></form></div>`;
-}
-
 async function hrmLeave() {
   await loadOrgStaff();
   loadHrmLeave();
@@ -5465,7 +6385,7 @@ async function hrmLeave() {
   const rejected = HRM_LEAVE.filter((row) => row[7] === "Từ chối").length;
   $("#app").innerHTML = `<section class="hrm-page">${hrmHeader("▤ Phiếu xin nghỉ","Phiếu xin nghỉ phép, nghỉ cá nhân hoặc nghỉ không lương. Chỉ phiếu đã duyệt mới tính là nghỉ hợp lệ.",'<button class="btn" data-hrm="add-leave">＋ Tạo phiếu</button>')}${hrmStats([["Tổng phiếu",HRM_LEAVE.length,"Trong tháng 06 / 2026"],["Ngày nghỉ hợp lệ",`${attendanceWork(totalDays)} ngày`,`${approvedRows.length} phiếu đã duyệt`],["Cần duyệt",pending,"Chờ cấp trên xác nhận"],["Từ chối",rejected,"Không tính vào công hợp lệ"]])}
   <div class="hrm-tools"><input placeholder="⌕ Tìm nhân sự, loại nghỉ hoặc lý do"><input type="month" value="2026-06"><select><option>Tất cả trạng thái</option><option>Cần duyệt</option><option>Hợp lệ</option><option>Từ chối</option></select><button>↻ Tải lại</button></div>
-  <div class="hrm-table-wrap"><table class="hrm-table payroll-table overtime-table"><thead><tr><th>Mã phiếu</th><th>Nhân sự</th><th>Từ ngày</th><th>Đến ngày</th><th>Số ngày</th><th>Loại nghỉ</th><th>Lý do / bàn giao</th><th>Người duyệt</th><th>Trạng thái</th><th></th></tr></thead><tbody>${HRM_LEAVE.map((row) => hrmLeaveRow(row)).join("")}</tbody><tfoot><tr><td colspan="4">Tổng ngày nghỉ hợp lệ</td><td>${attendanceWork(totalDays)} ngày</td><td colspan="5">${approvedRows.length} phiếu đã duyệt</td></tr></tfoot></table></div>${hrmLeaveModal()}</section>`;
+  <div class="hrm-table-wrap"><table class="hrm-table payroll-table overtime-table"><thead><tr><th>Mã phiếu</th><th>Nhân sự</th><th>Từ ngày</th><th>Đến ngày</th><th>Số ngày</th><th>Loại nghỉ</th><th>Lý do / bàn giao</th><th>Người duyệt</th><th>Trạng thái</th><th></th></tr></thead><tbody>${HRM_LEAVE.map((row) => hrmLeaveRow(row)).join("")}</tbody><tfoot><tr><td colspan="4">Tổng ngày nghỉ hợp lệ</td><td>${attendanceWork(totalDays)} ngày</td><td colspan="5">${approvedRows.length} phiếu đã duyệt</td></tr></tfoot></table></div>${dashboardVoucherFormModal()}</section>`;
   bindHrm("leave");
 }
 
@@ -5497,24 +6417,8 @@ function saveHrmPayroll() {
 function hrmOvertimeRow(row) {
   const approved = row[8] === "Hợp lệ";
   const cost = approved ? row[9] : 0;
-  return `<tr><td><b>${escapeHtml(row[0])}</b></td><td>${escapeHtml(row[1])}</td><td>${escapeHtml(row[2])}</td><td>${escapeHtml(row[3])}</td><td>${escapeHtml(row[4])}</td><td>${escapeHtml(row[5])}</td><td><strong>${row[6]} giờ</strong></td><td class="overtime-reason">${escapeHtml(row[7])}</td><td>${hrmStatus(row[8])}${!approved && row[8] === "Cần duyệt" ? "<small>Chưa tính công</small>" : ""}</td><td class="${cost > 0 ? "payroll-bonus" : ""}">${cost > 0 ? `+ ${money(cost)}` : money(cost)} đ</td><td class="overtime-actions">${row[8] === "Cần duyệt" ? `<button class="hrm-view approve" data-hrm="approve-overtime" data-code="${escapeHtml(row[0])}">Xét duyệt</button><button class="hrm-view reject" data-hrm="reject-overtime" data-code="${escapeHtml(row[0])}">Từ chối</button>` : `<button class="hrm-view" data-hrm="view-overtime" data-code="${escapeHtml(row[0])}">Chi tiết</button>`}</td></tr>`;
-}
-
-function hrmOvertimeModal() {
-  const staffOptions = staffPeople().map((person) => `<option value="${escapeHtml(person.staffName)}">${escapeHtml(person.staffCode)} · ${escapeHtml(person.staffName)}</option>`).join("");
-  const projectOptions = financeUnique([...projectListOptions(), "Văn phòng Le Dome", "Kho Le Dome", "Khác"]).map((project) => `<option>${escapeHtml(project)}</option>`).join("");
-  const today = new Date().toISOString().slice(0, 10);
-  return `<div class="directory-modal overtime-modal" id="hrm-overtime-modal"><form id="hrm-overtime-form"><header><h3>Tạo phiếu xin overtime</h3><button type="button" data-hrm="close-overtime">×</button></header>
-    <label>Nhân sự<select name="staff" required>${staffOptions}</select></label>
-    <label>Ngày overtime<input name="date" type="date" value="${today}" required></label>
-    <label>Vị trí / dự án<select name="project" required>${projectOptions}</select></label>
-    <label>Cấp trên duyệt<select name="approver"><option>DINH Công Hoàng</option><option>Bùi Xuân Dũng</option><option>Hoàng Thu Mai</option></select></label>
-    <label>Giờ bắt đầu<input name="start" type="time" value="18:00" required></label>
-    <label>Giờ kết thúc<input name="end" type="time" value="20:00" required></label>
-    <label class="directory-form-wide">Lý do xin overtime<textarea name="reason" required placeholder="Nêu rõ việc cần hoàn thành, deadline, ảnh hưởng nếu không làm thêm"></textarea></label>
-    <label class="directory-form-wide">Kết quả dự kiến<textarea name="expected" placeholder="VD: hoàn thành hồ sơ gửi CDT, kiểm kê xong vật tư, xử lý lỗi kỹ thuật..."></textarea></label>
-    <section class="overtime-form-note directory-form-wide"><b>Luồng tính công</b><span>Sau khi bấm Gửi, phiếu vào danh sách với trạng thái Cần duyệt. Chỉ khi cấp trên bấm Xét duyệt, giờ OT và chi phí mới được tính.</span></section>
-    <footer><button type="button" class="btn secondary" data-hrm="close-overtime">Đóng</button><button class="btn">Gửi phiếu</button></footer></form></div>`;
+  const voucherType = row[10] || "";
+  return `<tr><td><b>${escapeHtml(row[0])}</b>${voucherType ? `<small>${escapeHtml(voucherType)}</small>` : ""}</td><td>${escapeHtml(row[1])}</td><td>${escapeHtml(row[2])}</td><td>${escapeHtml(row[3])}</td><td>${escapeHtml(row[4])}</td><td>${escapeHtml(row[5])}</td><td><strong>${row[6]} giờ</strong></td><td class="overtime-reason">${escapeHtml(row[7])}</td><td>${hrmStatus(row[8])}${!approved && row[8] === "Cần duyệt" ? "<small>Chưa tính công</small>" : ""}</td><td class="${cost > 0 ? "payroll-bonus" : ""}">${cost > 0 ? `+ ${money(cost)}` : money(cost)} đ</td><td class="overtime-actions">${row[8] === "Cần duyệt" ? `<button class="hrm-view approve" data-hrm="approve-overtime" data-code="${escapeHtml(row[0])}">Xét duyệt</button><button class="hrm-view reject" data-hrm="reject-overtime" data-code="${escapeHtml(row[0])}">Từ chối</button>` : `<button class="hrm-view" data-hrm="view-overtime" data-code="${escapeHtml(row[0])}">Chi tiết</button>`}</td></tr>`;
 }
 
 function overtimeHours(start, end) {
@@ -5625,18 +6529,18 @@ function bindPayrollEditors() {
 }
 
 function bindHrm(type, attendanceRows = HRM_ATTENDANCE) {
+  if (type === "staff") bindOrgDragDrop();
   $("#app").onclick = async (event) => {
     const action = event.target.closest("[data-hrm]")?.dataset.hrm;
     if (action === "open-attendance-form") return openAttendanceForm(event);
     if (action === "add-staff") {
       $("#hrm-staff-form").reset();
       $("#hrm-staff-form").elements.code.value = `NS${String(ORG_STAFF.length + 1).padStart(3,"0")}`;
-      $("#hrm-staff-modal-title").textContent = "Thêm nhân sự";
+      $("#hrm-staff-modal-title").textContent = "Thêm vị trí đảm nhiệm";
+      orgFillPersonFields($("#hrm-staff-form"), staffPeople()[0]);
       return $("#hrm-staff-modal").classList.add("open");
     }
     if (action === "close") return $("#hrm-staff-modal").classList.remove("open");
-    if (action === "close-overtime") return $("#hrm-overtime-modal")?.classList.remove("open");
-    if (action === "close-leave") return $("#hrm-leave-modal")?.classList.remove("open");
     if (action === "close-evidence") return $("#hrm-evidence").classList.remove("open");
     if (action === "close-private") return $("#staff-private-modal")?.remove();
     if (action === "staff-private") {
@@ -5649,10 +6553,10 @@ function bindHrm(type, attendanceRows = HRM_ATTENDANCE) {
     if (action === "delete-staff") {
       const index = ORG_STAFF.findIndex((row) => row[0] === event.target.closest("[data-code]").dataset.code);
       if (ORG_STAFF.length <= 1) {
-        alert("Can giu lai it nhat 1 nhan su.");
+        alert("Cần giữ lại ít nhất 1 vị trí đảm nhiệm.");
         return;
       }
-      if (index >= 0 && confirm(`Xóa nhân sự "${ORG_STAFF[index][1]}"?`)) {
+      if (index >= 0 && confirm(`Xóa vị trí "${ORG_STAFF[index][2]}"?`)) {
         ORG_STAFF.splice(index, 1);
         await saveOrgStaff();
         selectedOrgStaff = ORG_STAFF[Math.max(0, index - 1)]?.[0] || ORG_STAFF[0]?.[0] || "";
@@ -5668,8 +6572,9 @@ function bindHrm(type, attendanceRows = HRM_ATTENDANCE) {
       const row = ORG_STAFF.find((item) => item[0] === event.target.closest("[data-code]").dataset.code);
       const form = $("#hrm-staff-form");
       ["code","name","role","department","phone","email","status","scope","photo"].forEach((name, index) => { form.elements[name].value = row[index]; });
+      form.elements.personKey.value = personKey(row[1]);
       form.elements.currentCode.value = row[0];
-      $("#hrm-staff-modal-title").textContent = "Chỉnh sửa nhân sự";
+      $("#hrm-staff-modal-title").textContent = "Chỉnh sửa vị trí đảm nhiệm";
       return $("#hrm-staff-modal").classList.add("open");
     }
     if (action === "evidence") {
@@ -5695,18 +6600,10 @@ function bindHrm(type, attendanceRows = HRM_ATTENDANCE) {
       return hrmAttendance();
     }
     if (action === "add-overtime") {
-      $("#hrm-overtime-form")?.reset();
-      const date = $("#hrm-overtime-form")?.elements.date;
-      if (date) date.value = new Date().toISOString().slice(0, 10);
-      return $("#hrm-overtime-modal")?.classList.add("open");
+      return openDashboardVoucherForm("overtime");
     }
     if (action === "add-leave") {
-      $("#hrm-leave-form")?.reset();
-      const today = new Date().toISOString().slice(0, 10);
-      const form = $("#hrm-leave-form");
-      if (form?.elements.fromDate) form.elements.fromDate.value = today;
-      if (form?.elements.toDate) form.elements.toDate.value = today;
-      return $("#hrm-leave-modal")?.classList.add("open");
+      return openDashboardVoucherForm("leave");
     }
     if (action === "approve-overtime") {
       const row = HRM_OVERTIME.find((item) => item[0] === event.target.closest("[data-code]").dataset.code);
@@ -5728,7 +6625,7 @@ function bindHrm(type, attendanceRows = HRM_ATTENDANCE) {
     }
     if (action === "view-overtime") {
       const row = HRM_OVERTIME.find((item) => item[0] === event.target.closest("[data-code]").dataset.code);
-      if (row) alert(`${row[0]} - ${row[1]}\n${row[2]} · ${row[3]}\n${row[4]} - ${row[5]} (${row[6]} giờ)\nTrạng thái: ${row[8]}\nLý do: ${row[7]}`);
+      if (row) alert(`${row[0]} - ${row[1]}\n${row[10] ? `${row[10]}\n` : ""}${row[2]} · ${row[3]}\n${row[4]} - ${row[5]} (${row[6]} giờ)\nTrạng thái: ${row[8]}\nLý do: ${row[7]}`);
     }
     if (action === "approve-leave") {
       const row = HRM_LEAVE.find((item) => item[0] === event.target.closest("[data-code]").dataset.code);
@@ -5754,6 +6651,14 @@ function bindHrm(type, attendanceRows = HRM_ATTENDANCE) {
   if (type === "staff") $("#hrm-staff-form").onsubmit = async (event) => {
     event.preventDefault();
     const data = Object.fromEntries(new FormData(event.currentTarget));
+    const person = orgPersonByKey(data.personKey);
+    if (person) {
+      data.name = person.staffName;
+      data.phone = data.phone || person.phone || "";
+      data.email = data.email || person.email || "";
+      data.status = data.status || person.status || "Đang làm việc";
+      data.photo = data.photo || person.photo || "";
+    }
     const row = [data.code,data.name,data.role,data.department,data.phone,data.email,data.status,data.scope,data.photo || "https://i.pravatar.cc/96?img=1"];
     const index = ORG_STAFF.findIndex((item) => item[0] === data.currentCode);
     if (index >= 0) ORG_STAFF[index] = row;
@@ -5762,17 +6667,17 @@ function bindHrm(type, attendanceRows = HRM_ATTENDANCE) {
     selectedOrgStaff = row[0];
     hrmStaff();
   };
-  if (type === "overtime") $("#hrm-overtime-form").onsubmit = (event) => {
+  if (type === "overtime" && $("#hrm-overtime-form")) $("#hrm-overtime-form").onsubmit = (event) => {
     event.preventDefault();
     const data = Object.fromEntries(new FormData(event.currentTarget));
     const hours = overtimeHours(data.start, data.end);
     if (hours <= 0) return alert("Giờ kết thúc phải sau giờ bắt đầu.");
     const code = `OT-${String(HRM_OVERTIME.length + 1).padStart(3, "0")}`;
-    HRM_OVERTIME.unshift([code, data.staff, overtimeDisplayDate(data.date), data.project, data.start, data.end, hours, data.reason, "Cần duyệt", Math.round(hours * OVERTIME_RATE_PER_HOUR)]);
+    HRM_OVERTIME.unshift([code, data.staff, overtimeDisplayDate(data.date), data.project, data.start, data.end, hours, data.reason, "Cần duyệt", Math.round(hours * OVERTIME_RATE_PER_HOUR), data.voucherType || overtimeVoucherTypeOptions()[0] || ""]);
     saveHrmOvertime();
     hrmOvertime();
   };
-  if (type === "leave") $("#hrm-leave-form").onsubmit = (event) => {
+  if (type === "leave" && $("#hrm-leave-form")) $("#hrm-leave-form").onsubmit = (event) => {
     event.preventDefault();
     const data = Object.fromEntries(new FormData(event.currentTarget));
     const days = leaveDayCount(data.fromDate, data.toDate);
@@ -5847,10 +6752,11 @@ function accountAccessCards() {
 function accountRow(account) {
   const safe = normalizeAccountAccess(account);
   const level = ACCOUNT_ACCESS_BY_KEY[safe.accessLevel];
-  const positions = safe.positions || [`${safe.role} - ${safe.department}`];
+  const positionLabel = safe.position || safe.role || "Chưa cập nhật";
+  const positionCode = safe.positionCode || safe.staffCode;
   const permissions = expandAccountPermissions(safe.permissions || {});
   const customState = accountPermissionsDifferFromLevel(permissions, safe.accessLevel) ? "Tùy chỉnh" : "Theo cấp";
-  return `<tr data-staff="${safe.staffCode}" class="${customState === "Tùy chỉnh" ? "account-custom-permissions" : ""}"><td><div class="account-person"><b>${escapeHtml(safe.staffName)}</b><span><em>Chức danh:</em> ${escapeHtml(safe.title || safe.role || "Chưa cập nhật")}<br><em>Vị trí:</em> ${positions.map(escapeHtml).join("<br>")}</span></div></td><td><input name="loginId" value="${escapeHtml(safe.loginId)}"></td><td><input name="newPassword" type="password" placeholder="Để trống nếu không đổi"></td><td><label class="account-active"><input type="checkbox" name="active" ${safe.active ? "checked" : ""}> Hoạt động</label></td><td><div class="account-level-picker"><select name="accessLevel" data-account-level>${accountAccessOptions(safe.accessLevel)}</select><small data-account-level-desc>${escapeHtml(level.description)}</small></div></td><td><div class="account-scope"><b data-account-scope>${escapeHtml(level.scope)}</b><span>Cấp ${level.rank}: ${escapeHtml(level.label)}</span><small data-account-custom>${customState}</small></div><div class="account-badges" data-account-badges>${accountPermissionBadges(permissions)}</div>${accountPermissionEditor(permissions)}</td></tr>`;
+  return `<tr data-account-key="${escapeHtml(positionCode)}" data-staff="${escapeHtml(safe.staffCode)}" class="${customState === "Tùy chỉnh" ? "account-custom-permissions" : ""}"><td><div class="account-person account-person-split"><b>${escapeHtml(safe.staffName)}</b><span><em>Nhân sự thật</em><br>${escapeHtml(safe.personKey || personKey(safe.staffName) || "")}</span></div></td><td><div class="account-position"><b>${escapeHtml(positionLabel)}</b><span>${escapeHtml(safe.department || "Chưa cập nhật")}</span><small>Mã vị trí/account: ${escapeHtml(positionCode)}</small></div></td><td><input name="loginId" value="${escapeHtml(safe.loginId)}"></td><td><input name="newPassword" type="password" placeholder="Để trống nếu không đổi"></td><td><label class="account-active"><input type="checkbox" name="active" ${safe.active ? "checked" : ""}> Hoạt động</label></td><td><div class="account-level-picker"><select name="accessLevel" data-account-level>${accountAccessOptions(safe.accessLevel)}</select><small data-account-level-desc>${escapeHtml(level.description)}</small></div></td><td><div class="account-scope"><b data-account-scope>${escapeHtml(level.scope)}</b><span>Cấp ${level.rank}: ${escapeHtml(level.label)}</span><small data-account-custom>${customState}</small></div><div class="account-badges" data-account-badges>${accountPermissionBadges(permissions)}</div>${accountPermissionEditor(permissions)}</td></tr>`;
 }
 
 function updateAccountRowAccess(row) {
@@ -5881,16 +6787,18 @@ function setAccountSaveStatus(type, message) {
 }
 
 async function configAccounts() {
+  await loadOrgStaff();
   await loadAccounts();
   setTitle("accounts", "");
   const activeCount = LEDOME_ACCOUNTS.filter((account) => account.active).length;
+  const personCount = new Set(LEDOME_ACCOUNTS.map((account) => account.personKey || personKey(account.staffName))).size;
   $("#app").innerHTML = `<section class="account-page">
     <header class="account-head"><div><h2>▣ Tài khoản</h2><p>Quản lý tài khoản đăng nhập và phân quyền cho nhân sự Le Dome</p></div><button class="btn" data-account="save">Lưu thay đổi</button></header>
     ${accountSaveStatusMarkup()}
-    <div class="account-summary"><article><small>Tổng tài khoản</small><b>${LEDOME_ACCOUNTS.length}</b><span>Theo nhân sự thật, không theo số vị trí kiêm nhiệm</span></article><article><small>Đang hoạt động</small><b>${activeCount}</b><span>Có thể đăng nhập</span></article><article><small>Cấp quyền</small><b>5</b><span>Admin, Lãnh đạo, Trưởng phòng, Nhân viên, Guest</span></article></div>
+    <div class="account-summary"><article><small>Nhân sự thật</small><b>${personCount}</b><span>Một người có thể giữ nhiều vị trí</span></article><article><small>Tài khoản theo vị trí</small><b>${LEDOME_ACCOUNTS.length}</b><span>Mỗi vị trí đảm nhiệm có 1 account riêng</span></article><article><small>Đang hoạt động</small><b>${activeCount}</b><span>Có thể đăng nhập</span></article></div>
     ${accountAccessCards()}
-    <div class="account-tools"><span>RBAC theo cấp và quyền chi tiết theo từng tài khoản.</span><button data-account="reset">Tạo lại mặc định</button></div>
-    <div class="account-table-wrap"><table class="account-table"><thead><tr><th>Nhân sự thật</th><th>ID đăng nhập</th><th>Đặt mật khẩu mới</th><th>Trạng thái</th><th>Cấp quyền</th><th>Phạm vi & quyền chi tiết</th></tr></thead><tbody>${LEDOME_ACCOUNTS.map(accountRow).join("")}</tbody></table></div>
+    <div class="account-tools"><span>RBAC theo từng vị trí/account. Cùng một nhân sự có thể có nhiều account với phân quyền khác nhau.</span><button data-account="reset">Tạo lại mặc định</button></div>
+    <div class="account-table-wrap"><table class="account-table account-position-table"><thead><tr><th>Nhân sự thật</th><th>Vị trí đảm nhiệm</th><th>ID đăng nhập</th><th>Đặt mật khẩu mới</th><th>Trạng thái</th><th>Cấp quyền</th><th>Phạm vi & quyền chi tiết</th></tr></thead><tbody>${LEDOME_ACCOUNTS.map(accountRow).join("")}</tbody></table></div>
   </section>`;
   bindAccounts();
 }
@@ -5933,10 +6841,11 @@ function bindAccounts() {
       setAccountSaveStatus("saving", "Đang lưu thay đổi tài khoản...");
       try {
         LEDOME_ACCOUNTS = [...document.querySelectorAll(".account-table tbody tr")].map((row) => {
-          const previous = LEDOME_ACCOUNTS.find((account) => account.staffCode === row.dataset.staff);
+          const previous = LEDOME_ACCOUNTS.find((account) => String(account.positionCode || account.staffCode) === row.dataset.accountKey);
           const accessLevel = row.querySelector('[name="accessLevel"]').value;
           return {
             ...previous,
+            positionCode: previous.positionCode || previous.staffCode,
             loginId: row.querySelector('[name="loginId"]').value.trim(),
             newPassword: row.querySelector('[name="newPassword"]').value,
             active: row.querySelector('[name="active"]').checked,
@@ -5946,7 +6855,7 @@ function bindAccounts() {
           };
         });
         await saveAccounts();
-        state.account = LEDOME_ACCOUNTS.find((account) => account.staffCode === state.account?.staffCode) || state.account;
+        state.account = LEDOME_ACCOUNTS.find((account) => account.loginId === state.account?.loginId) || LEDOME_ACCOUNTS.find((account) => account.staffCode === state.account?.staffCode) || state.account;
         if (state.account) localStorage.setItem(AUTH_STORAGE, JSON.stringify({ staffCode: state.account.staffCode, loginId: state.account.loginId }));
         updateUserChrome();
         setAccountSaveStatus("success", `Đã lưu ${LEDOME_ACCOUNTS.length} tài khoản thành công.`);
@@ -5971,6 +6880,22 @@ function catalogConfigForType(type) {
   return CATALOG_LIST_CONFIG[type] || TRANSACTION_FLOW_LIST_CONFIG[type];
 }
 
+function catalogTitleForType(type) {
+  return catalogData.listTitles?.[type] || catalogConfigForType(type)?.title || type;
+}
+
+function setCatalogTitleForType(type, title) {
+  if (!catalogData.listTitles || typeof catalogData.listTitles !== "object") catalogData.listTitles = {};
+  const fallback = catalogConfigForType(type)?.title || type;
+  const value = String(title || "").replace(/\s+/g, " ").trim();
+  if (!value || value === fallback) delete catalogData.listTitles[type];
+  else catalogData.listTitles[type] = value;
+}
+
+function catalogPanelEditing(key) {
+  return Boolean(catalogEditing[key]);
+}
+
 function catalogCollapsed(key) {
   return Boolean(state.catalogCollapsed?.[key]);
 }
@@ -5985,8 +6910,14 @@ function catalogToggleButton(key, collapsed = catalogCollapsed(key)) {
   return `<button type="button" class="catalog-toggle" data-catalog-toggle="${escapeHtml(key)}" aria-expanded="${collapsed ? "false" : "true"}">${collapsed ? "Unhide" : "Hide"}</button>`;
 }
 
+function catalogEditButton(key, editing = catalogPanelEditing(key)) {
+  return `<button type="button" class="catalog-edit-toggle ${editing ? "active" : ""}" data-catalog-edit="${escapeHtml(key)}">${editing ? "Xong" : "Sửa"}</button>`;
+}
+
 function catalogPanelActions(key, collapsed = catalogCollapsed(key), draggable = false) {
-  return `<div class="catalog-panel-actions">${catalogToggleButton(key, collapsed)}${draggable ? `<button type="button" class="catalog-drag-handle" draggable="true" data-catalog-drag-handle="${escapeHtml(key)}" title="Kéo để đổi vị trí" aria-label="Kéo để đổi vị trí">↕</button>` : ""}</div>`;
+  const config = catalogConfigForType(key);
+  const editable = Boolean(CATALOG_LIST_CONFIG[key]) && !config?.readOnly;
+  return `<div class="catalog-panel-actions">${editable ? catalogEditButton(key) : ""}${catalogToggleButton(key, collapsed)}${draggable ? `<button type="button" class="catalog-drag-handle" draggable="true" data-catalog-drag-handle="${escapeHtml(key)}" title="Kéo để đổi vị trí" aria-label="Kéo để đổi vị trí">↕</button>` : ""}</div>`;
 }
 
 function catalogValuesForType(type) {
@@ -6017,13 +6948,60 @@ function catalogInputValueForType(type, value) {
   return catalogConfigForType(type)?.preserveCase ? text : text.toLocaleUpperCase("vi");
 }
 
+function catalogSearchValue(value) {
+  return String(value || "").normalize("NFC");
+}
+
+function scheduleCatalogSearchRender() {
+  clearTimeout(catalogSearchRenderTimer);
+  catalogSearchRenderTimer = setTimeout(() => {
+    catalogSearchRenderTimer = null;
+    renderCatalogSearchResults();
+  }, 140);
+}
+
+function catalogSearchQuery() {
+  return catalogSearchValue(state.catalogQuery).replace(/\s+/g, " ").trim().toLocaleLowerCase("vi");
+}
+
+function catalogMatchesSearchText(text, query = catalogSearchQuery()) {
+  return !query || String(text || "").toLocaleLowerCase("vi").includes(query);
+}
+
+function catalogItemSearchText(type, item) {
+  if (type === "projectList") return `${item} ${catalogProjectName(item)} ${catalogProjectDisplayCode(item)}`;
+  if (item && typeof item === "object") return JSON.stringify(item);
+  return String(item || "");
+}
+
+function catalogPanelSearchText(type) {
+  const config = catalogConfigForType(type) || {};
+  return [type, catalogTitleForType(type), config.title, config.note, config.placeholder].filter(Boolean).join(" ");
+}
+
+function catalogPanelMetaMatchesQuery(type) {
+  const query = catalogSearchQuery();
+  return Boolean(query && catalogMatchesSearchText(catalogPanelSearchText(type), query));
+}
+
+function catalogPanelMatchesQuery(type) {
+  const query = catalogSearchQuery();
+  if (!query) return true;
+  if (catalogPanelMetaMatchesQuery(type)) return true;
+  return catalogValuesForType(type).some((item) => catalogMatchesSearchText(catalogItemSearchText(type, item), query));
+}
+
+function catalogVisibleTypes(types) {
+  return catalogSearchQuery() ? types.filter(catalogPanelMatchesQuery) : types;
+}
+
 function catalogEditorRows(type) {
-  const query = state.catalogQuery.toLocaleLowerCase("vi");
+  const query = catalogSearchQuery();
+  const showAllRows = catalogPanelMetaMatchesQuery(type);
   return catalogValuesForType(type).map((item, index) => ({ item, index }))
     .filter(({ item }) => {
-      if (!query) return true;
-      const text = type === "projectList" ? `${item} ${catalogProjectName(item)} ${catalogProjectDisplayCode(item)}` : item;
-      return text.toLocaleLowerCase("vi").includes(query);
+      if (!query || showAllRows) return true;
+      return catalogMatchesSearchText(catalogItemSearchText(type, item), query);
     });
 }
 
@@ -6051,28 +7029,68 @@ function catalogProjectDisplayCode(code) {
   return String(project?.code || code || "").trim();
 }
 
-function catalogChipMarkup(type, item, index) {
+function catalogVoucherTemplateButton(type, item) {
+  if (type !== "voucherTypes") return "";
+  const formId = dashboardVoucherFormIdForType(item);
+  const attrs = formId
+    ? `data-catalog-voucher-form="${escapeHtml(formId)}"`
+    : `data-catalog-voucher-form-custom="${escapeHtml(item)}"`;
+  return `<button type="button" class="catalog-voucher-template" ${attrs} title="Mở Phiếu mẫu của ${escapeHtml(item)}">Phiếu mẫu</button>`;
+}
+
+function catalogCategoryGroupSummary(type, groupKey, rootAttr, groupAttr) {
+  const editing = catalogPanelEditing(type);
+  return `<div class="catalog-construction-groups ${editing ? "editing" : ""}" ${rootAttr}>${(catalogData[groupKey] || []).map((group) => `
+    <article data-catalog-group-drop="${escapeHtml(type)}" data-catalog-group-id="${escapeHtml(group.id)}" ${groupAttr}="${escapeHtml(group.id)}">
+      <header><b>${escapeHtml(group.title)}</b><span>${(group.items || []).length} hạng mục</span></header>
+      <small>${escapeHtml(group.role || "")}</small>
+      <p>${escapeHtml(group.desc || "")}</p>
+      <div>${(group.items || []).map((item) => `<em class="catalog-group-chip" ${editing ? "draggable=\"true\"" : ""} data-catalog-group-option="${escapeHtml(type)}" data-catalog-group-id="${escapeHtml(group.id)}" data-catalog-group-item="${escapeHtml(item)}" title="${editing ? "Kéo sang nhóm khác" : escapeHtml(item)}">${escapeHtml(item)}</em>`).join("")}</div>
+    </article>
+  `).join("")}</div>`;
+}
+
+function catalogConstructionGroupSummary() {
+  return catalogCategoryGroupSummary("constructionCategories", "constructionCategoryGroups", "data-construction-category-groups", "data-construction-category-group");
+}
+
+function catalogMaterialGroupSummary() {
+  return catalogCategoryGroupSummary("materialCategories", "materialCategoryGroups", "data-material-category-groups", "data-material-category-group");
+}
+
+function catalogChipMarkup(type, item, index, editing = catalogPanelEditing(type)) {
   const config = catalogConfigForType(type);
-  const readOnly = config?.readOnly;
+  const readOnly = config?.readOnly || !editing;
+  const dragHandle = editing && !config?.readOnly && !state.catalogQuery ? `<button type="button" class="catalog-option-drag" draggable="true" data-catalog-option-drag="${escapeHtml(type)}" data-index="${index}" title="Kéo trong danh sách này" aria-label="Kéo trong danh sách này">↕</button>` : "";
+  const deleteButton = readOnly ? "" : `<button type="button" class="catalog-delete-button" aria-label="Xóa ${escapeHtml(item)}" data-catalog-delete="${type}" data-index="${index}">×</button>`;
   if (type === "projectList") {
     const projectName = catalogProjectName(item);
     const projectCode = catalogProjectDisplayCode(item);
-    return `<div class="catalog-chip catalog-project-chip" data-catalog-row="${index}"><span>${index + 1}</span><div class="catalog-project-label"><b>${escapeHtml(projectName)}</b><small>Mã dự án: ${escapeHtml(projectCode)}</small><input type="hidden" value="${escapeHtml(item)}" data-catalog-input="${type}" data-index="${index}"></div><button type="button" aria-label="Xóa ${escapeHtml(item)}" data-catalog-delete="${type}" data-index="${index}">×</button></div>`;
+    const valueControl = editing
+      ? `<input value="${escapeHtml(item)}" data-catalog-input="${type}" data-index="${index}" title="${escapeHtml(item)}">`
+      : `<input type="hidden" value="${escapeHtml(item)}" data-catalog-input="${type}" data-index="${index}"><b>${escapeHtml(projectName)}</b>`;
+    return `<div class="catalog-chip catalog-project-chip ${readOnly ? "readonly" : ""}" draggable="false" data-catalog-row="${index}">${dragHandle}<span>${index + 1}</span><div class="catalog-project-label">${valueControl}<small>Mã dự án: ${escapeHtml(projectCode)}</small></div>${deleteButton}</div>`;
   }
-  return `<label class="catalog-chip ${readOnly ? "readonly" : ""}" data-catalog-row="${index}"><span>${index + 1}</span><input value="${escapeHtml(item)}" data-catalog-input="${type}" data-index="${index}" ${readOnly ? "readonly" : ""}>${readOnly ? "" : `<button type="button" aria-label="Xóa ${escapeHtml(item)}" data-catalog-delete="${type}" data-index="${index}">×</button>`}</label>`;
+  if (type === "voucherTypes") {
+    return `<div class="catalog-chip catalog-voucher-chip ${readOnly ? "readonly" : ""}" draggable="false" data-catalog-row="${index}" data-full-label="${escapeHtml(item)}">${dragHandle}<span>${index + 1}</span><input value="${escapeHtml(item)}" data-catalog-input="${type}" data-index="${index}" title="${escapeHtml(item)}" ${readOnly ? "readonly" : ""}>${catalogVoucherTemplateButton(type, item)}${deleteButton}</div>`;
+  }
+  return `<label class="catalog-chip ${readOnly ? "readonly" : ""}" draggable="false" data-catalog-row="${index}">${dragHandle}<span>${index + 1}</span><input value="${escapeHtml(item)}" data-catalog-input="${type}" data-index="${index}" ${readOnly ? "readonly" : ""}>${deleteButton}</label>`;
 }
 
 function catalogEditorList(type) {
   const config = CATALOG_LIST_CONFIG[type];
   const rows = catalogEditorRows(type);
-  const collapsed = catalogCollapsed(type);
+  const collapsed = catalogSearchQuery() ? false : catalogCollapsed(type);
+  const editing = catalogPanelEditing(type);
   const projectList = type === "projectList";
-  return `<section class="catalog-panel ${projectList ? "catalog-project-panel" : ""} ${collapsed ? "collapsed" : ""} ${config.preserveCase ? "preserve-case" : ""}" data-catalog-panel="${type}">
-    <header><div><h3>${escapeHtml(config.title)}</h3><span>${catalogValuesForType(type).length} mục đang lưu</span></div>${catalogPanelActions(type, collapsed, true)}</header>
+  return `<section class="catalog-panel ${projectList ? "catalog-project-panel" : ""} ${collapsed ? "collapsed" : ""} ${editing ? "editing" : ""} ${config.preserveCase ? "preserve-case" : ""}" data-catalog-panel="${type}">
+    <header><div>${editing ? `<input class="catalog-title-input" data-catalog-title="${escapeHtml(type)}" value="${escapeHtml(catalogTitleForType(type))}">` : `<h3>${escapeHtml(catalogTitleForType(type))}</h3>`}<span>${catalogValuesForType(type).length} mục đang lưu</span></div>${catalogPanelActions(type, collapsed, true)}</header>
     ${collapsed ? "" : `<div class="catalog-panel-body">
       <p>${escapeHtml(config.note)}</p>
-      ${projectList ? "" : `<div class="catalog-add-row"><input data-catalog-new="${type}" placeholder="${escapeHtml(config.placeholder)}"><button data-catalog-add="${type}">Thêm</button></div>`}
-      <div class="catalog-list ${projectList ? "catalog-project-list" : ""}">${rows.map(({ item, index }) => catalogChipMarkup(type, item, index)).join("") || `<em>${projectList ? "Không có dự án phù hợp." : "Không có hạng mục phù hợp."}</em>`}</div>
+      ${type === "constructionCategories" ? catalogConstructionGroupSummary() : ""}
+      ${type === "materialCategories" ? catalogMaterialGroupSummary() : ""}
+      ${editing ? `<div class="catalog-add-row"><input data-catalog-new="${type}" placeholder="${escapeHtml(config.placeholder)}"><button data-catalog-add="${type}">Thêm</button></div>` : ""}
+      <div class="catalog-list ${projectList ? "catalog-project-list" : ""}" data-catalog-option-list="${type}">${rows.map(({ item, index }) => catalogChipMarkup(type, item, index, editing)).join("") || `<em>${projectList ? "Không có dự án phù hợp." : "Không có hạng mục phù hợp."}</em>`}</div>
     </div>`}
   </section>`;
 }
@@ -6081,12 +7099,13 @@ function catalogFlowList(type) {
   const config = TRANSACTION_FLOW_LIST_CONFIG[type];
   const rows = catalogEditorRows(type);
   const readOnly = config.readOnly;
-  const collapsed = catalogCollapsed(type);
-  return `<div class="catalog-flow-list ${collapsed ? "collapsed" : ""} ${config.preserveCase ? "preserve-case" : ""}" data-catalog-panel="${type}">
-    <header><div><strong>${escapeHtml(config.title)}</strong><span>${catalogValuesForType(type).length} mục</span></div>${catalogPanelActions(type, collapsed)}</header>
+  const collapsed = catalogSearchQuery() ? false : catalogCollapsed(type);
+  const editing = catalogPanelEditing(type);
+  return `<div class="catalog-flow-list ${collapsed ? "collapsed" : ""} ${editing ? "editing" : ""} ${config.preserveCase ? "preserve-case" : ""}" data-catalog-panel="${type}">
+    <header><div>${editing ? `<input class="catalog-title-input" data-catalog-title="${escapeHtml(type)}" value="${escapeHtml(catalogTitleForType(type))}">` : `<strong>${escapeHtml(catalogTitleForType(type))}</strong>`}<span>${catalogValuesForType(type).length} mục</span></div>${catalogPanelActions(type, collapsed)}</header>
     ${collapsed ? "" : `<div class="catalog-flow-body">
-      ${readOnly ? "" : `<div class="catalog-add-row"><input data-catalog-new="${type}" placeholder="${escapeHtml(config.placeholder)}"><button data-catalog-add="${type}">Thêm</button></div>`}
-      <div class="catalog-list">${rows.map(({ item, index }) => catalogChipMarkup(type, item, index)).join("") || `<em>Không có mục phù hợp.</em>`}</div>
+      ${editing && !readOnly ? `<div class="catalog-add-row"><input data-catalog-new="${type}" placeholder="${escapeHtml(config.placeholder)}"><button data-catalog-add="${type}">Thêm</button></div>` : ""}
+      <div class="catalog-list" data-catalog-option-list="${type}">${rows.map(({ item, index }) => catalogChipMarkup(type, item, index, editing)).join("") || `<em>Không có mục phù hợp.</em>`}</div>
     </div>`}
   </div>`;
 }
@@ -6128,12 +7147,16 @@ function catalogDependencyGrid() {
 function catalogFlowPanel() {
   const total = TRANSACTION_FLOW_LIST_TYPES.reduce((sum, type) => sum + catalogValuesForType(type).length, 0);
   const collapsed = catalogCollapsed("transactionFlow");
+  const query = catalogSearchQuery();
+  const titleMatches = catalogMatchesSearchText("Phân luồng giao dịch tài chính loại nhóm chủ đề hạng mục đối tượng", query);
+  const visibleTypes = query && !titleMatches ? catalogVisibleTypes(TRANSACTION_FLOW_LIST_TYPES) : TRANSACTION_FLOW_LIST_TYPES;
+  if (query && !titleMatches && !visibleTypes.length) return "";
   return `<section class="catalog-panel catalog-flow-panel ${collapsed ? "collapsed" : ""}">
     <header><div><h3>Phân luồng giao dịch</h3><span>${total} mục đang lưu</span></div>${catalogPanelActions("transactionFlow", collapsed)}</header>
     ${collapsed ? "" : `<div class="catalog-panel-body">
       <p>Dùng cho bộ lọc và form giao dịch tài chính theo cấu trúc phụ thuộc Loại -> Nhóm -> Chủ đề -> Hạng mục -> Đối tượng.</p>
       ${catalogDependencyGrid()}
-      <div class="catalog-flow-grid">${TRANSACTION_FLOW_LIST_TYPES.map(catalogFlowList).join("")}</div>
+      <div class="catalog-flow-grid">${visibleTypes.map(catalogFlowList).join("")}</div>
     </div>`}
   </section>`;
 }
@@ -6197,22 +7220,44 @@ async function loadCatalogManagementData() {
   catalogTransactionFlow = financeTransactionFlowOptions(catalogFinanceData);
 }
 
-function renderCatalogManagement(reload = false) {
-  return state.page === "processes" ? configProcesses(reload) : configCatalog(reload);
+function renderCatalogManagement(reload = false, keepSearchFocus = false) {
+  return state.page === "processes" ? configProcesses(reload, keepSearchFocus) : configCatalog(reload, keepSearchFocus);
 }
 
-async function configCatalog(reload = true) {
+function renderCatalogSearchResults() {
+  if (state.page !== "catalog") return renderCatalogManagement(false, true);
+  const grid = document.querySelector(".catalog-grid");
+  if (!grid) return renderCatalogManagement(false, true);
+  const types = catalogVisibleTypes(catalogOrderedTypes());
+  grid.innerHTML = types.length ? types.map(catalogEditorList).join("") : `<div class="catalog-empty-search">Không có danh mục phù hợp.</div>`;
+}
+
+function restoreCatalogSearchFocus() {
+  const input = document.querySelector("[data-catalog-search]");
+  if (!input) return;
+  requestAnimationFrame(() => {
+    if (!input.isConnected) return;
+    try { input.focus({ preventScroll: true }); } catch { input.focus(); }
+    const position = input.value.length;
+    try { input.setSelectionRange(position, position); } catch {}
+  });
+}
+
+async function configCatalog(reload = true, keepSearchFocus = false) {
   if (reload) await loadCatalogManagementData();
+  const types = catalogVisibleTypes(catalogOrderedTypes());
   setTitle("catalog", "Quản lý danh sách dùng chung cho các module");
   $("#app").innerHTML = `<section class="catalog-page">
-    <header class="catalog-head"><div><h2>▰ Cơ sở dữ liệu</h2><p>Nguồn dữ liệu chuẩn cho Hợp đồng, Nhà thầu, Nhà cung cấp và các màn dự án.</p></div><button class="btn" data-catalog-save>Lưu cơ sở dữ liệu</button></header>
+    <header class="catalog-head"><div><h2>▰ Cơ sở dữ liệu</h2><p>Nguồn dữ liệu chuẩn cho Hợp đồng, Nhà thầu, Nhà cung cấp và các màn dự án.</p></div></header>
     <div class="catalog-tools"><input data-catalog-search value="${escapeHtml(state.catalogQuery)}" placeholder="⌕ Tìm danh mục"><button data-catalog-reset>Khôi phục mặc định</button></div>
-    <div class="catalog-grid">${catalogOrderedTypes().map(catalogEditorList).join("")}</div>
+    <div class="catalog-grid">${types.length ? types.map(catalogEditorList).join("") : `<div class="catalog-empty-search">Không có danh mục phù hợp.</div>`}</div>
+    ${dashboardVoucherFormModal()}
   </section>`;
   bindCatalog();
+  if (keepSearchFocus) restoreCatalogSearchFocus();
 }
 
-async function configProcesses(reload = true) {
+async function configProcesses(reload = true, keepSearchFocus = false) {
   if (reload) await loadCatalogManagementData();
   setTitle("processes", "Quản lý quy trình và phân luồng giao dịch");
   $("#app").innerHTML = `<section class="catalog-page process-page">
@@ -6223,6 +7268,7 @@ async function configProcesses(reload = true) {
     ${catalogFlowPanel()}
   </section>`;
   bindCatalog();
+  if (keepSearchFocus) restoreCatalogSearchFocus();
 }
 
 function collectCatalogPanel(type) {
@@ -6237,6 +7283,9 @@ function collectCatalogPanel(type) {
 }
 
 function refreshCatalogFromDom() {
+  document.querySelectorAll("[data-catalog-title]").forEach((input) => {
+    setCatalogTitleForType(input.dataset.catalogTitle, input.value);
+  });
   [...Object.keys(CATALOG_LIST_CONFIG), ...TRANSACTION_FLOW_LIST_TYPES].forEach((type) => {
     setCatalogValuesForType(type, collectCatalogPanel(type));
   });
@@ -6257,6 +7306,56 @@ function moveCatalogPanel(sourceType, targetType) {
   state.catalogOrder = order;
   persistCatalogOrder();
   return true;
+}
+
+function moveCatalogOption(type, sourceIndex, targetIndex) {
+  const values = [...catalogValuesForType(type)];
+  if (!catalogPanelEditing(type) || sourceIndex === targetIndex || sourceIndex < 0 || targetIndex < 0 || sourceIndex >= values.length || targetIndex >= values.length) return false;
+  const [moved] = values.splice(sourceIndex, 1);
+  values.splice(targetIndex, 0, moved);
+  setCatalogValuesForType(type, values);
+  return true;
+}
+
+function catalogGroupKeyForType(type) {
+  if (type === "constructionCategories") return "constructionCategoryGroups";
+  if (type === "materialCategories") return "materialCategoryGroups";
+  return "";
+}
+
+function catalogItemFromDragSource(type, index, item = "") {
+  const values = catalogValuesForType(type);
+  const byIndex = Number.isFinite(index) ? values[index] : "";
+  return String(byIndex || item || "").replace(/\s+/g, " ").trim();
+}
+
+function assignCatalogItemToGroup(type, item, groupId) {
+  const groupKey = catalogGroupKeyForType(type);
+  const value = catalogInputValueForType(type, item);
+  const itemKey = catalogTextKey(value);
+  if (!groupKey || !catalogPanelEditing(type) || !itemKey || !groupId) return false;
+  const groups = Array.isArray(catalogData[groupKey]) ? catalogData[groupKey] : [];
+  const target = groups.find((group) => group.id === groupId);
+  if (!target) return false;
+  let changed = false;
+  groups.forEach((group) => {
+    const nextItems = (Array.isArray(group.items) ? group.items : []).filter((groupItem) => catalogTextKey(groupItem) !== itemKey);
+    if (nextItems.length !== (group.items || []).length) changed = true;
+    group.items = nextItems;
+  });
+  if (!target.items.some((groupItem) => catalogTextKey(groupItem) === itemKey)) {
+    target.items.push(value);
+    changed = true;
+  }
+  if (!catalogValuesForType(type).some((option) => catalogTextKey(option) === itemKey)) {
+    setCatalogValuesForType(type, [...catalogValuesForType(type), value]);
+    changed = true;
+  }
+  return changed;
+}
+
+function clearCatalogGroupDragState(scope = document) {
+  scope.querySelectorAll(".catalog-category-group-dragging,.catalog-category-group-drag-over").forEach((item) => item.classList.remove("catalog-category-group-dragging", "catalog-category-group-drag-over"));
 }
 
 function bindCatalogPanelDrag() {
@@ -6308,8 +7407,168 @@ function bindCatalogPanelDrag() {
   });
 }
 
+function clearCatalogOptionDragState(scope = document) {
+  scope.querySelectorAll(".catalog-chip.option-dragging,.catalog-chip.option-drag-over").forEach((chip) => chip.classList.remove("option-dragging", "option-drag-over"));
+}
+
+function bindCatalogOptionDrag() {
+  const app = $("#app");
+  if (!app) return;
+  if (app.dataset.catalogOptionDragBound === "1") return;
+  app.dataset.catalogOptionDragBound = "1";
+  let dragging = null;
+  app.addEventListener("dragstart", (event) => {
+    const handle = event.target.closest("[data-catalog-option-drag]");
+    if (!handle || !app.contains(handle)) return;
+    const type = handle.dataset.catalogOptionDrag;
+    if (!catalogPanelEditing(type)) {
+      event.preventDefault();
+      return;
+    }
+    const chip = handle.closest("[data-catalog-row]");
+    dragging = { type, index: Number(handle.dataset.index) };
+    chip?.classList.add("option-dragging");
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("application/x-ledome-catalog-option", JSON.stringify(dragging));
+  });
+  app.addEventListener("dragover", (event) => {
+    if (!dragging) return;
+    const list = event.target.closest("[data-catalog-option-list]");
+    const chip = event.target.closest("[data-catalog-row]");
+    if (!list || !chip || list.dataset.catalogOptionList !== dragging.type) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+    app.querySelectorAll(".catalog-chip.option-drag-over").forEach((item) => {
+      if (item !== chip) item.classList.remove("option-drag-over");
+    });
+    chip.classList.add("option-drag-over");
+  });
+  app.addEventListener("dragleave", (event) => {
+    const chip = event.target.closest("[data-catalog-row]");
+    if (chip && !chip.contains(event.relatedTarget)) chip.classList.remove("option-drag-over");
+  });
+  app.addEventListener("drop", async (event) => {
+    if (!dragging) return;
+    const list = event.target.closest("[data-catalog-option-list]");
+    const chip = event.target.closest("[data-catalog-row]");
+    const targetType = list?.dataset.catalogOptionList || "";
+    if (!chip || targetType !== dragging.type) {
+      clearCatalogOptionDragState(app);
+      dragging = null;
+      return;
+    }
+    event.preventDefault();
+    refreshCatalogFromDom();
+    const targetIndex = Number(chip.dataset.catalogRow);
+    if (moveCatalogOption(dragging.type, dragging.index, targetIndex)) {
+      await saveCurrentCatalogScope();
+      clearCatalogOptionDragState(app);
+      dragging = null;
+      return renderCatalogManagement(false);
+    }
+    clearCatalogOptionDragState(app);
+    dragging = null;
+  });
+  app.addEventListener("dragend", () => {
+    dragging = null;
+    clearCatalogOptionDragState(app);
+  });
+}
+
+function bindCatalogCategoryGroupDrag() {
+  const app = $("#app");
+  if (!app) return;
+  if (app.dataset.catalogGroupDragBound === "1") return;
+  app.dataset.catalogGroupDragBound = "1";
+  let dragging = null;
+  app.addEventListener("dragstart", (event) => {
+    const groupChip = event.target.closest("[data-catalog-group-option]");
+    const optionHandle = event.target.closest("[data-catalog-option-drag]");
+    if (!groupChip && !optionHandle) return;
+    const type = groupChip?.dataset.catalogGroupOption || optionHandle?.dataset.catalogOptionDrag || "";
+    if (!catalogGroupKeyForType(type) || !catalogPanelEditing(type)) return;
+    const index = Number(optionHandle?.dataset.index);
+    const row = optionHandle?.closest("[data-catalog-row]");
+    const rowValue = row?.querySelector(`[data-catalog-input="${type}"]`)?.value || "";
+    const item = catalogItemFromDragSource(type, index, groupChip?.dataset.catalogGroupItem || rowValue);
+    if (!item) return;
+    dragging = { type, item, index: Number.isFinite(index) ? index : -1, fromGroupId: groupChip?.dataset.catalogGroupId || "" };
+    (groupChip || row)?.classList.add("catalog-category-group-dragging");
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("application/x-ledome-catalog-group-option", JSON.stringify(dragging));
+    event.dataTransfer.setData("text/plain", item);
+  });
+  app.addEventListener("dragover", (event) => {
+    if (!dragging) return;
+    const group = event.target.closest("[data-catalog-group-drop]");
+    if (!group || group.dataset.catalogGroupDrop !== dragging.type) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+    app.querySelectorAll(".catalog-category-group-drag-over").forEach((item) => {
+      if (item !== group) item.classList.remove("catalog-category-group-drag-over");
+    });
+    group.classList.add("catalog-category-group-drag-over");
+  });
+  app.addEventListener("dragleave", (event) => {
+    const group = event.target.closest("[data-catalog-group-drop]");
+    if (group && !group.contains(event.relatedTarget)) group.classList.remove("catalog-category-group-drag-over");
+  });
+  app.addEventListener("drop", async (event) => {
+    const group = event.target.closest("[data-catalog-group-drop]");
+    const rawPayload = event.dataTransfer.getData("application/x-ledome-catalog-group-option");
+    const payload = rawPayload ? JSON.parse(rawPayload) : dragging;
+    if (!group || !payload || group.dataset.catalogGroupDrop !== payload.type) {
+      clearCatalogGroupDragState(app);
+      dragging = null;
+      return;
+    }
+    event.preventDefault();
+    refreshCatalogFromDom();
+    const targetGroupId = group.dataset.catalogGroupId;
+    if (assignCatalogItemToGroup(payload.type, payload.item, targetGroupId)) {
+      await saveCurrentCatalogScope();
+      clearCatalogGroupDragState(app);
+      dragging = null;
+      return renderCatalogManagement(false);
+    }
+    clearCatalogGroupDragState(app);
+    dragging = null;
+  });
+  app.addEventListener("dragend", () => {
+    dragging = null;
+    clearCatalogGroupDragState(app);
+  });
+}
+
+function catalogCanEditType(type) {
+  return Boolean(CATALOG_LIST_CONFIG[type]) && !catalogConfigForType(type)?.readOnly;
+}
+
 function bindCatalog() {
   $("#app").onclick = async (event) => {
+    const voucherForm = event.target.closest("[data-catalog-voucher-form]")?.dataset.catalogVoucherForm;
+    if (voucherForm) {
+      event.preventDefault();
+      event.stopPropagation();
+      return openDashboardVoucherForm(voucherForm);
+    }
+    const customVoucherForm = event.target.closest("[data-catalog-voucher-form-custom]")?.dataset.catalogVoucherFormCustom;
+    if (customVoucherForm) {
+      event.preventDefault();
+      event.stopPropagation();
+      return openDashboardVoucherForm("", customVoucherForm);
+    }
+    if (event.target.id === "dashboard-voucher-form-modal") return closeDashboardVoucherForm();
+    if (event.target.closest('[data-action="close-voucher-form"]')) return closeDashboardVoucherForm();
+    const editButton = event.target.closest("[data-catalog-edit]");
+    if (editButton) {
+      refreshCatalogFromDom();
+      const type = editButton.dataset.catalogEdit;
+      if (!catalogCanEditType(type)) return;
+      catalogEditing[type] = !catalogPanelEditing(type);
+      if (!catalogEditing[type]) await saveCurrentCatalogScope();
+      return renderCatalogManagement(false);
+    }
     const toggle = event.target.closest("[data-catalog-toggle]");
     if (toggle) {
       refreshCatalogFromDom();
@@ -6320,6 +7579,7 @@ function bindCatalog() {
     }
     const addType = event.target.closest("[data-catalog-add]")?.dataset.catalogAdd;
     if (addType) {
+      if (!catalogPanelEditing(addType)) return;
       refreshCatalogFromDom();
       const input = event.target.closest("[data-catalog-panel]")?.querySelector(`[data-catalog-new="${addType}"]`);
       const value = catalogInputValueForType(addType, input?.value || "");
@@ -6335,6 +7595,7 @@ function bindCatalog() {
     if (deleteButton) {
       refreshCatalogFromDom();
       const type = deleteButton.dataset.catalogDelete;
+      if (!catalogPanelEditing(type)) return;
       const index = Number(deleteButton.dataset.index);
       const values = [...catalogValuesForType(type)];
       values.splice(index, 1);
@@ -6369,19 +7630,50 @@ function bindCatalog() {
   };
   $("#app").oninput = (event) => {
     if (event.target.matches("[data-catalog-search]")) {
-      state.catalogQuery = event.target.value;
-      return renderCatalogManagement(false);
+      refreshCatalogFromDom();
+      state.catalogQuery = catalogSearchValue(event.target.value);
+      if (event.isComposing || event.target.dataset.composing === "1") return;
+      return scheduleCatalogSearchRender();
     }
     if (event.target.matches("[data-catalog-input]")) {
       const type = event.target.dataset.catalogInput;
+      if (!catalogPanelEditing(type)) return;
       const index = Number(event.target.dataset.index);
       const values = [...catalogValuesForType(type)];
       values[index] = event.target.value;
       setCatalogValuesForType(type, values);
       scheduleCatalogAutosave();
     }
+    if (event.target.matches("[data-catalog-title]")) {
+      const type = event.target.dataset.catalogTitle;
+      if (!catalogPanelEditing(type)) return;
+      setCatalogTitleForType(type, event.target.value);
+      scheduleCatalogAutosave();
+    }
+  };
+  $("#app").oncompositionstart = (event) => {
+    if (event.target.matches("[data-catalog-search]")) event.target.dataset.composing = "1";
+  };
+  $("#app").oncompositionend = (event) => {
+    if (!event.target.matches("[data-catalog-search]")) return;
+    event.target.dataset.composing = "";
+    state.catalogQuery = catalogSearchValue(event.target.value);
+    return scheduleCatalogSearchRender();
+  };
+  $("#app").onkeydown = (event) => {
+    if (!event.target.matches("[data-catalog-search]") || event.key !== "Enter") return;
+    clearTimeout(catalogSearchRenderTimer);
+    state.catalogQuery = catalogSearchValue(event.target.value);
+    renderCatalogSearchResults();
+  };
+  const voucherForm = $("#dashboard-voucher-form");
+  if (voucherForm) voucherForm.onsubmit = (event) => {
+    event.preventDefault();
+    submitDashboardVoucherForm(event.currentTarget);
   };
   bindCatalogPanelDrag();
+  bindCatalogOptionDrag();
+  bindCatalogCategoryGroupDrag();
 }
 
 async function loadSession() {
@@ -6600,7 +7892,7 @@ async function route() {
   renderNav();
   try {
     if (!canAccess(state.page)) {
-      const firstAllowed = ["projects-overview","partners-overview","hrm-overview","finance-overview","catalog","materials","processes","standards","accounts"].find((page) => canAccess(page)) || "projects";
+      const firstAllowed = ["projects-overview","partners-overview","hrm-overview","finance-overview","catalog","materials","processes","standards","config-documents","accounts"].find((page) => canAccess(page)) || "projects";
       if (state.page !== firstAllowed) {
         location.hash = firstAllowed;
         return;
@@ -6633,6 +7925,7 @@ async function route() {
     }
     if (state.page === "processes") return configProcesses();
     if (state.page === "standards") return renderStandards();
+    if (state.page === "config-documents") return renderConfigDocuments();
     if (state.page === "accounts") return configAccounts();
     return placeholder(state.page);
   } catch (error) {

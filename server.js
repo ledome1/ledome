@@ -22,6 +22,7 @@ const runtimeDeletedProjectsFile = dataPath("runtime-deleted-projects.json");
 const attendanceDataFile = dataPath("runtime-attendance.json");
 const contractFilesDir = dataPath("contract-files");
 const vendorContractFilesDir = dataPath("vendor-contract-files");
+const contractDraftsFile = dataPath("runtime-contract-drafts.json");
 const supplierInvoiceFilesDir = dataPath("supplier-invoice-files");
 const existingFilesDir = dataPath("existing-files");
 const design3dFilesDir = dataPath("design-3d-files");
@@ -33,6 +34,7 @@ const diaryReportsFile = dataPath("runtime-diary-reports.json");
 const projectChatFile = dataPath("runtime-project-chat.json");
 const teamChatFile = dataPath("runtime-team-chat.json");
 const projectChatFilesDir = dataPath("project-chat-files");
+const teamChatFilesDir = dataPath("team-chat-files");
 const partnersFile = dataPath("runtime-partners.json");
 const catalogFile = dataPath("runtime-catalog.json");
 const materialsFile = dataPath("runtime-materials.json");
@@ -40,6 +42,8 @@ const financeFile = dataPath("runtime-finance.json");
 const personalFinanceFile = dataPath("runtime-personal-finance.json");
 const driveFile = dataPath("runtime-drive.json");
 const driveFilesDir = dataPath("drive-files");
+const configDocumentsFile = dataPath("runtime-config-documents.json");
+const configDocumentFilesDir = dataPath("config-document-files");
 const orgStaffFile = dataPath("runtime-org-staff.json");
 const sessionCookie = "ledome_session";
 const sessions = new Map();
@@ -404,26 +408,52 @@ function defaultAccountPermissions(person) {
   return permissionsForAccessLevel(inferAccessLevel(person));
 }
 
-function defaultAccounts() {
-  const people = new Map();
-  orgStaffSeed.forEach((staff) => {
-    const key = personKey(staff[1]) || staff[0];
-    const person = people.get(key) || { staffCode: staff[0], staffName: staff[1], roles: [], departments: [], positions: [] };
-    person.roles.push(staff[2]);
-    person.departments.push(staff[3]);
-    person.positions.push(`${staff[2]} - ${staff[3]}`);
-    people.set(key, person);
+function orgAccountRows() {
+  try {
+    const rows = typeof readOrgStaff === "function" ? readOrgStaff() : orgStaffSeed;
+    return Array.isArray(rows) && rows.length ? rows : orgStaffSeed;
+  } catch {
+    return orgStaffSeed;
+  }
+}
+
+function accountRecordKey(account = {}) {
+  return String(account.positionCode || account.staffCode || account.loginId || "").trim().toLowerCase();
+}
+
+function orgPositionAccountMeta() {
+  const map = new Map();
+  orgAccountRows().forEach((staff) => {
+    map.set(String(staff[0] || "").trim().toLowerCase(), {
+      staffCode: staff[0],
+      positionCode: staff[0],
+      personKey: personKey(staff[1]) || staff[0],
+      staffName: staff[1],
+      role: staff[2],
+      position: staff[2],
+      department: staff[3],
+      title: /ban lanh|giam/.test(accountSearchText({ role: staff[2], department: staff[3] })) ? staff[2] : "",
+      positions: [`${staff[2]} - ${staff[3]}`]
+    });
   });
+  return map;
+}
+
+function defaultAccounts() {
   const used = new Set();
-  return [...people.values()].map((person) => {
-    const loginId = accountLoginId(person.staffName, used);
+  return orgAccountRows().map((staff) => {
+    const loginId = accountLoginId(staff[1], used);
+    const person = { departments: [staff[3]], roles: [staff[2]] };
     const account = {
-      staffCode: person.staffCode,
-      staffName: person.staffName,
-      role: person.roles[0],
-      department: person.departments[0],
+      staffCode: staff[0],
+      positionCode: staff[0],
+      personKey: personKey(staff[1]) || staff[0],
+      staffName: staff[1],
+      role: staff[2],
+      position: staff[2],
+      department: staff[3],
       title: person.departments.includes("Ban lãnh đạo") ? person.roles.find((role) => ["Giám đốc", "Phó giám đốc"].includes(role)) : "",
-      positions: [...new Set(person.positions)],
+      positions: [`${staff[2]} - ${staff[3]}`],
       loginId,
       password: "1",
       active: true
@@ -439,11 +469,49 @@ function readAccounts() {
     : fs.existsSync(accountsFile)
       ? readJsonFile(accountsFile, [])
       : defaultAccounts();
-  const accounts = Array.isArray(source) && source.length ? source : defaultAccounts();
+  const defaults = defaultAccounts();
+  const accounts = Array.isArray(source) && source.length ? source : defaults;
   let migrated = false;
-  const secure = accounts.map((account) => {
+  const accountList = [...accounts];
+  const existingKeys = new Set(accountList.map(accountRecordKey));
+  defaults.forEach((account) => {
+    const key = accountRecordKey(account);
+    if (!key || existingKeys.has(key)) return;
+    accountList.push(account);
+    existingKeys.add(key);
+    migrated = true;
+  });
+  const orgMeta = orgPositionAccountMeta();
+  const secure = accountList.map((account) => {
+    const meta = orgMeta.get(accountRecordKey(account));
+    if (meta && JSON.stringify({
+      staffName: account.staffName,
+      role: account.role,
+      department: account.department,
+      personKey: account.personKey,
+      position: account.position
+    }) !== JSON.stringify({
+      staffName: meta.staffName,
+      role: meta.role,
+      department: meta.department,
+      personKey: meta.personKey,
+      position: meta.position
+    })) migrated = true;
+    account = meta ? { ...account, ...meta } : account;
     const normalized = normalizeAccountAccess(account);
     const next = { ...account, ...normalized };
+    if (!next.positionCode) {
+      next.positionCode = next.staffCode;
+      migrated = true;
+    }
+    if (!next.personKey) {
+      next.personKey = personKey(next.staffName) || next.staffCode;
+      migrated = true;
+    }
+    if (!next.position) {
+      next.position = next.role || "";
+      migrated = true;
+    }
     if (
       account.accessLevel !== next.accessLevel ||
       account.accessScope !== next.accessScope ||
@@ -506,6 +574,7 @@ function requireAccount(req, res, permission) {
 function permissionForRequest(pathname, method = "GET") {
   if (pathname.includes("/attendance/records/") && pathname.endsWith("/approve")) return "hrm.approve";
   if (method === "DELETE" && /^\/api\/v1\/projects\/[^/]+$/.test(pathname)) return "projects.delete";
+  if (pathname.startsWith("/api/v1/team-chat/")) return null;
   if (pathname.includes("/upload") || pathname.includes("-files") || pathname.includes("/dossiers/")) {
     if (pathname.endsWith("/download")) return "projects.download";
     return "projects.upload";
@@ -766,8 +835,16 @@ function technicalProjectDir(projectId) {
   return path.join(technicalFilesDir, safeFileName(projectId));
 }
 
+function contractAllowedFileKind(requestedKind, fallback = "contract") {
+  return ["design-contract", "contract", "quote", "estimate", "drawing", "settlement", "variation", "variation-confirm", "variation-quote"].includes(requestedKind) ? requestedKind : fallback;
+}
+
 function projectChatProjectDir(projectId) {
   return path.join(projectChatFilesDir, safeFileName(projectId));
+}
+
+function teamChatDir() {
+  return teamChatFilesDir;
 }
 
 function driveFileDisplayName(storedName) {
@@ -776,6 +853,11 @@ function driveFileDisplayName(storedName) {
 }
 
 function projectChatFileDisplayName(storedName) {
+  const parts = String(storedName || "").split("__");
+  return parts.length > 2 ? parts.slice(2).join("__") : String(storedName || "");
+}
+
+function teamChatFileDisplayName(storedName) {
   const parts = String(storedName || "").split("__");
   return parts.length > 2 ? parts.slice(2).join("__") : String(storedName || "");
 }
@@ -918,6 +1000,30 @@ function driveStoredTarget(storedName) {
   return { storedName: clean, target, displayName: driveFileDisplayName(clean) };
 }
 
+function listConfigDocumentStoredFiles() {
+  if (!fs.existsSync(configDocumentFilesDir)) return [];
+  return fs.readdirSync(configDocumentFilesDir, { withFileTypes: true }).filter((entry) => entry.isFile()).map((entry) => {
+    const filename = entry.name;
+    const name = driveFileDisplayName(filename);
+    const stats = fs.statSync(path.join(configDocumentFilesDir, filename));
+    return {
+      storedName: filename,
+      name,
+      category: fileCategory(name),
+      size: stats.size,
+      updatedAt: stats.mtime.toISOString()
+    };
+  }).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+}
+
+function configDocumentStoredTarget(storedName) {
+  const clean = safeFileName(storedName);
+  if (!clean) return null;
+  const target = path.join(configDocumentFilesDir, clean);
+  if (!fs.existsSync(target)) return null;
+  return { storedName: clean, target, displayName: driveFileDisplayName(clean) };
+}
+
 function sendDriveStoredFile(res, info, disposition = "attachment") {
   res.writeHead(200, {
     "content-type": mime[path.extname(info.displayName).toLowerCase()] || "application/octet-stream",
@@ -930,6 +1036,18 @@ function sendDriveStoredFile(res, info, disposition = "attachment") {
 
 function projectChatFileUrl(projectId, storedName) {
   return `/api/v1/projects/${encodeURIComponent(projectId)}/chat/file?storedName=${encodeURIComponent(storedName)}`;
+}
+
+function projectChatPreviewUrl(projectId, storedName) {
+  return `/api/v1/projects/${encodeURIComponent(projectId)}/chat/file/preview?storedName=${encodeURIComponent(storedName)}`;
+}
+
+function teamChatFileUrl(storedName) {
+  return `/api/v1/team-chat/file?storedName=${encodeURIComponent(storedName)}`;
+}
+
+function teamChatPreviewUrl(storedName) {
+  return `/api/v1/team-chat/file/preview?storedName=${encodeURIComponent(storedName)}`;
 }
 
 function purgeExpiredProjectChatFiles(projectId) {
@@ -951,6 +1069,20 @@ function purgeExpiredProjectChatFiles(projectId) {
   });
 }
 
+function purgeExpiredTeamChatFiles() {
+  if (!fs.existsSync(teamChatFilesDir)) return;
+  const cutoff = Date.now() - chatFileRetentionMs;
+  for (const entry of fs.readdirSync(teamChatFilesDir, { withFileTypes: true })) {
+    if (!entry.isFile()) continue;
+    const target = path.join(teamChatFilesDir, entry.name);
+    try {
+      if (fs.statSync(target).mtimeMs < cutoff) fs.unlinkSync(target);
+    } catch {
+      // Another request may have removed the file already.
+    }
+  }
+}
+
 function projectChatFileTarget(projectId, storedName) {
   purgeExpiredProjectChatFiles(projectId);
   const clean = safeFileName(storedName);
@@ -966,7 +1098,32 @@ function projectChatFileTarget(projectId, storedName) {
   return { storedName: clean, target, displayName, size: stats.size, category: fileCategory(displayName), updatedAt: stats.mtime.toISOString(), expiresAt: new Date(stats.mtimeMs + chatFileRetentionMs).toISOString() };
 }
 
+function teamChatFileTarget(storedName) {
+  purgeExpiredTeamChatFiles();
+  const clean = safeFileName(storedName);
+  if (!clean) return null;
+  const target = path.join(teamChatDir(), clean);
+  if (!fs.existsSync(target)) return null;
+  const stats = fs.statSync(target);
+  if (stats.mtimeMs + chatFileRetentionMs <= Date.now()) {
+    try { fs.unlinkSync(target); } catch {}
+    return null;
+  }
+  const displayName = teamChatFileDisplayName(clean);
+  return { storedName: clean, target, displayName, size: stats.size, category: fileCategory(displayName), updatedAt: stats.mtime.toISOString(), expiresAt: new Date(stats.mtimeMs + chatFileRetentionMs).toISOString() };
+}
+
 function sendProjectChatFile(res, info, disposition = "inline") {
+  res.writeHead(200, {
+    "content-type": mime[path.extname(info.displayName).toLowerCase()] || "application/octet-stream",
+    "content-disposition": `${disposition}; filename*=UTF-8''${encodeURIComponent(info.displayName)}`,
+    "cache-control": "no-store",
+    "x-content-type-options": "nosniff"
+  });
+  return fs.createReadStream(info.target).pipe(res);
+}
+
+function sendTeamChatFile(res, info, disposition = "inline") {
   res.writeHead(200, {
     "content-type": mime[path.extname(info.displayName).toLowerCase()] || "application/octet-stream",
     "content-disposition": `${disposition}; filename*=UTF-8''${encodeURIComponent(info.displayName)}`,
@@ -1193,10 +1350,336 @@ function sortNumberedXmlName(a, b) {
   return left - right || a.localeCompare(b);
 }
 
+const CFB_FREE_SECTOR = 0xffffffff;
+const CFB_END_OF_CHAIN = 0xfffffffe;
+
+function cfbIsValidSector(value, count = Number.MAX_SAFE_INTEGER) {
+  return Number.isInteger(value) && value >= 0 && value < count && value !== CFB_FREE_SECTOR && value !== CFB_END_OF_CHAIN;
+}
+
+function cfbSectorOffset(sector, sectorSize) {
+  return (sector + 1) * sectorSize;
+}
+
+function cfbReadRegularStream(buffer, fat, startSector, sectorSize, size = Number.MAX_SAFE_INTEGER) {
+  if (!cfbIsValidSector(startSector, fat.length)) return Buffer.alloc(0);
+  const chunks = [];
+  const seen = new Set();
+  let sector = startSector;
+  let total = 0;
+  while (cfbIsValidSector(sector, fat.length) && !seen.has(sector)) {
+    seen.add(sector);
+    const offset = cfbSectorOffset(sector, sectorSize);
+    if (offset < 0 || offset >= buffer.length) break;
+    const slice = buffer.subarray(offset, Math.min(offset + sectorSize, buffer.length));
+    chunks.push(slice);
+    total += slice.length;
+    if (total >= size) break;
+    sector = fat[sector];
+  }
+  return Buffer.concat(chunks).subarray(0, Math.min(total, size));
+}
+
+function cfbReadMiniStream(rootStream, miniFat, startSector, miniSectorSize, size) {
+  if (!rootStream.length || !cfbIsValidSector(startSector, miniFat.length)) return Buffer.alloc(0);
+  const chunks = [];
+  const seen = new Set();
+  let sector = startSector;
+  let total = 0;
+  while (cfbIsValidSector(sector, miniFat.length) && !seen.has(sector)) {
+    seen.add(sector);
+    const offset = sector * miniSectorSize;
+    if (offset < 0 || offset >= rootStream.length) break;
+    const slice = rootStream.subarray(offset, Math.min(offset + miniSectorSize, rootStream.length));
+    chunks.push(slice);
+    total += slice.length;
+    if (total >= size) break;
+    sector = miniFat[sector];
+  }
+  return Buffer.concat(chunks).subarray(0, Math.min(total, size));
+}
+
+function readCfbStreams(buffer) {
+  const streams = new Map();
+  if (!Buffer.isBuffer(buffer) || buffer.length < 512 || !buffer.subarray(0, 8).equals(Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]))) return streams;
+  const sectorSize = 1 << buffer.readUInt16LE(30);
+  const miniSectorSize = 1 << buffer.readUInt16LE(32);
+  const fatSectorCount = buffer.readUInt32LE(44);
+  const firstDirSector = buffer.readUInt32LE(48);
+  const miniCutoff = buffer.readUInt32LE(56) || 4096;
+  const firstMiniFatSector = buffer.readUInt32LE(60);
+  const miniFatSectorCount = buffer.readUInt32LE(64);
+  let firstDifatSector = buffer.readUInt32LE(68);
+  let difatSectorCount = buffer.readUInt32LE(72);
+  const difat = [];
+  for (let offset = 76; offset < 512; offset += 4) {
+    const value = buffer.readUInt32LE(offset);
+    if (value !== CFB_FREE_SECTOR) difat.push(value);
+  }
+  const difatSeen = new Set();
+  while (cfbIsValidSector(firstDifatSector) && difatSectorCount > 0 && !difatSeen.has(firstDifatSector)) {
+    difatSeen.add(firstDifatSector);
+    const offset = cfbSectorOffset(firstDifatSector, sectorSize);
+    if (offset + sectorSize > buffer.length) break;
+    const entries = (sectorSize / 4) - 1;
+    for (let index = 0; index < entries; index += 1) {
+      const value = buffer.readUInt32LE(offset + (index * 4));
+      if (value !== CFB_FREE_SECTOR) difat.push(value);
+    }
+    firstDifatSector = buffer.readUInt32LE(offset + sectorSize - 4);
+    difatSectorCount -= 1;
+  }
+  const fat = [];
+  difat.slice(0, fatSectorCount).forEach((sector) => {
+    if (!cfbIsValidSector(sector)) return;
+    const offset = cfbSectorOffset(sector, sectorSize);
+    if (offset + sectorSize > buffer.length) return;
+    for (let item = 0; item < sectorSize / 4; item += 1) fat.push(buffer.readUInt32LE(offset + (item * 4)));
+  });
+  const directory = cfbReadRegularStream(buffer, fat, firstDirSector, sectorSize);
+  if (!directory.length) return streams;
+  const entries = [];
+  for (let offset = 0; offset + 128 <= directory.length; offset += 128) {
+    const nameLength = directory.readUInt16LE(offset + 64);
+    const type = directory.readUInt8(offset + 66);
+    if (nameLength < 2 || !type) continue;
+    const name = directory.toString("utf16le", offset, offset + nameLength - 2).trim();
+    const startSector = directory.readUInt32LE(offset + 116);
+    const sizeLow = directory.readUInt32LE(offset + 120);
+    entries.push({ name, type, startSector, size: sizeLow });
+  }
+  const root = entries.find((entry) => entry.type === 5);
+  const rootStream = root ? cfbReadRegularStream(buffer, fat, root.startSector, sectorSize, root.size) : Buffer.alloc(0);
+  const miniFatData = cfbReadRegularStream(buffer, fat, firstMiniFatSector, sectorSize, miniFatSectorCount * sectorSize);
+  const miniFat = [];
+  for (let offset = 0; offset + 4 <= miniFatData.length; offset += 4) miniFat.push(miniFatData.readUInt32LE(offset));
+  entries.filter((entry) => entry.type === 2 && entry.name).forEach((entry) => {
+    const data = entry.size > 0 && entry.size < miniCutoff
+      ? cfbReadMiniStream(rootStream, miniFat, entry.startSector, miniSectorSize, entry.size)
+      : cfbReadRegularStream(buffer, fat, entry.startSector, sectorSize, entry.size);
+    streams.set(entry.name.toLowerCase(), data);
+  });
+  return streams;
+}
+
+function legacyOfficeStringRuns(buffer, mode = "utf16le") {
+  const runs = [];
+  const source = buffer.length > 10000000 ? buffer.subarray(0, 10000000) : buffer;
+  if (mode === "utf16le") {
+    for (const start of [0, 1]) {
+      let current = "";
+      for (let offset = start; offset + 1 < source.length; offset += 2) {
+        const code = source.readUInt16LE(offset);
+        const valid = code === 9 || code === 10 || code === 13 || (code >= 32 && code <= 0xd7ff) || (code >= 0xe000 && code <= 0xfffd);
+        if (valid) current += String.fromCharCode(code);
+        else {
+          if (current.trim().length >= 4) runs.push(current);
+          current = "";
+        }
+      }
+      if (current.trim().length >= 4) runs.push(current);
+    }
+    return runs;
+  }
+  let current = "";
+  for (const byte of source) {
+    const valid = byte === 9 || byte === 10 || byte === 13 || (byte >= 32 && byte <= 126) || byte >= 160;
+    if (valid) current += String.fromCharCode(byte);
+    else {
+      if (current.trim().length >= 6) runs.push(current);
+      current = "";
+    }
+  }
+  if (current.trim().length >= 6) runs.push(current);
+  return runs;
+}
+
+function cleanLegacyOfficeLines(strings, limit = 260) {
+  const lines = [];
+  const seen = new Set();
+  for (const raw of strings) {
+    const chunks = String(raw || "")
+      .replace(/\u0000/g, "")
+      .replace(/[\u0001-\u0008\u000b\u000c\u000e-\u001f]/g, " ")
+      .replace(/\r/g, "\n")
+      .split(/\n| {3,}/);
+    for (const chunk of chunks) {
+      const line = chunk.replace(/\s+/g, " ").trim();
+      if (line.length < 2 || line.length > 300) continue;
+      if (!/[0-9A-Za-zÀ-ỹ]/.test(line)) continue;
+      const useful = (line.match(/[0-9A-Za-zÀ-ỹ]/g) || []).length / Math.max(1, line.length);
+      if (useful < 0.3) continue;
+      const key = line.toLocaleLowerCase("vi-VN");
+      if (seen.has(key)) continue;
+      seen.add(key);
+      lines.push(line);
+      if (lines.length >= limit) return lines;
+    }
+  }
+  return lines;
+}
+
+function legacyOfficeCandidateBuffers(buffer, ext) {
+  const streams = readCfbStreams(buffer);
+  if (!streams.size) return [buffer];
+  const preferred = ext === ".doc"
+    ? ["worddocument", "0table", "1table"]
+    : ext === ".xls"
+      ? ["workbook", "book"]
+      : ["powerpoint document", "current user"];
+  const candidates = preferred.map((name) => streams.get(name)).filter((data) => data?.length);
+  if (candidates.length) return candidates;
+  return [...streams.values()].filter((data) => data?.length).slice(0, 8);
+}
+
+function previewLegacyOffice(info, ext, buffer) {
+  const candidates = legacyOfficeCandidateBuffers(buffer, ext);
+  const strings = candidates.flatMap((candidate) => [
+    ...legacyOfficeStringRuns(candidate, "utf16le"),
+    ...legacyOfficeStringRuns(candidate, "latin1")
+  ]);
+  const lines = cleanLegacyOfficeLines(strings);
+  if (!lines.length) {
+    return { kind: "office", title: info.displayName, message: "Không bóc được nội dung xem nhanh từ file Office đời cũ này. Dùng nút Mở tab hoặc Tải file để xem bản gốc." };
+  }
+  const notice = "Nội dung này được trích xuất best-effort từ file Office đời cũ, bố cục có thể không giống bản gốc.";
+  if (ext === ".xls") {
+    return { kind: "excel", title: "Excel", notice, sheets: [{ title: "Trích xuất nội dung", columns: ["Nội dung"], rowNumbers: lines.map((_, index) => index + 1), rows: lines.map((line) => [line]) }] };
+  }
+  if (ext === ".ppt") {
+    return { kind: "powerpoint", title: "PowerPoint", notice, sections: [{ title: "Trích xuất nội dung", lines }] };
+  }
+  return { kind: "word", title: "Word", notice, sections: [{ title: "Trích xuất nội dung", lines }], blocks: lines.map((line) => ({ type: "p", text: line, runs: [{ text: line }] })), legacy: true };
+}
+
+function docxTagAttr(xml, tag, attr) {
+  const match = String(xml || "").match(new RegExp(`<w:${tag}\\b[^>]*\\b(?:w:)?${attr}="([^"]+)"`));
+  return match ? xmlDecode(match[1]) : "";
+}
+
+function docxRunText(runXml) {
+  const parts = [];
+  const pattern = /<w:t\b[^>]*>([\s\S]*?)<\/w:t>|<w:tab\b[^>]*\/>|<w:br\b[^>]*\/>/g;
+  for (const match of String(runXml || "").matchAll(pattern)) {
+    if (match[1] !== undefined) parts.push(xmlDecode(match[1]));
+    else if (match[0].startsWith("<w:tab")) parts.push("\t");
+    else parts.push("\n");
+  }
+  return parts.join("");
+}
+
+function docxParagraphRuns(paragraphXml) {
+  const runs = [];
+  for (const match of String(paragraphXml || "").matchAll(/<w:r\b[\s\S]*?<\/w:r>/g)) {
+    const runXml = match[0];
+    const text = docxRunText(runXml);
+    if (!text) continue;
+    const run = { text };
+    if (/<w:b\b/.test(runXml)) run.bold = true;
+    if (/<w:i\b/.test(runXml)) run.italic = true;
+    if (/<w:u\b/.test(runXml)) run.underline = true;
+    runs.push(run);
+  }
+  if (!runs.length) {
+    const text = docxRunText(paragraphXml);
+    if (text) runs.push({ text });
+  }
+  return runs;
+}
+
+function docxParagraphText(paragraphXml) {
+  return docxParagraphRuns(paragraphXml)
+    .map((run) => run.text)
+    .join("")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n[ \t]+/g, "\n")
+    .trim();
+}
+
+function docxParagraphRole(text, style, align) {
+  const normalized = String(text || "").replace(/\s+/g, " ").trim();
+  if (!normalized) return "";
+  if (/title/i.test(style)) return "title";
+  if (/subtitle/i.test(style)) return "subtitle";
+  if (/heading/i.test(style) || /^(ĐIỀU|Điều|DIEU|Dieu)\s+\d+/.test(normalized)) return "heading";
+  const upper = normalized.toLocaleUpperCase("vi-VN");
+  if (align === "center" && normalized.length <= 100 && normalized === upper) return "title";
+  return "";
+}
+
+function docxParagraphBlock(paragraphXml) {
+  const runs = docxParagraphRuns(paragraphXml);
+  const text = runs.map((run) => run.text).join("").replace(/[ \t]+\n/g, "\n").replace(/\n[ \t]+/g, "\n").trim();
+  if (!text) return null;
+  const pPr = (String(paragraphXml || "").match(/<w:pPr\b[\s\S]*?<\/w:pPr>/) || [])[0] || "";
+  const align = docxTagAttr(pPr, "jc", "val");
+  const style = docxTagAttr(pPr, "pStyle", "val");
+  const block = { type: "p", text, runs };
+  if (align) block.align = align;
+  const role = docxParagraphRole(text, style, align);
+  if (role) block.role = role;
+  if (style) block.style = style;
+  return block;
+}
+
+function docxTableBlock(tableXml) {
+  const rows = [];
+  for (const rowMatch of String(tableXml || "").matchAll(/<w:tr\b[\s\S]*?<\/w:tr>/g)) {
+    const cells = [];
+    for (const cellMatch of rowMatch[0].matchAll(/<w:tc\b[\s\S]*?<\/w:tc>/g)) {
+      const paragraphs = [];
+      for (const paragraphMatch of cellMatch[0].matchAll(/<w:p\b[\s\S]*?<\/w:p>/g)) {
+        const text = docxParagraphText(paragraphMatch[0]);
+        if (text) paragraphs.push(text);
+      }
+      cells.push(paragraphs.join("\n"));
+    }
+    if (cells.some((cell) => String(cell || "").trim())) rows.push(cells);
+  }
+  return rows.length ? { type: "table", rows } : null;
+}
+
 function previewDocx(entries) {
   const xml = zipText(entries, "word/document.xml");
-  const paragraphs = String(xml || "").split(/<\/w:p>/).map((part) => xmlTexts(part, "w:t").join("").replace(/\s+/g, " ").trim()).filter(Boolean).slice(0, 120);
-  return { kind: "word", title: "Word", sections: [{ title: "Nội dung", lines: paragraphs }] };
+  const source = String(xml || "");
+  const body = (source.match(/<w:body\b[\s\S]*?<\/w:body>/) || [])[0] || source;
+  const blocks = [];
+  let truncated = false;
+  for (const match of body.matchAll(/<w:tbl\b[\s\S]*?<\/w:tbl>|<w:p\b[\s\S]*?<\/w:p>/g)) {
+    const raw = match[0];
+    const block = raw.startsWith("<w:tbl") ? docxTableBlock(raw) : docxParagraphBlock(raw);
+    if (block) blocks.push(block);
+    if (blocks.length >= 260) {
+      truncated = true;
+      break;
+    }
+  }
+  const lines = blocks.flatMap((block) => block.type === "table" ? block.rows.flatMap((row) => row) : [block.text]).filter(Boolean).slice(0, 260);
+  return { kind: "word", title: "Word", sections: [{ title: "Nội dung", lines }], blocks, truncated };
+}
+
+function excelColumnIndex(ref) {
+  const letters = (String(ref || "").match(/[A-Z]+/i) || [])[0] || "";
+  if (!letters) return -1;
+  return letters.toUpperCase().split("").reduce((sum, char) => (sum * 26) + char.charCodeAt(0) - 64, 0) - 1;
+}
+
+function excelColumnLabel(index) {
+  let value = Number(index) + 1;
+  let label = "";
+  while (value > 0) {
+    const remainder = (value - 1) % 26;
+    label = String.fromCharCode(65 + remainder) + label;
+    value = Math.floor((value - 1) / 26);
+  }
+  return label || "A";
+}
+
+function xlsxCellValue(attrs, body, sharedStrings) {
+  const raw = (body.match(/<v\b[^>]*>([\s\S]*?)<\/v>/) || [])[1] || "";
+  const inline = xmlTexts(body, "t").join("");
+  if (/\bt="s"/.test(attrs)) return sharedStrings[Number(raw)] || "";
+  return inline || xmlDecode(raw);
 }
 
 function previewXlsx(entries) {
@@ -1208,20 +1691,42 @@ function previewXlsx(entries) {
   const sheetNames = [...entries.keys()].filter((name) => /^xl\/worksheets\/sheet\d+\.xml$/.test(name)).sort(sortNumberedXmlName);
   const sheets = sheetNames.slice(0, 8).map((name, sheetIndex) => {
     const xml = zipText(entries, name);
-    const rows = [];
+    const rowLimit = 180;
+    const columnLimit = 48;
+    const rawRows = [];
+    let maxColumn = 0;
+    let truncatedColumns = false;
+    let truncatedRows = false;
     for (const rowMatch of String(xml || "").matchAll(/<row\b[\s\S]*?<\/row>/g)) {
-      const row = [];
+      const rowAttrs = (rowMatch[0].match(/<row\b([^>]*)>/) || [])[1] || "";
+      const rowNumber = Number((rowAttrs.match(/\br="(\d+)"/) || [])[1]) || rawRows.length + 1;
+      const cells = [];
+      let fallbackColumn = 0;
       for (const cellMatch of rowMatch[0].matchAll(/<c\b([^>]*)>([\s\S]*?)<\/c>/g)) {
         const attrs = cellMatch[1];
         const body = cellMatch[2];
-        const raw = (body.match(/<v\b[^>]*>([\s\S]*?)<\/v>/) || [])[1] || "";
-        const inline = xmlTexts(body, "t").join("");
-        row.push(/\bt="s"/.test(attrs) ? (shared[Number(raw)] || "") : inline || xmlDecode(raw));
+        const ref = (attrs.match(/\br="([^"]+)"/) || [])[1] || "";
+        const indexedColumn = excelColumnIndex(ref);
+        const columnIndex = indexedColumn >= 0 ? indexedColumn : fallbackColumn;
+        fallbackColumn = columnIndex + 1;
+        if (columnIndex >= columnLimit) {
+          truncatedColumns = true;
+          continue;
+        }
+        cells[columnIndex] = xlsxCellValue(attrs, body, shared);
+        maxColumn = Math.max(maxColumn, columnIndex);
       }
-      if (row.some((cell) => String(cell).trim())) rows.push(row.slice(0, 16));
-      if (rows.length >= 80) break;
+      if (cells.some((cell) => String(cell || "").trim())) rawRows.push({ number: rowNumber, cells });
+      if (rawRows.length >= rowLimit) {
+        truncatedRows = true;
+        break;
+      }
     }
-    return { title: names[sheetIndex] || `Sheet ${sheetIndex + 1}`, rows };
+    const columnCount = Math.min(columnLimit, Math.max(1, maxColumn + 1));
+    const rows = rawRows.map((row) => Array.from({ length: columnCount }, (_, index) => row.cells[index] || ""));
+    const rowNumbers = rawRows.map((row) => row.number);
+    const columns = Array.from({ length: columnCount }, (_, index) => excelColumnLabel(index));
+    return { title: names[sheetIndex] || `Sheet ${sheetIndex + 1}`, columns, rowNumbers, rows, truncatedColumns, truncatedRows };
   });
   return { kind: "excel", title: "Excel", sheets };
 }
@@ -1236,21 +1741,31 @@ function previewPptx(entries) {
 
 function previewOfficeFile(info) {
   const ext = path.extname(info.displayName).toLowerCase();
+  const buffer = fs.readFileSync(info.target);
   if ([".txt", ".md", ".note", ".csv"].includes(ext)) {
-    const content = fs.readFileSync(info.target, "utf8").slice(0, 200000);
+    const content = buffer.toString("utf8").slice(0, 200000);
     return { kind: ext === ".csv" ? "csv" : "text", title: info.displayName, text: content };
   }
   if (ext === ".zip") {
-    const entries = readZipEntries(fs.readFileSync(info.target));
+    const entries = readZipEntries(buffer);
     return previewArchive(info, "ZIP", [...entries.keys()]);
   }
   if (ext === ".rar") {
-    return previewArchive(info, "RAR", readRarEntries(fs.readFileSync(info.target)));
+    return previewArchive(info, "RAR", readRarEntries(buffer));
+  }
+  if ([".doc", ".xls", ".ppt"].includes(ext)) {
+    const zipped = readZipEntries(buffer);
+    if (zipped.size) {
+      if (ext === ".doc" && zipped.has("word/document.xml")) return previewDocx(zipped);
+      if (ext === ".xls" && zipped.has("xl/workbook.xml")) return previewXlsx(zipped);
+      if (ext === ".ppt" && [...zipped.keys()].some((name) => /^ppt\/slides\/slide\d+\.xml$/.test(name))) return previewPptx(zipped);
+    }
+    return previewLegacyOffice(info, ext, buffer);
   }
   if (![".docx", ".xlsx", ".pptx"].includes(ext)) {
     return { kind: "office", title: info.displayName, message: "Trình đọc nhanh hỗ trợ nội dung trực tiếp cho DOCX, XLSX và PPTX. File DOC/XLS/PPT cũ vẫn có thể tải hoặc mở bản gốc." };
   }
-  const entries = readZipEntries(fs.readFileSync(info.target));
+  const entries = readZipEntries(buffer);
   if (ext === ".docx") return previewDocx(entries);
   if (ext === ".xlsx") return previewXlsx(entries);
   return previewPptx(entries);
@@ -1318,6 +1833,142 @@ function listContractFiles(projectId) {
       updatedAt: stats.mtime.toISOString()
     };
   }).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+}
+
+function contractDraftType(value) {
+  const type = String(value || "");
+  return ["estimate", "quote", "variation-quote"].includes(type) ? type : "";
+}
+
+function contractDraftKey(projectId, type) {
+  return `${safeFileName(projectId)}::${type}`;
+}
+
+function readContractDrafts() {
+  return readJsonFile(contractDraftsFile, {});
+}
+
+function writeContractDraft(projectId, type, payload) {
+  const drafts = readContractDrafts();
+  const key = contractDraftKey(projectId, type);
+  drafts[key] = {
+    projectId: safeFileName(projectId),
+    type,
+    updatedAt: new Date().toISOString(),
+    data: payload && typeof payload === "object" ? payload : {}
+  };
+  writeJsonAtomic(contractDraftsFile, drafts);
+  return drafts[key];
+}
+
+function readContractDraft(projectId, type) {
+  return readContractDrafts()[contractDraftKey(projectId, type)] || null;
+}
+
+function deleteContractDraft(projectId, type) {
+  const drafts = readContractDrafts();
+  delete drafts[contractDraftKey(projectId, type)];
+  writeJsonAtomic(contractDraftsFile, drafts);
+}
+
+function contractFileResponseItem(projectId, storedName) {
+  return listContractFiles(projectId).find((item) => item.storedName === storedName) || null;
+}
+
+function contractFallbackPdfText(html) {
+  return String(html || "")
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[Đđ]/g, "d")
+    .replace(/[^\x20-\x7E\r\n]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim() || "Bao gia";
+}
+
+function contractPdfEscapeText(value) {
+  return String(value || "").replace(/[\\()]/g, "\\$&");
+}
+
+function contractSimplePdfBuffer(html) {
+  const source = contractFallbackPdfText(html);
+  const words = source.split(/\s+/);
+  const lines = [];
+  let line = "";
+  for (const word of words) {
+    const next = line ? `${line} ${word}` : word;
+    if (next.length > 88) {
+      lines.push(line);
+      line = word;
+    } else {
+      line = next;
+    }
+    if (lines.length >= 54) break;
+  }
+  if (line && lines.length < 55) lines.push(line);
+  const content = `BT\n/F1 10 Tf\n50 790 Td\n${lines.map((item, index) => `${index ? "0 -14 Td\n" : ""}(${contractPdfEscapeText(item)}) Tj`).join("\n")}\nET`;
+  const objects = [
+    "1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n",
+    "2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n",
+    "3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>\nendobj\n",
+    "4 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n",
+    `5 0 obj\n<< /Length ${Buffer.byteLength(content, "ascii")} >>\nstream\n${content}\nendstream\nendobj\n`
+  ];
+  let pdf = "%PDF-1.4\n";
+  const offsets = [0];
+  for (const object of objects) {
+    offsets.push(Buffer.byteLength(pdf, "ascii"));
+    pdf += object;
+  }
+  const xrefOffset = Buffer.byteLength(pdf, "ascii");
+  pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+  pdf += offsets.slice(1).map((offset) => `${String(offset).padStart(10, "0")} 00000 n \n`).join("");
+  pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF\n`;
+  return Buffer.from(pdf, "ascii");
+}
+
+async function contractHtmlToPdfBuffer(html) {
+  let chromium;
+  try {
+    ({ chromium } = require("playwright"));
+  } catch {
+    return contractSimplePdfBuffer(html);
+  }
+  const launchAttempts = [{}, { channel: "msedge" }, { channel: "chrome" }];
+  let browser;
+  let lastError;
+  for (const options of launchAttempts) {
+    try {
+      browser = await chromium.launch({ ...options, headless: true });
+      break;
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  if (!browser) return contractSimplePdfBuffer(html);
+  try {
+    const page = await browser.newPage({ viewport: { width: 1240, height: 1754 } });
+    await page.setContent(String(html || ""), { waitUntil: "networkidle" });
+    return Buffer.from(await page.pdf({
+      format: "A4",
+      printBackground: true,
+      preferCSSPageSize: true,
+      displayHeaderFooter: false,
+      margin: { top: "0mm", right: "0mm", bottom: "0mm", left: "0mm" }
+    }));
+  } catch {
+    return contractSimplePdfBuffer(html);
+  } finally {
+    await browser.close().catch(() => {});
+  }
 }
 
 function listVendorContractFiles(projectId) {
@@ -1429,6 +2080,7 @@ function saveDebtData(type, projectId, data) {
 
 const catalogSeed = {
   projectList: [],
+  staffList: [],
   constructionCategories: [
     "KHẢO SÁT - ĐO ĐẠC",
     "CHE PHỦ",
@@ -1438,22 +2090,73 @@ const catalogSeed = {
     "CHỐNG THẤM",
     "ĐIỆN NƯỚC",
     "PCCC / AN TOÀN KỸ THUẬT",
-    "ĐIỀU HÒA",
     "THIẾT BỊ THÔNG MINH - MẠNG - CAMERA",
     "THẠCH CAO",
     "ỐP LÁT",
     "ĐÁ",
     "SƠN BẢ",
+    "TẤM ỐP NHỰA - THAN TRE",
     "SÀN GỖ - SÀN NHỰA",
     "CỬA",
-    "NHÔM KÍNH",
-    "SẮT",
     "GỖ NỘI THẤT",
     "RÈM",
+    "NHÔM KÍNH",
+    "SẮT",
+    "ĐIỀU HÒA",
+    "VỆ SINH CN",
+    "DEFECT CHẤM VÁ",
+    "DECOR TRANG TRÍ",
     "CÂY - TIỂU CẢNH",
     "BIỂN BẢNG LOGO",
-    "DEFECT CHẤM VÁ",
-    "VỆ SINH CN",
+    "KHÁC"
+  ],
+  constructionCategoryGroups: [
+    {
+      id: "rough",
+      title: "Nhóm 1: Phần thô & Xây dựng cơ bản",
+      role: "Nhà thầu xây dựng",
+      desc: "Kết cấu, xây tô, cán nền, chống thấm, phá dỡ và chuẩn bị mặt bằng.",
+      items: ["KHẢO SÁT - ĐO ĐẠC", "CHE PHỦ", "PHÁ DỠ", "VẬN CHUYỂN", "XÂY TRÁT", "CHỐNG THẤM"]
+    },
+    {
+      id: "surface-mep",
+      title: "Nhóm 2: Phần hoàn thiện bề mặt & Cơ điện",
+      role: "Nhà thầu hoàn thiện / Điện nước",
+      desc: "Đi dây điện, ống nước, thạch cao, ốp lát, đá, sơn bả và hệ kỹ thuật âm tường.",
+      items: ["ĐIỆN NƯỚC", "PCCC / AN TOÀN KỸ THUẬT", "THIẾT BỊ THÔNG MINH - MẠNG - CAMERA", "THẠCH CAO", "ỐP LÁT", "ĐÁ", "SƠN BẢ", "TẤM ỐP NHỰA - THAN TRE"]
+    },
+    {
+      id: "wood-interior",
+      title: "Nhóm 3: Phần gỗ & Nội thất",
+      role: "Xưởng sản xuất nội thất",
+      desc: "Gia công tại xưởng và lắp ráp tại công trình: tủ, giường, vách ốp, sàn gỗ, cửa gỗ.",
+      items: ["SÀN GỖ - SÀN NHỰA", "CỬA", "GỖ NỘI THẤT", "RÈM"]
+    },
+    {
+      id: "metal-equipment",
+      title: "Nhóm 4: Phần cơ khí, nhôm kính & Thiết bị chuyên dụng",
+      role: "Đội thầu phụ chuyên dụng",
+      desc: "Nhôm kính, sắt, lan can, điều hòa và các hệ thiết bị chuyên môn.",
+      items: ["NHÔM KÍNH", "SẮT", "ĐIỀU HÒA"]
+    },
+    {
+      id: "completion",
+      title: "Nhóm 5: Hoàn thiện",
+      role: "Đội hoàn thiện cuối kỳ",
+      desc: "Vệ sinh CN, defect chấm vá, decor trang trí, cây cảnh, logo và các đầu mục hoàn thiện cuối.",
+      items: ["VỆ SINH CN", "DEFECT CHẤM VÁ", "DECOR TRANG TRÍ", "CÂY - TIỂU CẢNH", "BIỂN BẢNG LOGO", "KHÁC"]
+    }
+  ],
+  designCategories: [
+    "KHẢO SÁT HIỆN TRẠNG",
+    "MẶT BẰNG CÔNG NĂNG",
+    "CONCEPT / Ý TƯỞNG",
+    "THIẾT KẾ 3D",
+    "HỒ SƠ KỸ THUẬT",
+    "BỔ KỸ THUẬT",
+    "VẬT LIỆU / MÀU SẮC",
+    "DỰ TOÁN THIẾT KẾ",
+    "TRÌNH DUYỆT CDT",
     "KHÁC"
   ],
   materialCategories: [
@@ -1469,11 +2172,63 @@ const catalogSeed = {
     "ĐỒ THỦ CÔNG",
     "KHÁC"
   ],
+  materialCategoryGroups: [
+    {
+      id: "material-finishing",
+      title: "Nhóm 1: Vật liệu hoàn thiện",
+      role: "Nhà cung cấp vật liệu hoàn thiện",
+      desc: "Keo, nẹp, phào, sơn, đá, vật liệu ốp lát và hoàn thiện bề mặt.",
+      items: ["VẬT LIỆU HOÀN THIỆN"]
+    },
+    {
+      id: "material-interior",
+      title: "Nhóm 2: Phụ kiện & Nội thất",
+      role: "NCC phụ kiện nội thất",
+      desc: "Phụ kiện đồ nội thất, đồ decor, đồ decor bếp, chăn ga đệm và đồ thủ công.",
+      items: ["PHỤ KIỆN ĐỒ NỘI THẤT", "ĐỒ DECOR", "ĐỒ DECOR BẾP", "CHĂN GA ĐỆM", "ĐỒ THỦ CÔNG"]
+    },
+    {
+      id: "material-equipment",
+      title: "Nhóm 3: Thiết bị công trình",
+      role: "NCC thiết bị chuyên dụng",
+      desc: "Thiết bị chiếu sáng, thiết bị bếp, thiết bị vệ sinh và đèn decor.",
+      items: ["THIẾT BỊ CHIẾU SÁNG", "THIẾT BỊ BẾP", "THIẾT BỊ VỆ SINH", "ĐÈN DECOR"]
+    },
+    {
+      id: "material-other",
+      title: "Nhóm 4: Khác",
+      role: "NCC bổ sung",
+      desc: "Các nhóm vật tư chưa phân loại hoặc phát sinh theo dự án.",
+      items: ["KHÁC"]
+    }
+  ],
   contractTypes: [
     "Hợp đồng thiết kế",
     "Hợp đồng thi công",
     "Hợp đồng thiết kế thi công",
     "Hợp đồng phát sinh"
+  ],
+  designContractTypes: [
+    "Hợp đồng thiết kế",
+    "Phụ lục hợp đồng thiết kế",
+    "Biên bản nghiệm thu thiết kế",
+    "Thanh lý hợp đồng thiết kế"
+  ],
+  constructionContractTypes: [
+    "Hợp đồng thi công",
+    "Phụ lục hợp đồng thi công",
+    "Báo giá hợp đồng",
+    "Hồ sơ bản vẽ hợp đồng",
+    "Phát sinh hợp đồng thi công",
+    "Quyết toán hợp đồng thi công"
+  ],
+  subcontractTypes: [
+    "Hợp đồng giao thầu",
+    "Phụ lục hợp đồng giao thầu",
+    "Báo giá nhà thầu",
+    "Hồ sơ bản vẽ giao thầu",
+    "Phát sinh hợp đồng giao thầu",
+    "Quyết toán hợp đồng giao thầu"
   ],
   voucherTypes: [
     "Phiếu chấm công",
@@ -1506,6 +2261,84 @@ function catalogList(input, fallback) {
   return [...new Set(source.map((item) => String(item || "").trim()).filter(Boolean))];
 }
 
+function catalogListTitles(input = {}) {
+  const source = input && typeof input === "object" ? input : {};
+  return Object.fromEntries(Object.entries(source)
+    .map(([key, value]) => [key, String(value || "").replace(/\s+/g, " ").trim()])
+    .filter(([, value]) => value));
+}
+
+function catalogTextKey(value) {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/đ/g, "d")
+    .replace(/Đ/g, "D")
+    .toUpperCase();
+}
+
+function constructionCategoryGroupIdForName(name) {
+  const text = catalogTextKey(name);
+  if (/VE SINH|DEFECT|CHAM VA|DECOR|TRANG TRI|CAY|TIEU CANH|BIEN BANG|LOGO|DO THU CONG|CHAN GA|KHAC/.test(text)) return "completion";
+  if (/NHOM KINH|SAT|CO KHI|LAN CAN|THANG MAY|DIEU HOA|MAY LANH|THIET BI VE SINH|THIET BI BEP/.test(text)) return "metal-equipment";
+  if (/GO|NOI THAT|SAN GO|SAN NHUA|CUA|REM|PHU KIEN/.test(text)) return "wood-interior";
+  if (/DIEN|NUOC|PCCC|AN TOAN|THONG MINH|MANG|CAMERA|THACH CAO|OP LAT|DA|SON|TAM OP|THAN TRE|VAT LIEU HOAN THIEN|THIET BI CHIEU SANG|DEN/.test(text)) return "surface-mep";
+  if (/KHAO SAT|DO DAC|CHE PHU|PHA DO|VAN CHUYEN|XAY|TRAT|CHONG THAM|CAN NEN|BE TONG/.test(text)) return "rough";
+  return "completion";
+}
+
+function materialCategoryGroupIdForName(name) {
+  const text = catalogTextKey(name);
+  if (/PHU KIEN|NOI THAT|DO DECOR|DECOR BEP|CHAN GA|DO THU CONG/.test(text)) return "material-interior";
+  if (/THIET BI|CHIEU SANG|DEN|BEP|VE SINH/.test(text)) return "material-equipment";
+  if (/VAT LIEU|HOAN THIEN|OP LAT|DA|SON|KEO|NEP|PHAO/.test(text)) return "material-finishing";
+  return "material-other";
+}
+
+function normalizeCatalogCategoryGroups(input, categories, fallbackGroups, fallbackCategories, groupIdForName) {
+  const categoryItems = catalogList(categories, fallbackCategories);
+  const categoryByKey = new Map(categoryItems.map((item) => [catalogTextKey(item), item]));
+  const metadata = new Map(fallbackGroups.map((group) => [group.id, { ...group, items: [] }]));
+  if (Array.isArray(input)) {
+    input.forEach((group) => {
+      if (!group?.id || !metadata.has(group.id)) return;
+      metadata.set(group.id, { ...metadata.get(group.id), ...group, items: [] });
+    });
+  }
+  const definitions = fallbackGroups.map((group) => ({ ...metadata.get(group.id), items: [] }));
+  const byId = new Map(definitions.map((group) => [group.id, group]));
+  const seen = new Set();
+  if (Array.isArray(input)) {
+    input.forEach((group) => {
+      const target = byId.get(group?.id);
+      if (!target) return;
+      (Array.isArray(group.items) ? group.items : []).forEach((item) => {
+        const key = catalogTextKey(item);
+        const canonical = categoryByKey.get(key);
+        if (!canonical || seen.has(key)) return;
+        target.items.push(canonical);
+        seen.add(key);
+      });
+    });
+  }
+  categoryItems.forEach((item) => {
+    const key = catalogTextKey(item);
+    if (seen.has(key)) return;
+    const target = byId.get(groupIdForName(item)) || definitions[definitions.length - 1];
+    target.items.push(item);
+    seen.add(key);
+  });
+  return definitions;
+}
+
+function normalizeConstructionCategoryGroups(input, categories) {
+  return normalizeCatalogCategoryGroups(input, categories, catalogSeed.constructionCategoryGroups, catalogSeed.constructionCategories, constructionCategoryGroupIdForName);
+}
+
+function normalizeMaterialCategoryGroups(input, categories) {
+  return normalizeCatalogCategoryGroups(input, categories, catalogSeed.materialCategoryGroups, catalogSeed.materialCategories, materialCategoryGroupIdForName);
+}
+
 function financeProjectCodeDefaults() {
   const finance = readJsonFile(financeFile, financeSeed);
   const projectRows = Array.isArray(finance.projects) ? finance.projects : [];
@@ -1517,13 +2350,34 @@ function financeProjectCodeDefaults() {
   return catalogList(activeProjectList(projects).map((project) => project.code || project.name), catalogSeed.projectList);
 }
 
+function staffCatalogList() {
+  const people = new Map();
+  readOrgStaff().forEach((staff) => {
+    const id = String(staff?.[0] || "").trim();
+    const name = String(staff?.[1] || "").replace(/\s+/g, " ").trim();
+    if (!name) return;
+    const key = personKey(name) || id;
+    if (!people.has(key)) people.set(key, name);
+  });
+  return [...people.values()];
+}
+
 function normalizeCatalog(input = {}) {
   const projectDefaults = financeProjectCodeDefaults();
+  const constructionCategories = catalogList(input.constructionCategories, catalogSeed.constructionCategories);
+  const materialCategories = catalogList(input.materialCategories, catalogSeed.materialCategories);
   return {
     projectList: catalogList(Array.isArray(input.projectList) && input.projectList.length ? input.projectList : null, projectDefaults),
-    constructionCategories: catalogList(input.constructionCategories, catalogSeed.constructionCategories),
-    materialCategories: catalogList(input.materialCategories, catalogSeed.materialCategories),
+    staffList: staffCatalogList(),
+    constructionCategories,
+    constructionCategoryGroups: normalizeConstructionCategoryGroups(input.constructionCategoryGroups, constructionCategories),
+    designCategories: catalogList(input.designCategories, catalogSeed.designCategories),
+    materialCategories,
+    materialCategoryGroups: normalizeMaterialCategoryGroups(input.materialCategoryGroups, materialCategories),
     contractTypes: catalogList(input.contractTypes, catalogSeed.contractTypes),
+    designContractTypes: catalogList(input.designContractTypes, catalogSeed.designContractTypes),
+    constructionContractTypes: catalogList(input.constructionContractTypes, catalogSeed.constructionContractTypes),
+    subcontractTypes: catalogList(input.subcontractTypes, catalogSeed.subcontractTypes),
     voucherTypes: catalogList(input.voucherTypes, catalogSeed.voucherTypes),
     overtimeVoucherTypes: catalogList(input.overtimeVoucherTypes, catalogSeed.overtimeVoucherTypes),
     paymentVoucherTypes: catalogList(input.paymentVoucherTypes, catalogSeed.paymentVoucherTypes),
@@ -1534,7 +2388,8 @@ function normalizeCatalog(input = {}) {
     cdtChangeRequestTypes: catalogList(input.cdtChangeRequestTypes, catalogSeed.cdtChangeRequestTypes),
     cdtNoteRequestTypes: catalogList(input.cdtNoteRequestTypes, catalogSeed.cdtNoteRequestTypes),
     cdtApprovalRequestTypes: catalogList(input.cdtApprovalRequestTypes, catalogSeed.cdtApprovalRequestTypes),
-    incidentIssueTypes: catalogList(input.incidentIssueTypes, catalogSeed.incidentIssueTypes)
+    incidentIssueTypes: catalogList(input.incidentIssueTypes, catalogSeed.incidentIssueTypes),
+    listTitles: catalogListTitles(input.listTitles)
   };
 }
 
@@ -1569,6 +2424,13 @@ function repairDriveSeedRow(row) {
   const text = [row[1], row[3], row[4], row[5], row[8], row[9]].join(" ");
   return /�|\?/.test(text) ? [...seed] : row;
 }
+
+const configDocumentsSeed = [
+  ["GT001","Giấy phép kinh doanh.pdf","PDF","Pháp lý công ty","Đăng ký doanh nghiệp","DINH Công Hoàng","2026-06-03",0,"Ban lãnh đạo","Bản lưu pháp lý công ty"],
+  ["GT002","Mẫu hợp đồng nhận thầu.docx","Word","Mẫu biểu","Hợp đồng","DINH Công Hoàng","2026-06-02",0,"Toàn công ty","Mẫu dùng khi lập hợp đồng nhận thầu"],
+  ["GT003","Biểu mẫu nghiệm thu.xlsx","Excel","Mẫu biểu","Nghiệm thu","DINH Công Hoàng","2026-06-01",0,"Thiết kế, Thi công","Bảng mẫu tổng hợp nghiệm thu"],
+  ["GT004","Slide giới thiệu năng lực.pptx","PowerPoint","Hồ sơ năng lực","Công ty","DINH Công Hoàng","2026-05-30",0,"Toàn công ty","File trình bày năng lực Le Dome"]
+];
 
 const financeSeed = {
   transactions: [
@@ -1640,6 +2502,27 @@ function readDrive() {
   return rows;
 }
 function writeDrive(data) { writeJsonAtomic(driveFile, pruneExpiredDriveRows(data)); }
+function repairConfigDocumentRows(rows) {
+  if (!Array.isArray(rows)) return [];
+  return rows.map((row, index) => {
+    const next = Array.isArray(row) ? [...row] : [];
+    next[0] = String(next[0] || `GT${String(index + 1).padStart(3, "0")}`);
+    next[1] = String(next[1] || "Giấy tờ chưa đặt tên");
+    next[2] = String(next[2] || "File");
+    next[3] = String(next[3] || "Giấy tờ");
+    next[4] = String(next[4] || "Chưa phân loại");
+    next[5] = String(next[5] || "LE DOME");
+    next[6] = String(next[6] || new Date().toISOString().slice(0, 10));
+    next[7] = Number(next[7] || 0);
+    next[8] = String(next[8] || "Toàn công ty");
+    next[9] = String(next[9] || "");
+    next[10] = next[10] ? safeFileName(next[10]) : "";
+    next[11] = String(next[11] || "");
+    return next;
+  });
+}
+function readConfigDocuments() { return repairConfigDocumentRows(readJsonFile(configDocumentsFile, configDocumentsSeed)); }
+function writeConfigDocuments(data) { writeJsonAtomic(configDocumentsFile, repairConfigDocumentRows(data)); }
 function readOrgStaff() { return readJsonFile(orgStaffFile, orgStaffSeed); }
 function writeOrgStaff(data) { writeJsonAtomic(orgStaffFile, data); }
 function attendanceEmployeeOptions() {
@@ -1677,7 +2560,8 @@ function projectChatPublicMessage(projectId, message) {
       size: Number(attachment.size || info.size) || 0,
       uploadedAt: attachment.uploadedAt || info.updatedAt,
       expiresAt: info.expiresAt,
-      url: projectChatFileUrl(projectId, info.storedName)
+      url: projectChatFileUrl(projectId, info.storedName),
+      previewUrl: projectChatPreviewUrl(projectId, info.storedName)
     };
   }).filter(Boolean);
   return { ...message, attachments, attachmentExpired: sourceAttachments.length > 0 && attachments.length === 0 };
@@ -1691,6 +2575,30 @@ function projectChatMessages(projectId) {
     data[String(projectId || "")] = messages;
     writeProjectChat(data);
   }
+  return messages;
+}
+function teamChatPublicMessage(message) {
+  const sourceAttachments = Array.isArray(message?.attachments) ? message.attachments : [];
+  const attachments = sourceAttachments.map((attachment) => {
+    const info = teamChatFileTarget(attachment.storedName);
+    if (!info) return null;
+    return {
+      storedName: info.storedName,
+      name: attachment.name || info.displayName,
+      category: attachment.category || info.category,
+      size: Number(attachment.size || info.size) || 0,
+      uploadedAt: attachment.uploadedAt || info.updatedAt,
+      expiresAt: info.expiresAt,
+      url: teamChatFileUrl(info.storedName),
+      previewUrl: teamChatPreviewUrl(info.storedName)
+    };
+  }).filter(Boolean);
+  return { ...message, attachments, attachmentExpired: sourceAttachments.length > 0 && attachments.length === 0 };
+}
+function teamChatMessages() {
+  const rows = readTeamChat();
+  const messages = rows.map(teamChatPublicMessage);
+  if (JSON.stringify(rows) !== JSON.stringify(messages)) writeTeamChat(messages);
   return messages;
 }
 
@@ -1740,12 +2648,13 @@ function api(req, res, pathname) {
     if (!requireAccount(req, res, "config.accounts")) return;
     return readJson(req, (error, input) => {
       if (error) return json(res, 400, { error: error.message });
-      const currentByStaff = new Map(readAccounts().map((account) => [account.staffCode, account]));
+      const currentByPosition = new Map(readAccounts().map((account) => [accountRecordKey(account), account]));
       const accounts = Array.isArray(input.accounts) ? input.accounts.map((account) => {
-        const current = currentByStaff.get(account.staffCode) || {};
+        const current = currentByPosition.get(accountRecordKey(account)) || {};
         const raw = {
           ...current,
           ...account,
+          positionCode: String(account.positionCode || account.staffCode || current.positionCode || current.staffCode || "").trim(),
           loginId: String(account.loginId || "").trim(),
           active: Boolean(account.active)
         };
@@ -1754,7 +2663,7 @@ function api(req, res, pathname) {
         delete next.password;
         delete next.newPassword;
         return next;
-      }).filter((account) => account.staffCode && account.loginId) : [];
+      }).filter((account) => account.staffCode && account.positionCode && account.loginId) : [];
       if (!accounts.length) return json(res, 400, { error: "Danh sách tài khoản không hợp lệ" });
       writeAccounts(accounts);
       return json(res, 200, { data: accounts.map(publicAccount) });
@@ -1791,6 +2700,21 @@ function api(req, res, pathname) {
         const data = normalizeCatalog(input.data || input);
         writeCatalog(data);
         return json(res, 200, { data });
+      });
+    }
+  }
+  if (pathname === "/api/v1/config-documents") {
+    if (req.method === "GET") {
+      if (!requireAccount(req, res, "config")) return;
+      return json(res, 200, { data: readConfigDocuments() });
+    }
+    if (req.method === "PATCH") {
+      if (!requireAccount(req, res, "config")) return;
+      return readJson(req, (error, input) => {
+        if (error) return json(res, 400, { error: error.message });
+        const data = Array.isArray(input.files) ? input.files : [];
+        writeConfigDocuments(data);
+        return json(res, 200, { data: readConfigDocuments() });
       });
     }
   }
@@ -1924,6 +2848,57 @@ function api(req, res, pathname) {
     if (!info) return json(res, 404, { error: "File not found" });
     return sendDriveStoredFile(res, info, "attachment");
   }
+  if (pathname === "/api/v1/config-document-files") {
+    if (req.method === "GET") {
+      if (!requireAccount(req, res, "config")) return;
+      return json(res, 200, { data: listConfigDocumentStoredFiles() });
+    }
+    if (req.method === "POST") {
+      if (!requireAccount(req, res, "config")) return;
+      const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
+      const name = safeFileName(url.searchParams.get("name"));
+      if (!name) return json(res, 400, { error: "File name is required" });
+      const uploadError = validateUploadName(name);
+      if (uploadError) return json(res, 400, { error: uploadError });
+      fs.mkdirSync(configDocumentFilesDir, { recursive: true });
+      const storedName = `configdoc__${Date.now()}-${crypto.randomBytes(4).toString("hex")}__${name}`;
+      const target = path.join(configDocumentFilesDir, storedName);
+      return handleUpload(req, res, target, () => json(res, 201, listConfigDocumentStoredFiles().find((item) => item.storedName === storedName)));
+    }
+    if (req.method === "DELETE") {
+      if (!requireAccount(req, res, "config")) return;
+      const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
+      const storedName = safeFileName(url.searchParams.get("storedName"));
+      const target = path.join(configDocumentFilesDir, storedName);
+      if (storedName && fs.existsSync(target)) fs.unlinkSync(target);
+      return json(res, 200, { ok: true });
+    }
+  }
+  if (pathname === "/api/v1/config-document-files/view" && req.method === "GET") {
+    if (!requireAccount(req, res, "config")) return;
+    const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
+    const info = configDocumentStoredTarget(url.searchParams.get("storedName"));
+    if (!info) return json(res, 404, { error: "File not found" });
+    return sendDriveStoredFile(res, info, "inline");
+  }
+  if (pathname === "/api/v1/config-document-files/preview" && req.method === "GET") {
+    if (!requireAccount(req, res, "config")) return;
+    const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
+    const info = configDocumentStoredTarget(url.searchParams.get("storedName"));
+    if (!info) return json(res, 404, { error: "File not found" });
+    try {
+      return json(res, 200, { data: previewOfficeFile(info) });
+    } catch {
+      return json(res, 422, { error: "Unable to preview this file" });
+    }
+  }
+  if (pathname === "/api/v1/config-document-files/download" && req.method === "GET") {
+    if (!requireAccount(req, res, "config")) return;
+    const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
+    const info = configDocumentStoredTarget(url.searchParams.get("storedName"));
+    if (!info) return json(res, 404, { error: "File not found" });
+    return sendDriveStoredFile(res, info, "attachment");
+  }
   if (pathname === "/api/v1/hrm/staff") {
     if (req.method === "GET") {
       if (!requireAccount(req, res, "hrm.view")) return;
@@ -1969,6 +2944,21 @@ function api(req, res, pathname) {
     if (!info) return json(res, 404, { error: "File not found or expired" });
     return sendProjectChatFile(res, info, url.searchParams.get("download") ? "attachment" : "inline");
   }
+  const projectChatFilePreviewMatch = pathname.match(/^\/api\/v1\/projects\/([^/]+)\/chat\/file\/preview$/);
+  if (projectChatFilePreviewMatch && req.method === "GET") {
+    const projectId = projectChatFilePreviewMatch[1];
+    const project = projectDetail[projectId] || dashboardProjects.find((item) => item.id === projectId);
+    if (!project) return json(res, 404, { error: "Project not found" });
+    if (!requireAccount(req, res, "projects.view")) return;
+    const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
+    const info = projectChatFileTarget(projectId, url.searchParams.get("storedName"));
+    if (!info) return json(res, 404, { error: "File not found or expired" });
+    try {
+      return json(res, 200, { data: previewOfficeFile(info) });
+    } catch {
+      return json(res, 422, { error: "Unable to preview this file" });
+    }
+  }
   const projectChatUploadMatch = pathname.match(/^\/api\/v1\/projects\/([^/]+)\/chat\/files$/);
   if (projectChatUploadMatch && req.method === "POST") {
     const projectId = projectChatUploadMatch[1];
@@ -1994,7 +2984,8 @@ function api(req, res, pathname) {
         size: stats.size,
         uploadedAt: new Date().toISOString(),
         expiresAt: new Date(Date.now() + chatFileRetentionMs).toISOString(),
-        url: projectChatFileUrl(projectId, storedName)
+        url: projectChatFileUrl(projectId, storedName),
+        previewUrl: projectChatPreviewUrl(projectId, storedName)
       };
       const data = readProjectChat();
       const list = Array.isArray(data[projectId]) ? data[projectId] : [];
@@ -2073,10 +3064,69 @@ function api(req, res, pathname) {
   const requiredPermission = permissionForRequest(pathname, req.method);
   if (mutatingRequest && requiredPermission && !requireAccount(req, res, requiredPermission)) return;
   if (/\/download$/.test(pathname) && requiredPermission && !requireAccount(req, res, requiredPermission)) return;
+  if (pathname === "/api/v1/team-chat/file" && req.method === "GET") {
+    const account = requireAccount(req, res);
+    if (!account) return;
+    const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
+    const info = teamChatFileTarget(url.searchParams.get("storedName"));
+    if (!info) return json(res, 404, { error: "File not found or expired" });
+    return sendTeamChatFile(res, info, url.searchParams.get("download") ? "attachment" : "inline");
+  }
+  if (pathname === "/api/v1/team-chat/file/preview" && req.method === "GET") {
+    const account = requireAccount(req, res);
+    if (!account) return;
+    const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
+    const info = teamChatFileTarget(url.searchParams.get("storedName"));
+    if (!info) return json(res, 404, { error: "File not found or expired" });
+    try {
+      return json(res, 200, { data: previewOfficeFile(info) });
+    } catch {
+      return json(res, 422, { error: "Unable to preview this file" });
+    }
+  }
+  if (pathname === "/api/v1/team-chat/files" && req.method === "POST") {
+    const account = requireAccount(req, res);
+    if (!account) return;
+    const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
+    const name = safeFileName(url.searchParams.get("name"));
+    if (!name) return json(res, 400, { error: "File name is required" });
+    const uploadError = validateUploadName(name);
+    if (uploadError) return json(res, 400, { error: uploadError });
+    fs.mkdirSync(teamChatDir(), { recursive: true });
+    const storedName = `teamchat__${Date.now()}-${crypto.randomBytes(4).toString("hex")}__${name}`;
+    const target = path.join(teamChatDir(), storedName);
+    return handleUpload(req, res, target, () => {
+      const stats = fs.statSync(target);
+      const attachment = {
+        storedName,
+        name,
+        category: fileCategory(name),
+        size: stats.size,
+        uploadedAt: new Date().toISOString(),
+        expiresAt: new Date(Date.now() + chatFileRetentionMs).toISOString(),
+        url: teamChatFileUrl(storedName),
+        previewUrl: teamChatPreviewUrl(storedName)
+      };
+      const rows = readTeamChat();
+      const message = {
+        id: `team-${Date.now()}-${crypto.randomBytes(3).toString("hex")}`,
+        channel: "dashboard",
+        source: "member",
+        author: account.staffName || account.loginId || "User",
+        loginId: account.loginId,
+        staffCode: account.staffCode,
+        text: String(url.searchParams.get("text") || "").trim().slice(0, 2000),
+        attachments: [attachment],
+        createdAt: new Date().toISOString()
+      };
+      writeTeamChat([...rows, message]);
+      return json(res, 201, teamChatPublicMessage(message));
+    });
+  }
   if (pathname === "/api/v1/team-chat") {
     const account = requireAccount(req, res);
     if (!account) return;
-    if (req.method === "GET") return json(res, 200, { data: readTeamChat() });
+    if (req.method === "GET") return json(res, 200, { data: teamChatMessages() });
     if (req.method === "POST") {
       return readJson(req, (error, input) => {
         if (error) return json(res, 400, { error: error.message });
@@ -2091,6 +3141,7 @@ function api(req, res, pathname) {
           loginId: account.loginId,
           staffCode: account.staffCode,
           text,
+          attachments: [],
           createdAt: new Date().toISOString()
         };
         writeTeamChat([...rows, message]);
@@ -2330,7 +3381,7 @@ function api(req, res, pathname) {
     if (req.method === "POST") {
       const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
       const requestedKind = url.searchParams.get("kind");
-      const kind = ["contract", "quote", "estimate", "drawing", "settlement"].includes(requestedKind) ? requestedKind : "contract";
+      const kind = contractAllowedFileKind(requestedKind, "contract");
       const name = safeFileName(url.searchParams.get("name"));
       if (!name) return json(res, 400, { error: "File name is required" });
       const uploadError = validateUploadName(name);
@@ -2371,7 +3422,7 @@ function api(req, res, pathname) {
     if (req.method === "POST") {
       const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
       const requestedKind = url.searchParams.get("kind");
-      const kind = ["contract", "quote", "estimate", "drawing", "settlement"].includes(requestedKind) ? requestedKind : "contract";
+      const kind = contractAllowedFileKind(requestedKind, "contract");
       const name = safeFileName(url.searchParams.get("name"));
       if (!name) return json(res, 400, { error: "File name is required" });
       const uploadError = validateUploadName(name);
@@ -2391,15 +3442,61 @@ function api(req, res, pathname) {
     }
   }
 
+  const contractDraftMatch = pathname.match(/^\/api\/v1\/projects\/([^/]+)\/contract-drafts\/([^/]+)$/);
+  if (contractDraftMatch) {
+    const projectId = contractDraftMatch[1];
+    const type = contractDraftType(decodeURIComponent(contractDraftMatch[2]));
+    if (!type) return json(res, 400, { error: "Invalid draft type" });
+    if (req.method === "GET") return json(res, 200, { data: readContractDraft(projectId, type) });
+    if (req.method === "PUT") {
+      return readJson(req, (error, body) => {
+        if (error) return json(res, 400, { error: error.message });
+        return json(res, 200, { data: writeContractDraft(projectId, type, body.data || body) });
+      });
+    }
+    if (req.method === "DELETE") {
+      deleteContractDraft(projectId, type);
+      return json(res, 200, { ok: true });
+    }
+  }
+
+  const contractPdfMatch = pathname.match(/^\/api\/v1\/projects\/([^/]+)\/contract-files\/pdf$/);
+  if (contractPdfMatch && req.method === "POST") {
+    const projectId = contractPdfMatch[1];
+    return readJson(req, async (error, body) => {
+      if (error) return json(res, 400, { error: error.message });
+      const kind = contractAllowedFileKind(body.kind, "quote");
+      const rawName = safeFileName(body.name || `${kind}-${Date.now()}.pdf`);
+      const name = /\.pdf$/i.test(rawName) ? rawName : `${rawName}.pdf`;
+      if (!name) return json(res, 400, { error: "File name is required" });
+      const uploadError = validateUploadName(name);
+      if (uploadError) return json(res, 400, { error: uploadError });
+      try {
+        const dir = contractProjectDir(projectId);
+        fs.mkdirSync(dir, { recursive: true });
+        const storedName = `${kind}__${name}`;
+        const target = path.join(dir, storedName);
+        const pdf = await contractHtmlToPdfBuffer(body.html);
+        fs.writeFileSync(target, pdf);
+        return json(res, 201, contractFileResponseItem(projectId, storedName));
+      } catch (pdfError) {
+        return json(res, 500, { error: pdfError.message || "Unable to export PDF" });
+      }
+    });
+  }
+
   const contractDownloadMatch = pathname.match(/^\/api\/v1\/projects\/([^/]+)\/contract-files\/download$/);
   if (contractDownloadMatch && req.method === "GET") {
     const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
     const storedName = safeFileName(url.searchParams.get("storedName"));
     const target = path.join(contractProjectDir(contractDownloadMatch[1]), storedName);
     if (!storedName || !fs.existsSync(target)) return json(res, 404, { error: "File not found" });
+    const originalName = storedName.includes("__") ? storedName.slice(storedName.indexOf("__") + 2) : storedName;
+    const contentType = mime[path.extname(originalName).toLowerCase()] || "application/octet-stream";
+    const inline = url.searchParams.get("download") !== "1";
     res.writeHead(200, {
-      "content-type": "application/octet-stream",
-      "content-disposition": `attachment; filename*=UTF-8''${encodeURIComponent(storedName.includes("__") ? storedName.slice(storedName.indexOf("__") + 2) : storedName)}`,
+      "content-type": contentType,
+      "content-disposition": `${inline ? "inline" : "attachment"}; filename*=UTF-8''${encodeURIComponent(originalName)}`,
       "cache-control": "no-store"
     });
     return fs.createReadStream(target).pipe(res);
@@ -2808,7 +3905,7 @@ function staticFile(req, res, pathname) {
       .pipe(res);
   }
   if (requested === "/constructions/detail/index.html") {
-    const html = fs.readFileSync(filename, "utf8").replace(/\/construction\.js(?:\?v=\d+)?/g, "/construction.js?v=195");
+    const html = fs.readFileSync(filename, "utf8").replace(/\/construction\.js(?:\?v=\d+)?/g, "/construction.js?v=229");
     res.writeHead(200, { "content-type": mime[".html"], "cache-control": "no-cache" });
     return res.end(html);
   }

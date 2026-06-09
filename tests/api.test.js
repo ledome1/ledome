@@ -174,6 +174,13 @@ test("accounts API hides password material and supports password reset", async (
   const accounts = await authed(`${origin}/api/v1/accounts`).then((res) => res.json());
   assert.ok(accounts.data.length > 0);
   assert.equal(accounts.data.some((account) => account.password || account.passwordHash || account.passwordSalt), false);
+  assert.ok(accounts.data.every((account) => account.positionCode));
+  const accountsByPerson = accounts.data.reduce((map, account) => {
+    const key = account.personKey || account.staffName;
+    map.set(key, (map.get(key) || 0) + 1);
+    return map;
+  }, new Map());
+  assert.ok([...accountsByPerson.values()].some((count) => count >= 2));
 
   const target = accounts.data.find((account) => account.loginId.toLowerCase() === "hoangdinh");
   target.newPassword = "2";
@@ -269,6 +276,13 @@ test("catalog API includes and persists project list", async () => {
     "overtimeVoucherTypes",
     "paymentVoucherTypes",
     "attendanceVoucherTypes",
+    "constructionCategoryGroups",
+    "designCategories",
+    "materialCategories",
+    "materialCategoryGroups",
+    "designContractTypes",
+    "constructionContractTypes",
+    "subcontractTypes",
     "inventoryReceiptTypes",
     "inventoryIssueTypes",
     "warehouseList",
@@ -280,10 +294,12 @@ test("catalog API includes and persists project list", async () => {
 
   const marker = `TEST-${Date.now()}`;
   const overtimeMarker = `OT-${Date.now()}`;
+  const titleMarker = `Danh sách test ${Date.now()}`;
   const data = {
     ...catalog.data,
     projectList: [marker, ...catalog.data.projectList],
-    overtimeVoucherTypes: [overtimeMarker, ...catalog.data.overtimeVoucherTypes]
+    overtimeVoucherTypes: [overtimeMarker, ...catalog.data.overtimeVoucherTypes],
+    listTitles: { ...(catalog.data.listTitles || {}), overtimeVoucherTypes: titleMarker }
   };
   const saved = await authed(`${origin}/api/v1/catalog`, {
     method: "PATCH",
@@ -292,6 +308,29 @@ test("catalog API includes and persists project list", async () => {
   }).then((res) => res.json());
   assert.equal(saved.data.projectList[0], marker);
   assert.equal(saved.data.overtimeVoucherTypes[0], overtimeMarker);
+  assert.equal(saved.data.listTitles.overtimeVoucherTypes, titleMarker);
+  assert.ok(Array.isArray(saved.data.constructionCategoryGroups));
+  assert.equal(saved.data.constructionCategoryGroups.length, 5);
+  const roughGroup = saved.data.constructionCategoryGroups.find((group) => group.id === "rough");
+  const completionGroup = saved.data.constructionCategoryGroups.find((group) => group.id === "completion");
+  const movedConstructionItem = roughGroup.items[0];
+  const customConstructionGroups = saved.data.constructionCategoryGroups.map((group) => ({
+    ...group,
+    items: group.items.filter((item) => item !== movedConstructionItem)
+  }));
+  customConstructionGroups.find((group) => group.id === "completion").items.unshift(movedConstructionItem);
+  const grouped = await authed(`${origin}/api/v1/catalog`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ data: { ...saved.data, constructionCategoryGroups: customConstructionGroups } })
+  }).then((res) => res.json());
+  assert.ok(grouped.data.constructionCategoryGroups.find((group) => group.id === "completion").items.includes(movedConstructionItem));
+  assert.ok(!grouped.data.constructionCategoryGroups.find((group) => group.id === "rough").items.includes(movedConstructionItem));
+  assert.ok(completionGroup);
+  assert.ok(saved.data.constructionCategoryGroups.some((group) => group.title.includes("Nhóm 5") && group.items.includes("DEFECT CHẤM VÁ")));
+  assert.ok(Array.isArray(saved.data.materialCategoryGroups));
+  assert.equal(saved.data.materialCategoryGroups.length, 4);
+  assert.ok(saved.data.materialCategoryGroups.some((group) => group.title.includes("Nhóm 3") && group.items.includes("THIẾT BỊ BẾP")));
 
   await authed(`${origin}/api/v1/catalog`, {
     method: "PATCH",
@@ -358,6 +397,62 @@ test("file uploads reject unsupported extensions", async () => {
   assert.equal(response.status, 400);
 });
 
+test("contract files keep variation uploads in the phát sinh bucket", async () => {
+  for (const kind of ["variation", "variation-confirm", "variation-quote"]) {
+    const upload = await authed(`${origin}/api/v1/projects/p1/contract-files?kind=${kind}&name=${kind}-test.txt`, {
+      method: "POST",
+      body: Buffer.from(kind)
+    });
+    assert.equal(upload.status, 201);
+    const stored = await upload.json();
+    assert.equal(stored.kind, kind);
+    assert.equal(stored.name, `${kind}-test.txt`);
+  }
+
+  const files = await authed(`${origin}/api/v1/projects/p1/contract-files`).then((res) => res.json());
+  for (const kind of ["variation", "variation-confirm", "variation-quote"]) {
+    assert.ok(files.data.some((file) => file.kind === kind && file.name === `${kind}-test.txt`));
+  }
+});
+
+test("contract quote drafts and PDF exports are stored for later editing", async () => {
+  const draft = {
+    estimateNo: "BG-TEST",
+    projectName: "PN An Dinh",
+    rows: [{ groupId: "rough", name: "Khao sat", task: "Do dac", unit: "goi", qty: 1, price: 1000 }]
+  };
+  const savedDraft = await authed(`${origin}/api/v1/projects/p1/contract-drafts/quote`, {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ data: draft })
+  }).then((res) => res.json());
+  assert.equal(savedDraft.data.type, "quote");
+  assert.equal(savedDraft.data.data.estimateNo, "BG-TEST");
+
+  const loadedDraft = await authed(`${origin}/api/v1/projects/p1/contract-drafts/quote`).then((res) => res.json());
+  assert.equal(loadedDraft.data.data.rows[0].task, "Do dac");
+
+  const exported = await authed(`${origin}/api/v1/projects/p1/contract-files/pdf`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      kind: "quote",
+      name: "bao-gia-test.pdf",
+      html: "<!doctype html><html><body><h1>Bao gia test</h1></body></html>"
+    })
+  });
+  assert.equal(exported.status, 201);
+  const file = await exported.json();
+  assert.equal(file.kind, "quote");
+  assert.equal(file.name, "bao-gia-test.pdf");
+
+  const opened = await authed(`${origin}/api/v1/projects/p1/contract-files/download?storedName=${encodeURIComponent(file.storedName)}`);
+  assert.equal(opened.headers.get("content-type"), "application/pdf");
+  assert.match(opened.headers.get("content-disposition"), /^inline/);
+  const pdf = Buffer.from(await opened.arrayBuffer());
+  assert.equal(pdf.subarray(0, 4).toString(), "%PDF");
+});
+
 test("drive files support inline view and quick Office preview", async () => {
   const docx = zipBuffer({
     "word/document.xml": `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>Drive quick preview works</w:t></w:r></w:p></w:body></w:document>`
@@ -377,6 +472,46 @@ test("drive files support inline view and quick Office preview", async () => {
   const preview = await authed(`${origin}/api/v1/drive-files/preview?storedName=${encodeURIComponent(stored.storedName)}`).then((res) => res.json());
   assert.equal(preview.data.kind, "word");
   assert.equal(preview.data.sections[0].lines[0], "Drive quick preview works");
+
+  const legacyNamedUpload = await authed(`${origin}/api/v1/drive-files?name=legacy-name.doc`, {
+    method: "POST",
+    body: docx
+  });
+  assert.equal(legacyNamedUpload.status, 201);
+  const legacyNamed = await legacyNamedUpload.json();
+  const legacyNamedPreview = await authed(`${origin}/api/v1/drive-files/preview?storedName=${encodeURIComponent(legacyNamed.storedName)}`).then((res) => res.json());
+  assert.equal(legacyNamedPreview.data.kind, "word");
+  assert.equal(legacyNamedPreview.data.sections[0].lines[0], "Drive quick preview works");
+});
+
+test("config documents store metadata and support Office preview", async () => {
+  const docs = await authed(`${origin}/api/v1/config-documents`).then((res) => res.json());
+  docs.data.unshift(["GT999", "Quy chế test.docx", "Word", "Giấy tờ", "Test", "HoangDinh", "2026-06-08", 1, "Toàn công ty", "Test"]);
+  const savedDocs = await authed(`${origin}/api/v1/config-documents`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ files: docs.data })
+  }).then((res) => res.json());
+  assert.equal(savedDocs.data[0][0], "GT999");
+
+  const docx = zipBuffer({
+    "word/document.xml": `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>Config document preview works</w:t></w:r></w:p></w:body></w:document>`
+  });
+  const upload = await authed(`${origin}/api/v1/config-document-files?name=config-preview.docx`, {
+    method: "POST",
+    body: docx
+  });
+  assert.equal(upload.status, 201);
+  const stored = await upload.json();
+  assert.match(stored.storedName, /^configdoc__/);
+
+  const view = await authed(`${origin}/api/v1/config-document-files/view?storedName=${encodeURIComponent(stored.storedName)}`);
+  assert.equal(view.status, 200);
+  assert.match(view.headers.get("content-disposition"), /^inline/);
+
+  const preview = await authed(`${origin}/api/v1/config-document-files/preview?storedName=${encodeURIComponent(stored.storedName)}`).then((res) => res.json());
+  assert.equal(preview.data.kind, "word");
+  assert.equal(preview.data.sections[0].lines[0], "Config document preview works");
 });
 
 test("drive files preview ZIP and RAR archive folders", async () => {
@@ -682,6 +817,13 @@ test("landing page and project detail clients expose expected workflows", async 
   assert.match(appScript, /dashboardVoucherFullCdtChange/);
   assert.match(appScript, /Hạng mục thi công và phạm vi/);
   assert.match(appScript, /dashboardVoucherApprovalFlow/);
+  assert.match(appScript, /orgPeoplePool/);
+  assert.match(appScript, /data-drop-position/);
+  assert.match(appScript, /account-position-table/);
+  assert.match(appScript, /data-catalog-group-drop/);
+  assert.match(appScript, /assignCatalogItemToGroup/);
+  assert.match(appScript, /catalog-category-group-drag-over/);
+  assert.match(appScript, /positionCode/);
   assert.match(appScript, /Hành động xử lý/);
   assert.doesNotMatch(appScript, /Thêm phiếu nhật ký thi công/);
   assert.match(appScript, /dashboardTeamChatPanel/);
@@ -697,6 +839,7 @@ test("landing page and project detail clients expose expected workflows", async 
 
   const html = await fetch(`${origin}/constructions/detail/p1/`).then((res) => res.text());
   assert.match(html, /project-app/);
+  assert.match(html, /construction\.js\?v=229/);
 
   const script = await fetch(`${origin}/construction.js`).then((res) => res.text());
   assert.match(script, /data-project-info-delete/);
@@ -707,12 +850,100 @@ test("landing page and project detail clients expose expected workflows", async 
   assert.match(script, /Theo dõi chi phí dự án/);
   assert.match(script, /Vật liệu nhập vượt/);
   assert.match(script, /Nhân công cần dùng trong 7 ngày tới/);
-  assert.match(script, /data-app-link="hrm-overtime"/);
+  assert.match(script, /data-project-voucher="overtime"/);
+  assert.match(script, /data-project-voucher="leave"/);
+  assert.match(script, /data-project-voucher="slip-in"/);
+  assert.match(script, /data-project-voucher="slip-out"/);
+  assert.match(script, /data-project-voucher="expense"/);
+  assert.match(script, /openProjectVoucherForm/);
+  assert.match(script, /project-voucher-modal/);
+  assert.doesNotMatch(script, /data-form=/);
+  assert.doesNotMatch(script, /showCashModal/);
   assert.match(script, /data-view-link="rfi"/);
   assert.match(script, /showView\(view\)/);
   assert.match(script, /ganttView/);
   assert.match(script, /taskFormModal/);
   assert.match(script, /diaryResourceDetail/);
-  assert.match(script, /Lập phiếu thu/);
-  assert.match(script, /Lập phiếu chi/);
+  assert.doesNotMatch(script, /data-contract-group|data-contract-variation-group|data-vendor-contract-group|contractQuoteSidebar/);
+  assert.match(script, /contractMaterialSectionOptions\(\)/);
+  assert.match(script, /contractDesignTypeOptions\(\)/);
+  assert.match(script, /contractConstructionTypeOptions\(\)/);
+  assert.match(script, /contractSubcontractTypeOptions\(\)/);
+  assert.match(script, /async function contractVendorView\(\)\{\s*await loadProjectCatalog\(\)/);
+  assert.match(script, /data-contract-export-word/);
+  assert.match(script, /data-contract-export-pdf/);
+  assert.match(script, /contractDesignExportDocument/);
+  assert.match(script, /contract-pdf-preview/);
+  assert.match(script, /contract-preview-sheet/);
+  assert.match(script, /contractRenderPdfPreview/);
+  assert.match(script, /contractDesignDocumentHtml\(data\)/);
+  assert.match(script, /contractConstructionDocumentHtml\(data\)/);
+  assert.match(script, /contractApplyVat/);
+  assert.match(script, /data-contract-field="vatMode"/);
+  assert.match(script, /Có VAT/);
+  assert.match(script, /Giá trị HĐTC trước VAT/);
+  assert.match(script, /data-contract-vat-summary/);
+  assert.match(script, /data-contract-field="bankAccount"/);
+  assert.match(script, /contractBankHtml/);
+  assert.match(script, /contractCreateButton\("quote"/);
+  assert.match(script, /contractVariationFiles/);
+  assert.match(script, /contractVariationQuoteFiles/);
+  assert.match(script, /contractVariationQuoteManager/);
+  assert.match(script, /data-contract-kind-list="variation"/);
+  assert.match(script, /data-contract-kind-list="variation-confirm"/);
+  assert.match(script, /data-contract-kind-list="variation-quote"/);
+  assert.match(script, /function contractQuoteManager\(\)\{return `<section class="contract-quotes">\$\{contractQuoteTable\(\)\}<\/section>`\}/);
+  assert.match(script, /function contractVariationQuoteManager\(\)\{return `<section class="contract-quotes contract-variation-quotes">\$\{contractVariationQuoteTable\(\)\}<\/section>`\}/);
+  assert.match(script, /return `<section class="contract-quotes">\$\{contractQuoteTableVendor\(\)\}<\/section>`/);
+  assert.match(script, /contract-variation-block/);
+  assert.match(script, /contract-variation-quotes/);
+  assert.match(script, /data-contract-extra-create/);
+  assert.match(script, /variation-quote/);
+  assert.match(script, /BAO_GIA_PHAT_SINH/);
+  assert.match(script, /rfi-variation-page variation-tone/);
+  assert.match(script, /contractEstimateTitle\(type="estimate"\)/);
+  assert.match(script, /contractEstimateGroupDefinitions/);
+  assert.match(script, /Báo giá Hạng mục thi công/);
+  assert.match(script, /Báo Giá Hạng mục Thiết bị vật tư/);
+  assert.match(script, /Sắp xếp theo khu vực/);
+  assert.match(script, /data-estimate-sort-mode/);
+  assert.match(script, /data-estimate-location-summary/);
+  assert.match(script, /contractEstimateLocationGroups/);
+  assert.match(script, /contractMaterialEstimateGroups/);
+  assert.match(script, /materialCategoryGroups/);
+  assert.match(script, /contractNormalizeConstructionCategoryGroups/);
+  assert.match(script, /Nhóm 1: Phần thô/);
+  assert.match(script, /Nhóm 5: Hoàn thiện/);
+  assert.match(script, /data-estimate-group/);
+  assert.match(script, /data-estimate-task/);
+  assert.match(script, /data-estimate-description/);
+  assert.match(script, /data-estimate-location/);
+  assert.match(script, /data-estimate-image-drop/);
+  assert.match(script, /data-estimate-preview/);
+  assert.match(script, /data-estimate-export-excel/);
+  assert.match(script, /data-estimate-export-pdf/);
+  assert.match(script, /data-estimate-undo/);
+  assert.match(script, /data-estimate-redo/);
+  assert.match(script, /contractEstimateHistoryUndo/);
+  assert.match(script, /contractEstimateHistoryRedo/);
+  assert.match(script, /data-estimate-duplicate/);
+  assert.match(script, /data-estimate-drag/);
+  assert.match(script, /data-estimate-add-task/);
+  assert.match(script, /contractEstimateNormalizeTaskRows/);
+  assert.match(script, /data-estimate-resize/);
+  assert.match(script, /ledome\.contractEstimateColumnWidths/);
+  assert.match(script, /contractAutosizeEstimateTextareas/);
+  assert.match(script, /data-estimate-prev/);
+  assert.match(script, /data-estimate-next/);
+  assert.match(script, /data-estimate-group-summary/);
+  assert.match(script, /STT","Nhóm","Hạng mục","Nhiệm vụ","Mô tả","Vị trí","Hình ảnh"/);
+  assert.match(script, /contractEstimateUnitOptions=\["gói","m2","md","cái","bộ"\]/);
+  assert.match(script, /type==="estimate"\|\|type==="quote"\|\|type==="variation-quote"/);
+  assert.match(script, /type==="variation-quote"\?"BAO_GIA_PHAT_SINH":"BAO_GIA"/);
+  assert.match(script, /type==="variation-quote"\?"variation-quote":"quote"/);
+  assert.match(script, /BAO_GIA/);
+  assert.match(script, /<title><\/title>/);
+  assert.match(script, /@page\{size:A4;margin:0\}/);
+  assert.match(script, /history\.replaceState\(null,"",/);
+  assert.match(script, /Lưu PDF \/ In hợp đồng/);
 });
